@@ -56,7 +56,7 @@ function decrypt(payload) {
 }
 
 async function saveSessions() {
-  await fs.mkdir('./data', { recursive: true });
+  await fs.mkdir(new URL('.', 'file://' + SESSION_FILE).pathname, { recursive: true }).catch(() => {});
   const stored = {};
   for (const [telegramId, player] of authenticatedPlayers) {
     stored[telegramId] = {
@@ -93,7 +93,9 @@ bot.telegram.setMyCommands([
   { command: 'stats', description: 'Ver minhas estatísticas' },
   { command: 'clan', description: 'Ver o clã SEGA' },
   { command: 'ajuda', description: 'Mostrar ajuda' },
-  { command: 'cancelar', description: 'Cancelar cadastro' }
+  { command: 'cancelar', description: 'Cancelar cadastro' },
+  { command: 'lore', description: 'Crônicas e heróis' },
+  { command: 'menu', description: 'Abrir menu principal' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 
 const startMessage = `🎮 <b>SEGA STATS</b>
@@ -124,6 +126,8 @@ const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 🏆 <code>/ranking</code> — ranking do clã
 📊 <code>/stats</code> — suas estatísticas
 ❓ <code>/ajuda</code> — mostrar esta ajuda
+👥 <code>/clan</code> — painel do clã SEGA
+📜 <code>/lore</code> — crônicas e heróis
 ❌ <code>/cancelar</code> — cancelar cadastro`;
 
 
@@ -202,10 +206,10 @@ function askForRoleId(ctx) {
   return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
 }
 
-bot.start(async (ctx) => {
-  await ctx.reply(startMessage, {
+async function sendMenu(ctx) {
+  await ctx.reply(startMessage, { parse_mode: 'HTML', ...mainKeyboard() });
+  await ctx.reply('⚡ <b>AÇÕES RÁPIDAS</b>', {
     parse_mode: 'HTML',
-    ...mainKeyboard(),
     ...Markup.inlineKeyboard([
       [Markup.button.callback('📝 Cadastrar jogador', 'register')],
       [Markup.button.callback('📊 Minhas stats', 'stats'), Markup.button.callback('🏆 Ranking', 'ranking')],
@@ -213,7 +217,10 @@ bot.start(async (ctx) => {
       [Markup.button.callback('❓ Ajuda', 'help')]
     ])
   });
-});
+}
+
+bot.start(async (ctx) => await sendMenu(ctx));
+bot.command('menu', async (ctx) => await sendMenu(ctx));
 
 bot.command('cadastrar', async (ctx) => await askForRoleId(ctx));
 
@@ -345,6 +352,7 @@ async function sendClan(ctx) {
 
 bot.command('ranking', sendClan);
 bot.command('clan', sendClan);
+bot.command('lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 async function sendStats(ctx) {
   const player = authenticatedPlayers.get(ctx.from.id);
