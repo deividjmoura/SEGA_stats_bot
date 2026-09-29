@@ -10,6 +10,15 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
+
+bot.telegram.setMyCommands([
+  { command: 'start', description: 'Abrir o menu principal' },
+  { command: 'cadastrar', description: 'Cadastrar jogador' },
+  { command: 'ranking', description: 'Ver ranking do clã' },
+  { command: 'stats', description: 'Ver minhas estatísticas' },
+  { command: 'ajuda', description: 'Mostrar ajuda' },
+  { command: 'cancelar', description: 'Cancelar cadastro' }
+]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 const registration = new Map();
 
 const startMessage = `🎮 <b>SEGA STATS BOT</b>
@@ -113,10 +122,19 @@ bot.on('text', async (ctx) => {
 
       if (response.status === 401 || response.status === 403) {
         await ctx.reply(
-          '🔐 Recebi seu ID e Zone ID, mas a Rone exige autenticação do jogador para consultar os dados privados.\n\n' +
-          `🆔 ID: <code>${roleId}</code>\n` +
-          `🌐 Zone: <code>${value}</code>\n\n` +
-          'O próximo passo é implementar a autenticação por código enviado pelo próprio jogo. Assim o jogador autoriza o vínculo com segurança.',
+          '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
+          'Recebi seu ID e Zone ID. Para vincular seu jogador ao <b>SEGA Stats</b> e liberar suas estatísticas, precisamos confirmar que esta conta pertence a você.\n\n' +
+          '📩 Você receberá um <b>código de verificação no correio interno do Mobile Legends</b>.\n\n' +
+          '🔢 Quando receber o código, envie-o aqui no bot para concluir a verificação.\n\n' +
+          '🔒 <b>SUA SEGURANÇA É IMPORTANTE</b>\n\n' +
+          'O SEGA Stats <b>NUNCA</b> irá pedir sua senha, seu e-mail ou códigos de outras plataformas. Nesta etapa, além do seu ID e Zone ID, solicitaremos somente o <b>código de verificação recebido dentro do próprio jogo</b>.\n\n' +
+          'Esse código será usado exclusivamente no processo de autenticação para permitir a consulta das suas estatísticas.\n\n' +
+          '🛡️ <b>O processo é:</b>\n' +
+          '1️⃣ ID + Zone ID\n' +
+          '2️⃣ Código recebido dentro do jogo\n' +
+          '3️⃣ Código enviado aqui no SEGA Stats\n' +
+          '4️⃣ Conta verificada\n' +
+          '5️⃣ Estatísticas liberadas',
           { parse_mode: 'HTML' }
         );
         return;
