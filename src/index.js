@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
-const SESSION_FILE = './data/sessions.json';
+const SESSION_FILE = process.env.SESSION_FILE || ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/sessions.json');
+const API_TIMEOUT_MS = 12000;
 const SESSION_KEY = crypto.createHash('sha256').update(token || '').digest();
 
 if (!token) {
@@ -16,6 +17,26 @@ if (!token) {
 const bot = new Telegraf(token);
 const registration = new Map();
 const authenticatedPlayers = new Map();
+
+async function apiFetch(path, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    return await fetch(RONE_API + path, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function apiJson(path, options = {}) {
+  const response = await apiFetch(path, options);
+  const body = await response.json().catch(() => ({}));
+  return { response, body };
+}
+
+function authHeaders(jwt) {
+  return { Authorization: 'Bearer ' + jwt };
+}
 
 function encrypt(text) {
   const iv = crypto.randomBytes(12);
@@ -70,17 +91,18 @@ bot.telegram.setMyCommands([
   { command: 'cadastrar', description: 'Cadastrar jogador' },
   { command: 'ranking', description: 'Ver ranking do clã' },
   { command: 'stats', description: 'Ver minhas estatísticas' },
+  { command: 'clan', description: 'Ver o clã SEGA' },
   { command: 'ajuda', description: 'Mostrar ajuda' },
   { command: 'cancelar', description: 'Cancelar cadastro' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 
-const startMessage = `🎮 <b>SEGA STATS BOT</b>
+const startMessage = `🎮 <b>SEGA STATS</b>
 
-Fala, guerreiro! 👊
+⚡ <b>Bem-vindo à arena, guerreiro!</b> 👊
 
 Bem-vindo ao bot oficial do clã <b>SEGA</b>.
 
-Aqui você vai poder:
+Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua batalha. Aqui você vai poder:
 
 🏆 Consultar o ranking do clã
 ⚔️ Ver suas partidas e desempenho
@@ -91,7 +113,9 @@ Aqui você vai poder:
 <b>Para começar:</b>
 👉 Use <code>/cadastrar</code> para vincular seu jogador.
 
-Bora descobrir quem realmente carrega nesse clã. 😎🔥`;
+⚔️ <i>Entre na arena. Analise a batalha. Evolua.</i> 🔥
+
+<b>SEGA</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
 
 const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 
@@ -102,6 +126,14 @@ const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 ❓ <code>/ajuda</code> — mostrar esta ajuda
 ❌ <code>/cancelar</code> — cancelar cadastro`;
 
+function mainKeyboard() {
+  return Markup.keyboard([
+    ['📝 Cadastrar jogador', '📊 Minhas stats'],
+    ['🏆 Ranking', '👥 Clã SEGA'],
+    ['❓ Ajuda', '📜 Lore']
+  ]).resize().persistent();
+}
+
 function askForRoleId(ctx) {
   registration.set(ctx.from.id, { step: 'role_id' });
   return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
@@ -110,9 +142,11 @@ function askForRoleId(ctx) {
 bot.start(async (ctx) => {
   await ctx.reply(startMessage, {
     parse_mode: 'HTML',
+    ...mainKeyboard(),
     ...Markup.inlineKeyboard([
       [Markup.button.callback('📝 Cadastrar jogador', 'register')],
-      [Markup.button.callback('🏆 Ranking', 'ranking'), Markup.button.callback('📊 Minhas stats', 'stats')],
+      [Markup.button.callback('📊 Minhas stats', 'stats'), Markup.button.callback('🏆 Ranking', 'ranking')],
+      [Markup.button.callback('👥 Clã SEGA', 'clan'), Markup.button.callback('📜 Lore', 'lore')],
       [Markup.button.callback('❓ Ajuda', 'help')]
     ])
   });
@@ -151,7 +185,7 @@ bot.on('text', async (ctx) => {
     await ctx.reply('🔎 <b>Solicitando código de verificação...</b>\n\n📩 Um código será enviado para o correio interno do Mobile Legends.\n⏱️ O código é válido por 5 minutos.', { parse_mode: 'HTML' });
 
     try {
-      const response = await fetch(`${RONE_API}/user/auth/send-vc`, {
+      const response = await apiFetch('/user/auth/send-vc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(value) })
@@ -193,7 +227,7 @@ bot.on('text', async (ctx) => {
     await ctx.reply('🔐 <b>Validando o código...</b>', { parse_mode: 'HTML' });
 
     try {
-      const response = await fetch(`${RONE_API}/user/auth/login`, {
+      const response = await apiFetch('/user/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(zoneId), vc: Number(value) })
@@ -207,7 +241,7 @@ bot.on('text', async (ctx) => {
       }
 
       const jwt = body.data.jwt;
-      const infoResponse = await fetch(`${RONE_API}/user/info`, { headers: { Authorization: `Bearer ${jwt}` } });
+      const infoResponse = await apiFetch('/user/info', { headers: { Authorization: `Bearer ${jwt}` } });
       const infoBody = await infoResponse.json().catch(() => ({}));
 
       if (!infoResponse.ok || infoBody.code !== 0) {
@@ -241,9 +275,13 @@ bot.action('register', async (ctx) => {
   await askForRoleId(ctx);
 });
 
-bot.command('ranking', async (ctx) => {
-  await ctx.reply('🏆 O ranking do clã será conectado à API na próxima etapa.');
-});
+async function sendClan(ctx) {
+  const count = authenticatedPlayers.size;
+  await ctx.reply('👥 <b>CLÃ SEGA</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+}
+
+bot.command('ranking', sendClan);
+bot.command('clan', sendClan);
 
 async function sendStats(ctx) {
   const player = authenticatedPlayers.get(ctx.from.id);
@@ -256,9 +294,7 @@ async function sendStats(ctx) {
   await ctx.reply('📊 <b>Buscando suas estatísticas...</b>', { parse_mode: 'HTML' });
 
   try {
-    const infoResponse = await fetch(`${RONE_API}/user/info`, {
-      headers: { Authorization: `Bearer ${player.jwt}` }
-    });
+    const infoResponse = await apiFetch('/user/info', { headers: authHeaders(player.jwt) });
     const infoBody = await infoResponse.json().catch(() => ({}));
 
     if (infoResponse.status === 401 || infoResponse.status === 403) {
@@ -321,9 +357,11 @@ bot.command('ajuda', async (ctx) => {
   await ctx.reply(helpMessage, { parse_mode: 'HTML' });
 });
 
-bot.action('ranking', async (ctx) => {
+bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
+bot.action('clan', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
+bot.action('lore', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('🏆 O ranking entra na próxima etapa, usando os dados da API.');
+  await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 });
 
 bot.action('stats', async (ctx) => {
@@ -331,14 +369,18 @@ bot.action('stats', async (ctx) => {
   await sendStats(ctx);
 });
 
-bot.action('help', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.reply(helpMessage, { parse_mode: 'HTML' });
-});
+bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }); });
+bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
+bot.hears('📊 Minhas stats', sendStats);
+bot.hears('🏆 Ranking', sendClan);
+bot.hears('👥 Clã SEGA', sendClan);
+bot.hears('❓ Ajuda', async (ctx) => await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 bot.catch((error) => console.error('❌ Erro no bot:', error));
 
 await restoreSessions();
+console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
 
 bot.launch().then(() => {
   console.log('🎮 SEGA Stats Bot online!');
