@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
+import { dirname } from 'node:path';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -56,7 +57,7 @@ function decrypt(payload) {
 }
 
 async function saveSessions() {
-  await fs.mkdir(new URL('.', 'file://' + SESSION_FILE).pathname, { recursive: true }).catch(() => {});
+  await fs.mkdir(dirname(SESSION_FILE), { recursive: true });
   const stored = {};
   for (const [telegramId, player] of authenticatedPlayers) {
     stored[telegramId] = {
