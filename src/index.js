@@ -20,6 +20,7 @@ bot.telegram.setMyCommands([
   { command: 'cancelar', description: 'Cancelar cadastro' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 const registration = new Map();
+const authenticatedPlayers = new Map();
 
 const startMessage = `🎮 <b>SEGA STATS BOT</b>
 
@@ -212,6 +213,7 @@ bot.on('text', async (ctx) => {
       }
 
       registration.delete(ctx.from.id);
+      authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId });
 
       await ctx.reply(
         '✅ <b>CONTA VERIFICADA!</b>\n\n' +
@@ -237,9 +239,57 @@ bot.command('ranking', async (ctx) => {
   await ctx.reply('🏆 O ranking do clã será conectado à API na próxima etapa.');
 });
 
-bot.command('stats', async (ctx) => {
-  await ctx.reply('📊 Suas estatísticas serão exibidas aqui depois que seu jogador estiver autenticado e vinculado.');
-});
+async function sendStats(ctx) {
+  const player = authenticatedPlayers.get(ctx.from.id);
+
+  if (!player) {
+    await ctx.reply(
+      '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
+      'Você ainda não tem uma sessão autenticada neste bot. Use /cadastrar para vincular seu jogador.',
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
+  await ctx.reply('📊 <b>Buscando suas estatísticas...</b>', { parse_mode: 'HTML' });
+
+  try {
+    const response = await fetch(`${RONE_API}/user/stats`, {
+      headers: { Authorization: `Bearer ${player.jwt}` }
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok || body.code !== 0 || !body.data) {
+      console.error('❌ Falha ao consultar stats:', response.status, body);
+      await ctx.reply('⚠️ Não consegui carregar suas estatísticas agora. A sessão pode ter expirado.');
+      return;
+    }
+
+    const stats = body.data;
+    const matches = Number(stats.tc ?? 0);
+    const wins = Number(stats.wc ?? 0);
+    const losses = Math.max(matches - wins, 0);
+    const winRate = matches > 0 ? ((wins / matches) * 100).toFixed(1) : '0.0';
+    const avgScore = stats.as != null ? Number(stats.as).toFixed(1) : 'N/D';
+
+    await ctx.reply(
+      '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
+      `🎮 Partidas: <b>${matches}</b>\n` +
+      `🏆 Vitórias: <b>${wins}</b>\n` +
+      `💀 Derrotas: <b>${losses}</b>\n` +
+      `📈 Win rate: <b>${winRate}%</b>\n` +
+      `⭐ Pontuação média: <b>${avgScore}</b>\n` +
+      `👑 MVPs: <b>${stats.mvpc ?? 0}</b>\n` +
+      `🔥 Maior sequência de vitórias: <b>${stats.wsc ?? 0}</b>`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (error) {
+    console.error('❌ Erro ao consultar stats:', error);
+    await ctx.reply('⚠️ Ocorreu um erro ao buscar suas estatísticas.');
+  }
+}
+
+bot.command('stats', sendStats);
 
 bot.command('ajuda', async (ctx) => {
   await ctx.reply(helpMessage, { parse_mode: 'HTML' });
@@ -252,7 +302,7 @@ bot.action('ranking', async (ctx) => {
 
 bot.action('stats', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('📊 Primeiro precisamos vincular e autenticar seu jogador. Use /cadastrar.');
+  await sendStats(ctx);
 });
 
 bot.action('help', async (ctx) => {
