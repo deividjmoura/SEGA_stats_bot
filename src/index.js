@@ -12,11 +12,11 @@ if (!token) {
 const bot = new Telegraf(token);
 const registration = new Map();
 
-const startMessage = `🎮 <b>CEGA STATS BOT</b>
+const startMessage = `🎮 <b>SEGA STATS BOT</b>
 
 Fala, guerreiro! 👊
 
-Bem-vindo ao bot oficial do clã <b>CEGA</b>.
+Bem-vindo ao bot oficial do clã <b>SEGA</b>.
 
 Aqui você vai poder:
 
@@ -31,7 +31,7 @@ Aqui você vai poder:
 
 Bora descobrir quem realmente carrega nesse clã. 😎🔥`;
 
-const helpMessage = `📚 <b>COMANDOS DO CEGA STATS</b>
+const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 
 🎮 <code>/start</code> — abrir o menu principal
 📝 <code>/cadastrar</code> — cadastrar seu jogador
@@ -44,8 +44,8 @@ const helpMessage = `📚 <b>COMANDOS DO CEGA STATS</b>
 function askForRoleId(ctx) {
   registration.set(ctx.from.id, { step: 'role_id' });
   return ctx.reply(
-    '📝 <b>CADASTRO DO JOGADOR</b>\\n\\n' +
-    'Me manda agora o seu <b>ID do Mobile Legends</b> (Role ID).\\n\\n' +
+    '📝 <b>CADASTRO DO JOGADOR</b>\n\n' +
+    'Me manda agora o seu <b>ID do Mobile Legends</b> (Role ID).\n\n' +
     'Exemplo: <code>123456789</code>',
     { parse_mode: 'HTML' }
   );
@@ -81,14 +81,14 @@ bot.on('text', async (ctx) => {
   const value = ctx.message.text.trim();
 
   if (state.step === 'role_id') {
-    if (!/^\\d{6,12}$/.test(value)) {
+    if (!/^\d{6,12}$/.test(value)) {
       await ctx.reply('⚠️ Esse ID não parece válido. Envie somente os números do seu ID do Mobile Legends.');
       return;
     }
 
     registration.set(ctx.from.id, { step: 'zone_id', roleId: value });
     await ctx.reply(
-      '🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\\n\\n' +
+      '🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\n' +
       'Exemplo: <code>1234</code>',
       { parse_mode: 'HTML' }
     );
@@ -96,7 +96,7 @@ bot.on('text', async (ctx) => {
   }
 
   if (state.step === 'zone_id') {
-    if (!/^\\d{1,8}$/.test(value)) {
+    if (!/^\d{1,8}$/.test(value)) {
       await ctx.reply('⚠️ Zone ID inválido. Envie somente os números do seu Zone ID.');
       return;
     }
@@ -113,9 +113,9 @@ bot.on('text', async (ctx) => {
 
       if (response.status === 401 || response.status === 403) {
         await ctx.reply(
-          '🔐 Recebi seu ID e Zone ID, mas a Rone exige autenticação do jogador para consultar os dados privados.\\n\\n' +
-          `🆔 ID: <code>${roleId}</code>\\n` +
-          `🌐 Zone: <code>${value}</code>\\n\\n` +
+          '🔐 Recebi seu ID e Zone ID, mas a Rone exige autenticação do jogador para consultar os dados privados.\n\n' +
+          `🆔 ID: <code>${roleId}</code>\n` +
+          `🌐 Zone: <code>${value}</code>\n\n` +
           'O próximo passo é implementar a autenticação por código enviado pelo próprio jogo. Assim o jogador autoriza o vínculo com segurança.',
           { parse_mode: 'HTML' }
         );
@@ -126,9 +126,9 @@ bot.on('text', async (ctx) => {
 
       const body = await response.json();
       await ctx.reply(
-        `✅ <b>Jogador encontrado!</b>\\n\\n` +
-        `👤 ${body.data?.name ?? 'Nome não informado'}\\n` +
-        `🆔 <code>${roleId}</code>\\n` +
+        `✅ <b>Jogador encontrado!</b>\n\n` +
+        `👤 ${body.data?.name ?? 'Nome não informado'}\n` +
+        `🆔 <code>${roleId}</code>\n` +
         `🌐 <code>${value}</code>`,
         { parse_mode: 'HTML' }
       );
@@ -178,7 +178,7 @@ bot.catch((error) => {
 });
 
 bot.launch().then(() => {
-  console.log('🎮 CEGA Stats Bot online!');
+  console.log('🎮 SEGA Stats Bot online!');
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
