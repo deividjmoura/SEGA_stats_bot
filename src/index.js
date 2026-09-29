@@ -126,6 +126,69 @@ const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 ❓ <code>/ajuda</code> — mostrar esta ajuda
 ❌ <code>/cancelar</code> — cancelar cadastro`;
 
+
+function parseMatchStats(matches) {
+  const rows = Array.isArray(matches) ? matches : [];
+  const total = rows.length;
+  const wins = rows.filter(m => Number(m.res) === 1).length;
+  const mvps = rows.filter(m => Number(m.mvp) === 1).length;
+  const kills = rows.reduce((sum, m) => sum + Number(m.k || 0), 0);
+  const deaths = rows.reduce((sum, m) => sum + Number(m.d || 0), 0);
+  const assists = rows.reduce((sum, m) => sum + Number(m.a || 0), 0);
+  const scores = rows.map(m => Number(m.s || 0)).filter(Number.isFinite);
+  const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length / 100 : 0;
+  const heroes = new Map();
+  for (const m of rows) {
+    const name = m.hid_e?.n || String(m.hid || 'Desconhecido');
+    heroes.set(name, (heroes.get(name) || 0) + 1);
+  }
+  const mostPlayed = [...heroes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/D';
+  return { matches: total, wins, losses: Math.max(total - wins, 0), mvps, kills, deaths, assists, avgScore, mostPlayed };
+}
+
+async function fetchPlayerStats(jwt) {
+  const direct = await apiJson('/user/stats', { headers: authHeaders(jwt) });
+  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
+    return { source: 'stats', data: direct.body.data };
+  }
+
+  // /user/stats está marcado como deprecated na API. Tentamos montar as estatísticas pelas partidas.
+  const season = await apiJson('/user/season?lang=pt_BR', { headers: authHeaders(jwt) });
+  const sid = season.body?.data?.sids?.[0];
+  if (!season.response.ok || season.body?.code !== 0 || !sid) {
+    return { source: 'error', response: direct.response, body: direct.body };
+  }
+
+  const matches = await apiJson('/user/matches?sid=' + encodeURIComponent(sid) + '&limit=20&lang=pt_BR', {
+    headers: authHeaders(jwt)
+  });
+  if (!matches.response.ok || matches.body?.code !== 0) {
+    return { source: 'error', response: matches.response, body: matches.body };
+  }
+
+  return { source: 'matches', data: parseMatchStats(matches.body?.data?.result) };
+}
+
+function renderStats(data) {
+  const matches = Number(data.matches ?? data.tc ?? 0);
+  const wins = Number(data.wins ?? data.wc ?? 0);
+  const losses = Number(data.losses ?? Math.max(matches - wins, 0));
+  const winRate = matches > 0 ? ((wins / matches) * 100).toFixed(1) : '0.0';
+  const avgScore = data.avgScore != null ? Number(data.avgScore).toFixed(1) : (data.as != null ? Number(data.as).toFixed(1) : 'N/D');
+  const mvps = data.mvps ?? data.mvpc ?? 0;
+  const kda = data.kills != null ? (data.kills + '/' + data.deaths + '/' + data.assists) : 'N/D';
+  return '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
+    '🎮 Partidas: <b>' + matches + '</b>\n' +
+    '🏆 Vitórias: <b>' + wins + '</b>\n' +
+    '💀 Derrotas: <b>' + losses + '</b>\n' +
+    '📈 Win rate: <b>' + winRate + '%</b>\n' +
+    '⚔️ K/D/A: <b>' + kda + '</b>\n' +
+    '⭐ Pontuação média: <b>' + avgScore + '</b>\n' +
+    '👑 MVPs: <b>' + mvps + '</b>\n' +
+    (data.mostPlayed ? '🎯 Herói mais usado: <b>' + data.mostPlayed + '</b>\n' : '') +
+    '\n<i>SEGA: cada partida escreve uma linha da história.</i>';
+}
+
 function mainKeyboard() {
   return Markup.keyboard([
     ['📝 Cadastrar jogador', '📊 Minhas stats'],
@@ -310,41 +373,23 @@ async function sendStats(ctx) {
       return;
     }
 
-    const response = await fetch(`${RONE_API}/user/stats`, {
-      headers: { Authorization: `Bearer ${player.jwt}` }
-    });
-    const body = await response.json().catch(() => ({}));
+    const statsResult = await fetchPlayerStats(player.jwt);
 
-    if (response.status === 401 || response.status === 403) {
-      console.error('❌ /user/stats rejeitou o JWT:', response.status, body);
-      await ctx.reply('🔐 <b>A API rejeitou a sessão ao consultar as estatísticas.</b>\n\nUse /cadastrar para renovar a autenticação.', { parse_mode: 'HTML' });
+    if (statsResult.source === 'error') {
+      const status = statsResult.response?.status;
+      if (status === 401 || status === 403) {
+        authenticatedPlayers.delete(ctx.from.id);
+        await saveSessions();
+        await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
+        return;
+      }
+      console.error('❌ Erro da API de stats:', status, statsResult.body);
+      await ctx.reply('⚠️ <b>Sua autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\nO bot tentou a rota principal e a alternativa por partidas. Tente novamente em alguns instantes.', { parse_mode: 'HTML' });
       return;
     }
 
-    if (!response.ok || body.code !== 0 || !body.data) {
-      console.error('❌ Erro da API de stats:', response.status, body);
-      await ctx.reply('⚠️ <b>A autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\nTente novamente em alguns instantes.', { parse_mode: 'HTML' });
-      return;
-    }
+    await ctx.reply(renderStats(statsResult.data), { parse_mode: 'HTML', ...mainKeyboard() });
 
-    const stats = body.data;
-    const matches = Number(stats.tc ?? 0);
-    const wins = Number(stats.wc ?? 0);
-    const losses = Math.max(matches - wins, 0);
-    const winRate = matches > 0 ? ((wins / matches) * 100).toFixed(1) : '0.0';
-    const avgScore = stats.as != null ? Number(stats.as).toFixed(1) : 'N/D';
-
-    await ctx.reply(
-      '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
-      `🎮 Partidas: <b>${matches}</b>\n` +
-      `🏆 Vitórias: <b>${wins}</b>\n` +
-      `💀 Derrotas: <b>${losses}</b>\n` +
-      `📈 Win rate: <b>${winRate}%</b>\n` +
-      `⭐ Pontuação média: <b>${avgScore}</b>\n` +
-      `👑 MVPs: <b>${stats.mvpc ?? 0}</b>\n` +
-      `🔥 Maior sequência de vitórias: <b>${stats.wsc ?? 0}</b>`,
-      { parse_mode: 'HTML' }
-    );
   } catch (error) {
     console.error('❌ Erro ao consultar stats:', error);
     await ctx.reply('⚠️ Não foi possível consultar a API agora. Tente novamente em alguns instantes.');
