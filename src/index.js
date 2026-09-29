@@ -112,8 +112,8 @@ bot.on('text', async (ctx) => {
 
     const { roleId } = state;
 
-    await ctx.reply('🔎 <b>Solicitando código de verificação...</b>\\n\\n' +
-      '📩 Um código será enviado para o correio interno do Mobile Legends.\\n' +
+    await ctx.reply('🔎 <b>Solicitando código de verificação...</b>\n\n' +
+      '📩 Um código será enviado para o correio interno do Mobile Legends.\n' +
       '⏱️ O código é válido por 5 minutos.', { parse_mode: 'HTML' });
 
     try {
@@ -144,11 +144,11 @@ bot.on('text', async (ctx) => {
       });
 
       await ctx.reply(
-        '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\\n\\n' +
-        '📩 O código foi solicitado e deve chegar no <b>correio interno do Mobile Legends</b>.\\n\\n' +
-        '🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\\n\\n' +
-        '🔒 <b>Sua segurança é importante:</b> nunca enviaremos ou pediremos sua senha, seu e-mail ou códigos de outras plataformas. O código solicitado aqui é usado para concluir a autenticação e liberar a consulta das suas estatísticas.\\n\\n' +
-        '⏱️ <b>O código é válido por 5 minutos.</b>\\n\\n' +
+        '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
+        '📩 O código foi solicitado e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n' +
+        '🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n' +
+        '🔒 <b>Sua segurança é importante:</b> nunca enviaremos ou pediremos sua senha, seu e-mail ou códigos de outras plataformas. O código solicitado aqui é usado para concluir a autenticação e liberar a consulta das suas estatísticas.\n\n' +
+        '⏱️ <b>O código é válido por 5 minutos.</b>\n\n' +
         'Digite /cancelar para cancelar o processo.',
         { parse_mode: 'HTML' }
       );
@@ -186,7 +186,7 @@ bot.on('text', async (ctx) => {
       if (!response.ok || body.code !== 0 || !body.data?.jwt) {
         console.error('❌ Falha na autenticação:', response.status, body);
         await ctx.reply(
-          '❌ <b>Não foi possível validar o código.</b>\\n\\n' +
+          '❌ <b>Não foi possível validar o código.</b>\n\n' +
           'Verifique se você digitou o código corretamente e se ele ainda está dentro do prazo de validade (5 minutos).',
           { parse_mode: 'HTML' }
         );
@@ -204,7 +204,7 @@ bot.on('text', async (ctx) => {
         console.error('❌ Login realizado, mas não consegui consultar o perfil:', infoResponse.status, infoBody);
         registration.delete(ctx.from.id);
         await ctx.reply(
-          '✅ <b>Conta verificada!</b>\\n\\n' +
+          '✅ <b>Conta verificada!</b>\n\n' +
           'A autenticação foi concluída, mas não consegui carregar suas estatísticas agora. Tente novamente mais tarde.',
           { parse_mode: 'HTML' }
         );
@@ -214,10 +214,10 @@ bot.on('text', async (ctx) => {
       registration.delete(ctx.from.id);
 
       await ctx.reply(
-        '✅ <b>CONTA VERIFICADA!</b>\\n\\n' +
-        `👤 <b>${infoBody.data?.name ?? 'Jogador'}</b>\\n` +
-        `🆔 ID: <code>${roleId}</code>\\n` +
-        `🌐 Zone: <code>${zoneId}</code>\\n\\n` +
+        '✅ <b>CONTA VERIFICADA!</b>\n\n' +
+        `👤 <b>${infoBody.data?.name ?? 'Jogador'}</b>\n` +
+        `🆔 ID: <code>${roleId}</code>\n` +
+        `🌐 Zone: <code>${zoneId}</code>\n\n` +
         '📊 Seu jogador foi vinculado ao <b>SEGA Stats</b>. Agora podemos consultar seus dados para gerar suas estatísticas e participar dos rankings do clã.',
         { parse_mode: 'HTML' }
       );
@@ -225,7 +225,8 @@ bot.on('text', async (ctx) => {
       console.error('❌ Erro ao autenticar jogador:', error);
       await ctx.reply('⚠️ Ocorreu um erro ao validar o código. Tente novamente.');
     }
-  }});
+  }
+});
 
 bot.action('register', async (ctx) => {
   await ctx.answerCbQuery();
