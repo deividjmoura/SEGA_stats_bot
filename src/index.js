@@ -230,9 +230,15 @@ bot.command('cancelar', async (ctx) => {
   await ctx.reply('❌ Cadastro cancelado. Nenhuma alteração foi feita.');
 });
 
-bot.on('text', async (ctx) => {
+bot.on('text', async (ctx, next) => {
   const state = registration.get(ctx.from.id);
-  if (!state || ctx.message.text.startsWith('/')) return;
+
+  // Este handler trata somente as respostas do fluxo de cadastro.
+  // Comandos como /stats e /ranking precisam seguir para os handlers abaixo.
+  if (!state || ctx.message.text.startsWith('/')) {
+    await next();
+    return;
+  }
 
   const value = ctx.message.text.trim();
 
@@ -351,7 +357,79 @@ async function sendClan(ctx) {
   await ctx.reply('👥 <b>CLÃ SEGA</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 }
 
-bot.command('ranking', sendClan);
+async function sendRanking(ctx) {
+  const players = [...authenticatedPlayers.entries()];
+
+  if (!players.length) {
+    await ctx.reply(
+      '🏆 <b>RANKING SEGA</b>\n\nAinda não há jogadores autenticados no clã.\n\nUse /cadastrar para vincular seu jogador.',
+      { parse_mode: 'HTML', ...mainKeyboard() }
+    );
+    return;
+  }
+
+  await ctx.reply('🏆 <b>Calculando o ranking do SEGA...</b>\n\n⚔️ Consultando os dados dos jogadores vinculados.', { parse_mode: 'HTML' });
+
+  const results = await Promise.allSettled(
+    players.map(async ([telegramId, player]) => {
+      const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
+      if (!info.response.ok || info.body?.code !== 0) return null;
+
+      const stats = await fetchPlayerStats(player.jwt);
+      if (stats.source === 'error') return null;
+
+      const data = stats.data;
+      const matches = Number(data.matches ?? data.tc ?? 0);
+      const wins = Number(data.wins ?? data.wc ?? 0);
+      const winRate = matches > 0 ? (wins / matches) * 100 : 0;
+      const avgScore = Number(data.avgScore ?? data.as ?? 0);
+
+      return {
+        telegramId,
+        name: info.body.data?.name || 'Jogador',
+        matches,
+        wins,
+        winRate,
+        avgScore,
+        mvps: Number(data.mvps ?? data.mvpc ?? 0)
+      };
+    })
+  );
+
+  const ranking = results
+    .filter(result => result.status === 'fulfilled' && result.value)
+    .map(result => result.value)
+    .sort((a, b) =>
+      b.winRate - a.winRate ||
+      b.wins - a.wins ||
+      b.avgScore - a.avgScore ||
+      b.matches - a.matches
+    );
+
+  if (!ranking.length) {
+    await ctx.reply(
+      '⚠️ <b>RANKING SEGA</b>\n\nOs jogadores estão autenticados, mas a API não retornou estatísticas suficientes para montar o ranking agora.\n\nA autenticação continua válida. Tente novamente em alguns instantes.',
+      { parse_mode: 'HTML', ...mainKeyboard() }
+    );
+    return;
+  }
+
+  const lines = ranking.slice(0, 10).map((player, index) => {
+    const medal = ['🥇', '🥈', '🥉'][index] || '🏅';
+    return medal + ' <b>' + (index + 1) + '. ' + player.name + '</b>\n' +
+      '   📈 ' + player.winRate.toFixed(1) + '% WR  •  🏆 ' + player.wins + '/' + player.matches +
+      '  •  ⭐ ' + player.avgScore.toFixed(1);
+  });
+
+  await ctx.reply(
+    '🏆 <b>RANKING SEGA</b>\n\n' +
+    lines.join('\n\n') +
+    '\n\n<i>Ranking calculado com os dados disponíveis na API.</i>',
+    { parse_mode: 'HTML', ...mainKeyboard() }
+  );
+}
+
+bot.command('ranking', sendRanking);
 bot.command('clan', sendClan);
 bot.command('lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
 
@@ -411,7 +489,7 @@ bot.command('ajuda', async (ctx) => {
   await ctx.reply(helpMessage, { parse_mode: 'HTML' });
 });
 
-bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
+bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendRanking(ctx); });
 bot.action('clan', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
 bot.action('lore', async (ctx) => {
   await ctx.answerCbQuery();
@@ -426,7 +504,7 @@ bot.action('stats', async (ctx) => {
 bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
-bot.hears('🏆 Ranking', sendClan);
+bot.hears('🏆 Ranking', sendRanking);
 bot.hears('👥 Clã SEGA', sendClan);
 bot.hears('❓ Ajuda', async (ctx) => await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }));
 bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
