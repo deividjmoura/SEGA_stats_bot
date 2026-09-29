@@ -104,7 +104,7 @@ bot.on('text', async (ctx) => {
     const { roleId } = state;
     registration.delete(ctx.from.id);
 
-    await ctx.reply('🔎 <b>Consultando a Rone Arena...</b>', { parse_mode: 'HTML' });
+    await ctx.reply('🔎 <b>Verificando seu cadastro...</b>', { parse_mode: 'HTML' });
 
     try {
       const response = await fetch(`${RONE_API}/user/info`, {
