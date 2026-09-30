@@ -331,11 +331,25 @@ bot.on('text', async (ctx, next) => {
 
     try {
       if (MLBB_PROVIDER === 'sdk') {
-        const result = await sdkSendVerificationCode(roleId, value);
-        if (result?.code !== 0 && result?.code !== '0') throw new Error(result?.msg || 'SDK rejeitou a solicitação do código.');
-        registration.set(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
-        await ctx.reply('🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n📩 O código foi solicitado pelo SDK e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n⏱️ <b>O código é válido por 5 minutos.</b>\n\nDigite /cancelar para cancelar o processo.', { parse_mode: 'HTML' });
-        return;
+        try {
+          const result = await sdkSendVerificationCode(roleId, value);
+          if (result?.code !== 0 && result?.code !== '0') {
+            throw new Error(result?.msg || result?.message || JSON.stringify(result));
+          }
+          registration.set(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
+          await ctx.reply('🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n📩 O código foi solicitado pelo SDK e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n⏱️ <b>O código é válido por 5 minutos.</b>\n\nDigite /cancelar para cancelar o processo.', { parse_mode: 'HTML' });
+          return;
+        } catch (error) {
+          const rawError = String(error?.message || error || 'Erro desconhecido').slice(0, 1800)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          registration.delete(ctx.from.id);
+          await ctx.reply(
+            '🧪 <b>TESTE SDK — ERRO REAL AO SOLICITAR CÓDIGO</b>\n\n<code>' + rawError + '</code>\n\n' +
+            'Esse texto é temporário e será removido depois do teste.',
+            { parse_mode: 'HTML' }
+          );
+          return;
+        }
       }
 
       const response = await apiFetch('/user/auth/send-vc', {
