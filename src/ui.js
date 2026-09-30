@@ -41,6 +41,11 @@ export const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 ❌ <code>/cancelar</code> — cancelar o cadastro em andamento
 ❓ <code>/ajuda</code> — mostrar esta ajuda
 
+⚠️ <b>Para o /stats e o /ranking funcionarem</b>, seu <b>histórico de batalhas precisa estar público</b> no Mobile Legends:
+<i>Perfil → ⚙️ Configurações → Privacidade → Histórico de Batalhas → Público</i>
+
+⏳ A consulta pode levar <b>alguns minutos</b>: a API do MLBB é lenta. Mande o comando uma vez e aguarde.
+
 🔒 O bot <b>nunca</b> pede sua senha ou e-mail. A verificação usa apenas o código enviado ao correio interno do Mobile Legends.`;
 
 export const loreMessage = `📜 <b>CRÔNICAS DO SEGA</b>
@@ -55,6 +60,24 @@ export const loreMessage = `📜 <b>CRÔNICAS DO SEGA</b>
 No SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.
 
 ✨ <i>Da arena para o placar. Do jogador para a lenda.</i>`;
+
+/** Aviso reaproveitado: sem histórico público a API não devolve nada. */
+export const privacyNotice =
+  '⚠️ <b>Importante:</b> seu <b>histórico de batalhas precisa estar público</b> no jogo.\n' +
+  '<i>Mobile Legends → Perfil → ⚙️ Configurações → Privacidade → Histórico de Batalhas → Público</i>';
+
+export const loadingStatsMessage =
+  '📊 <b>Buscando suas estatísticas...</b>\n\n' +
+  privacyNotice +
+  '\n\n⏳ <b>Isso pode levar alguns minutos.</b> A API do MLBB costuma demorar para responder — ' +
+  'pode deixar o Telegram de lado que eu te aviso assim que terminar. Não precisa mandar o comando de novo.';
+
+export const loadingRankingMessage =
+  '🏆 <b>Calculando o ranking do SEGA...</b>\n\n' +
+  '⚔️ Consultando os dados de cada jogador vinculado.\n\n' +
+  privacyNotice +
+  '\n\n⏳ <b>Isso pode levar alguns minutos</b>, principalmente com muitos jogadores no clã. ' +
+  'Só quem está com o histórico público aparece na lista.';
 
 export function mainKeyboard() {
   return Markup.keyboard([

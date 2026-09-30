@@ -12,7 +12,7 @@ export const BOT_TOKEN = clean(process.env.BOT_TOKEN);
 // para a sua própria API hospedada na Railway.
 export const API_BASE = (clean(process.env.MLBB_API_URL) || 'https://arena.rone.dev/api').replace(/\/+$/, '');
 
-export const API_TIMEOUT_MS = Number(clean(process.env.API_TIMEOUT_MS) || 12000);
+export const API_TIMEOUT_MS = Number(clean(process.env.API_TIMEOUT_MS) || 30000);
 export const API_RETRIES = Number(clean(process.env.API_RETRIES) || 2);
 
 // Railway define PORT. O servidor HTTP existe só para o healthcheck.

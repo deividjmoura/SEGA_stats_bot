@@ -81,3 +81,31 @@ test('sessões criptografam o jwt e restauram corretamente', async () => {
   await mod.restoreSessions();
   assert.equal(mod.authenticatedPlayers.get(123)?.jwt, 'segredo-jwt');
 });
+
+const { loadingStatsMessage, loadingRankingMessage, helpMessage, privacyNotice } = await import(
+  '../src/ui.js'
+);
+
+test('mensagens de carregamento avisam sobre histórico público e demora', () => {
+  for (const msg of [loadingStatsMessage, loadingRankingMessage]) {
+    assert.match(msg, /hist[óo]rico de batalhas/i, 'deve citar o histórico de batalhas');
+    assert.match(msg, /p[úu]blico/i, 'deve pedir que esteja público');
+    assert.match(msg, /minutos/i, 'deve avisar que pode demorar alguns minutos');
+  }
+});
+
+test('a ajuda repete os dois avisos', () => {
+  assert.match(helpMessage, /hist[óo]rico de batalhas/i);
+  assert.match(helpMessage, /minutos/i);
+});
+
+test('avisos não vazam HTML quebrado', () => {
+  for (const msg of [privacyNotice, loadingStatsMessage, loadingRankingMessage, helpMessage]) {
+    const open = (msg.match(/<b>/g) || []).length;
+    const close = (msg.match(/<\/b>/g) || []).length;
+    assert.equal(open, close, 'tags <b> devem estar balanceadas');
+    const openI = (msg.match(/<i>/g) || []).length;
+    const closeI = (msg.match(/<\/i>/g) || []).length;
+    assert.equal(openI, closeI, 'tags <i> devem estar balanceadas');
+  }
+});

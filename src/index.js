@@ -24,7 +24,10 @@ import {
   quickActionsKeyboard,
   renderStats,
   escapeHtml,
-  html
+  html,
+  privacyNotice,
+  loadingStatsMessage,
+  loadingRankingMessage
 } from './ui.js';
 
 if (!BOT_TOKEN) {
@@ -32,7 +35,7 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
-const bot = new Telegraf(BOT_TOKEN, { handlerTimeout: 60_000 });
+const bot = new Telegraf(BOT_TOKEN, { handlerTimeout: 10 * 60_000 });
 
 /** telegramId -> { step, roleId, zoneId, expiresAt } */
 const registration = new Map();
@@ -59,6 +62,18 @@ const cleanupTimer = setInterval(() => {
   }
 }, 60_000);
 cleanupTimer.unref();
+
+/**
+ * O indicador "digitando..." do Telegram expira em ~5s. Como a API do MLBB pode
+ * levar minutos, mantemos o indicador vivo até a resposta chegar.
+ */
+function keepTyping(ctx) {
+  const send = () => ctx.replyWithChatAction('typing').catch(() => {});
+  send();
+  const timer = setInterval(send, 4000);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
 
 async function dropSession(userId) {
   authenticatedPlayers.delete(userId);
@@ -208,7 +223,9 @@ async function handleVerificationCode(ctx, value, state) {
       `👤 <b>${escapeHtml(name)}</b>\n` +
       `🆔 ID: <code>${escapeHtml(state.roleId)}</code>\n` +
       `🌐 Zone: <code>${escapeHtml(state.zoneId)}</code>\n\n` +
-      'Seu jogador foi vinculado ao <b>SEGA Stats</b>. Use /stats para ver seus números.',
+      'Seu jogador foi vinculado ao <b>SEGA Stats</b>.\n\n' +
+      privacyNotice +
+      '\n\n📊 Agora é só usar /stats — a primeira consulta pode levar alguns minutos.',
     html(mainKeyboard())
   );
 }
@@ -226,8 +243,16 @@ async function sendStats(ctx) {
     return;
   }
 
-  await ctx.replyWithChatAction('typing').catch(() => {});
+  await ctx.reply(loadingStatsMessage, html());
+  const stopTyping = keepTyping(ctx);
+  try {
+    await runStats(ctx, player);
+  } finally {
+    stopTyping();
+  }
+}
 
+async function runStats(ctx, player) {
   const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
 
   if (info.unauthorized) {
@@ -263,7 +288,8 @@ async function sendStats(ctx) {
     await ctx.reply(
       '⚠️ <b>Sua sessão está válida, mas a API não retornou estatísticas.</b>\n\n' +
         (result.message ? `📋 Detalhe: <code>${escapeHtml(result.message).slice(0, 150)}</code>\n\n` : '') +
-        'Verifique se o <b>histórico de batalhas está público</b> nas configurações de privacidade do Mobile Legends e tente de novo.',
+        privacyNotice +
+        '\n\nAjuste a privacidade no jogo, aguarde alguns minutos e tente /stats de novo.',
       html(mainKeyboard())
     );
     return;
@@ -305,9 +331,16 @@ async function sendRanking(ctx) {
     return;
   }
 
-  await ctx.reply('🏆 <b>Calculando o ranking do SEGA...</b>\n\n⚔️ Consultando os dados dos jogadores vinculados.', html());
-  await ctx.replyWithChatAction('typing').catch(() => {});
+  await ctx.reply(loadingRankingMessage, html());
+  const stopTyping = keepTyping(ctx);
+  try {
+    await runRanking(ctx, players);
+  } finally {
+    stopTyping();
+  }
+}
 
+async function runRanking(ctx, players) {
   const expired = [];
 
   const rows = await mapWithLimit(players, RANKING_CONCURRENCY, async ([telegramId, player]) => {
@@ -349,7 +382,9 @@ async function sendRanking(ctx) {
 
   if (!ranking.length) {
     await ctx.reply(
-      '⚠️ <b>RANKING SEGA</b>\n\nOs jogadores estão autenticados, mas a API não retornou estatísticas suficientes agora.\n\nTente novamente em alguns instantes.',
+      '⚠️ <b>RANKING SEGA</b>\n\nOs jogadores estão autenticados, mas a API não retornou estatísticas agora.\n\n' +
+        privacyNotice +
+        '\n\n⏳ A API também pode estar lenta. Tente novamente em alguns minutos.',
       html(mainKeyboard())
     );
     return;
