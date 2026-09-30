@@ -3,7 +3,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
-import { sdkSendVerificationCode, sdkLogin, sdkGetInfo } from './providers/rone-sdk.js';
+import { sdkSendVerificationCode, sdkLogin, sdkGetInfo, sdkGetStats, sdkGetSeasons, sdkGetMatches } from './providers/rone-sdk.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -154,64 +154,83 @@ function parseMatchStats(matches) {
 }
 
 async function fetchPlayerStats(jwt) {
-  // Preferir /user/stats quando disponível (ainda funciona em muitos casos, apesar de deprecated).
+  // TESTE SDK: nesta branch, stats/temporada/partidas passam pelo mlbb-sdk.
+  if (MLBB_PROVIDER === 'sdk') {
+    try {
+      const stats = await sdkGetStats(jwt);
+      console.log('🧪 SDK getStats OK:', JSON.stringify(stats));
+      if (stats?.code === 0 || stats?.code === '0' || stats?.data) {
+        return { source: 'sdk-stats', data: stats.data ?? stats };
+      }
+      throw new Error(stats?.msg || stats?.message || 'SDK getStats não retornou dados.');
+    } catch (statsError) {
+      console.error('🧪 SDK getStats ERRO:', statsError);
+      try {
+        const seasons = await sdkGetSeasons(jwt);
+        console.log('🧪 SDK getSeason resultado:', JSON.stringify(seasons));
+        const sids = Array.isArray(seasons?.data?.sids) ? seasons.data.sids : [];
+        if (!sids.length) throw new Error(seasons?.msg || seasons?.message || 'SDK getSeason não retornou temporadas.');
+
+        let lastError = null;
+        for (const sid of sids.slice(0, 3)) {
+          try {
+            const matches = await sdkGetMatches(jwt, sid);
+            console.log('🧪 SDK getMatches sid=' + sid + ' resultado:', JSON.stringify(matches));
+            if (matches?.code !== 0 && matches?.code !== '0' && !matches?.data) {
+              lastError = new Error(matches?.msg || matches?.message || 'SDK getMatches rejeitou a temporada.');
+              continue;
+            }
+            const rows = matches?.data?.result ?? matches?.result ?? [];
+            if (Array.isArray(rows) && rows.length) {
+              return { source: 'sdk-matches', data: parseMatchStats(rows), sid };
+            }
+            lastError = new Error('SDK getMatches retornou zero partidas.');
+          } catch (matchError) {
+            console.error('🧪 SDK getMatches ERRO sid=' + sid + ':', matchError);
+            lastError = matchError;
+          }
+        }
+        throw lastError || new Error('SDK não retornou partidas.');
+      } catch (fallbackError) {
+        const detail = [
+          'SDK getStats: ' + (statsError?.message || String(statsError)),
+          'SDK fallback: ' + (fallbackError?.message || String(fallbackError))
+        ].join(' | ');
+        const error = new Error(detail);
+        error.sdkStatsError = statsError;
+        error.sdkFallbackError = fallbackError;
+        throw error;
+      }
+    }
+  }
+
+  // Provider Rone legado.
   const direct = await apiJson('/user/stats?lang=pt', { headers: authHeaders(jwt) });
   if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
     const data = direct.body.data;
-    // Se vier com totais úteis, usa direto.
-    if (data.tc != null || data.wc != null) {
-      return { source: 'stats', data };
-    }
+    if (data.tc != null || data.wc != null) return { source: 'stats', data };
   }
 
-  // Fallback: montar estatísticas a partir da temporada + partidas recentes.
-  // IMPORTANTE: a API só aceita lang=pt (não pt_BR).
   const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
   const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
   if (!season.response.ok || season.body?.code !== 0 || sids.length === 0) {
-    console.error('❌ Fallback season falhou:', season.response?.status, season.body);
-    return {
-      source: 'error',
-      response: season.response?.ok === false ? season.response : direct.response,
-      body: season.body?.code !== 0 ? season.body : direct.body
-    };
+    return { source: 'error', response: season.response?.ok === false ? season.response : direct.response, body: season.body?.code !== 0 ? season.body : direct.body };
   }
 
-  // Tenta a temporada mais recente e, se vier vazia, as anteriores.
   let lastError = null;
   for (const sid of sids.slice(0, 3)) {
-    const matches = await apiJson(
-      '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt',
-      { headers: authHeaders(jwt) }
-    );
-
+    const matches = await apiJson('/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt', { headers: authHeaders(jwt) });
     if (!matches.response.ok || matches.body?.code !== 0) {
       lastError = { response: matches.response, body: matches.body };
-      console.error('❌ Matches sid=' + sid + ' falhou:', matches.response?.status, matches.body);
       continue;
     }
-
     const rows = matches.body?.data?.result;
-    if (Array.isArray(rows) && rows.length > 0) {
-      return { source: 'matches', data: parseMatchStats(rows), sid };
-    }
-
-    // Temporada sem partidas — tenta a próxima.
+    if (Array.isArray(rows) && rows.length) return { source: 'matches', data: parseMatchStats(rows), sid };
     lastError = { response: matches.response, body: matches.body };
   }
 
-  // Nenhuma temporada retornou partidas. Se /user/stats tinha algo, usa mesmo assim.
-  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
-    return { source: 'stats', data: direct.body.data };
-  }
-
-  return {
-    source: 'error',
-    response: lastError?.response || direct.response,
-    body: lastError?.body || direct.body
-  };
+  return { source: 'error', response: lastError?.response || direct.response, body: lastError?.body || direct.body };
 }
-
 function renderStats(data) {
   const matches = Number(data.matches ?? data.tc ?? 0);
   const wins = Number(data.wins ?? data.wc ?? 0);
@@ -564,13 +583,13 @@ async function sendStats(ctx) {
         await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
         return;
       }
-      const apiMsg = statsResult.body?.message || statsResult.body?.msg || '';
-      console.error('❌ Erro da API de stats:', status, statsResult.body);
+      console.error('❌ Erro da API/SDK de stats:', status, statsResult.body || statsResult.error);
+      const rawError = statsResult.error?.message || statsResult.body?.message || statsResult.body?.msg || 'Erro desconhecido';
+      const safeError = String(rawError).slice(0, 1800).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       await ctx.reply(
-        '⚠️ <b>Sua autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\n' +
-        'O bot tentou /user/stats e o fallback por temporada/partidas.\n' +
-        (apiMsg ? ('Detalhe da API: <code>' + String(apiMsg).slice(0, 120) + '</code>\n\n') : '') +
-        'Verifique se o histórico de batalhas está <b>público</b> nas configurações de privacidade do Mobile Legends e tente de novo.',
+        '🧪 <b>TESTE SDK — ERRO REAL</b>\\n\\n' +
+        '<code>' + safeError + '</code>\\n\\n' +
+        'Esse texto é temporário e será removido depois do teste.',
         { parse_mode: 'HTML' }
       );
       return;
@@ -580,7 +599,12 @@ async function sendStats(ctx) {
 
   } catch (error) {
     console.error('❌ Erro ao consultar stats:', error);
-    await ctx.reply('⚠️ Não foi possível consultar a API agora. Tente novamente em alguns instantes.');
+    const safeError = String(error?.message || error).slice(0, 1800).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    await ctx.reply(
+      '🧪 <b>TESTE SDK — EXCEÇÃO REAL</b>\\n\\n<code>' + safeError + '</code>\\n\\n' +
+      'Esse texto é temporário e será removido depois do teste.',
+      { parse_mode: 'HTML' }
+    );
   }
 }
 
