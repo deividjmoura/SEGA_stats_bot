@@ -351,27 +351,43 @@ bot.on('text', async (ctx, next) => {
     await ctx.reply('🔐 <b>Validando o código...</b>', { parse_mode: 'HTML' });
 
     try {
+      const payload = {
+        role_id: Number(roleId),
+        zone_id: Number(zoneId),
+        vc: Number(value)
+      };
       const response = await apiFetch('/user/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(zoneId), vc: Number(value) })
+        body: JSON.stringify(payload)
       });
       const body = await response.json().catch(() => ({}));
 
-      if (!response.ok || body.code !== 0 || !body.data?.jwt) {
-        console.error('❌ Falha na autenticação:', response.status, body);
-        await ctx.reply('❌ <b>Não foi possível validar o código.</b>\n\nVerifique se você digitou o código corretamente e se ele ainda está dentro do prazo de validade (5 minutos).', { parse_mode: 'HTML' });
+      // Aceita jwt ou token (a API devolve os dois no sucesso)
+      const jwt = body?.data?.jwt || body?.data?.token || null;
+      const ok = response.ok && (body.code === 0 || body.code === '0') && jwt;
+
+      if (!ok) {
+        const apiMsg = body?.msg || body?.message || body?.detail || '';
+        console.error('❌ Falha na autenticação:', response.status, JSON.stringify(body), 'payload=', payload);
+        let reply =
+          '❌ <b>Não foi possível validar o código.</b>\n\n' +
+          'Verifique se você digitou o código corretamente e se ele ainda está dentro do prazo de validade (5 minutos).\n\n' +
+          'Você pode enviar o código novamente ou digitar /cancelar para recomeçar.';
+        if (apiMsg) {
+          reply += '\n\n📋 Detalhe da API: <code>' + String(apiMsg).slice(0, 150) + '</code>';
+        }
+        await ctx.reply(reply, { parse_mode: 'HTML' });
         return;
       }
 
-      const jwt = body.data.jwt;
-      const infoResponse = await apiFetch('/user/info', { headers: { Authorization: `Bearer ${jwt}` } });
+      const infoResponse = await apiFetch('/user/info', { headers: { Authorization: 'Bearer ' + jwt } });
       const infoBody = await infoResponse.json().catch(() => ({}));
 
-      if (!infoResponse.ok || infoBody.code !== 0) {
+      if (!infoResponse.ok || (infoBody.code !== 0 && infoBody.code !== '0')) {
         console.error('❌ Login realizado, mas não consegui consultar o perfil:', infoResponse.status, infoBody);
-        registration.delete(ctx.from.id);
-        await ctx.reply('⚠️ A autenticação foi concluída, mas a API não confirmou o perfil agora. Nenhuma sessão foi salva. Tente novamente em alguns instantes.', { parse_mode: 'HTML' });
+        // Não apaga o registration para o usuário poder tentar de novo com outro código se quiser
+        await ctx.reply('⚠️ A autenticação retornou token, mas a API não confirmou o perfil agora. Tente novamente em alguns instantes ou envie o código de novo.', { parse_mode: 'HTML' });
         return;
       }
 
@@ -389,7 +405,7 @@ bot.on('text', async (ctx, next) => {
       );
     } catch (error) {
       console.error('❌ Erro ao autenticar jogador:', error);
-      await ctx.reply('⚠️ Ocorreu um erro ao validar o código. Tente novamente.');
+      await ctx.reply('⚠️ Ocorreu um erro de conexão ao validar o código. Tente novamente em alguns segundos.');
     }
   }
 });
