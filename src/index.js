@@ -3,9 +3,11 @@ import { Telegraf, Markup } from 'telegraf';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
+import { sdkSendVerificationCode, sdkLogin, sdkGetInfo } from './providers/rone-sdk.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
+const MLBB_PROVIDER = process.env.MLBB_PROVIDER || 'rone';
 const SESSION_FILE = process.env.SESSION_FILE || ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/sessions.json');
 const API_TIMEOUT_MS = 12000;
 const SESSION_KEY = crypto.createHash('sha256').update(token || '').digest();
@@ -309,6 +311,14 @@ bot.on('text', async (ctx, next) => {
     await ctx.reply('🔎 <b>Solicitando código de verificação...</b>\n\n📩 Um código será enviado para o correio interno do Mobile Legends.\n⏱️ O código é válido por 5 minutos.', { parse_mode: 'HTML' });
 
     try {
+      if (MLBB_PROVIDER === 'sdk') {
+        const result = await sdkSendVerificationCode(roleId, value);
+        if (result?.code !== 0 && result?.code !== '0') throw new Error(result?.msg || 'SDK rejeitou a solicitação do código.');
+        registration.set(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
+        await ctx.reply('🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n📩 O código foi solicitado pelo SDK e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n⏱️ <b>O código é válido por 5 minutos.</b>\n\nDigite /cancelar para cancelar o processo.', { parse_mode: 'HTML' });
+        return;
+      }
+
       const response = await apiFetch('/user/auth/send-vc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -351,6 +361,24 @@ bot.on('text', async (ctx, next) => {
     await ctx.reply('🔐 <b>Validando o código...</b>', { parse_mode: 'HTML' });
 
     try {
+      if (MLBB_PROVIDER === 'sdk') {
+        const session = await sdkLogin(roleId, zoneId, value);
+        const jwt = session.getToken();
+        const info = await sdkGetInfo(jwt);
+        const infoOk = info?.code === 0 || info?.code === '0';
+        if (!jwt || !infoOk) throw new Error(info?.msg || 'SDK autenticou sem confirmar o perfil.');
+        authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId });
+        await saveSessions();
+        registration.delete(ctx.from.id);
+        await ctx.reply('✅ <b>CONTA VERIFICADA!</b>\n\n' +
+          `👤 <b>${info.data?.name ?? 'Jogador'}</b>\n` +
+          `🆔 ID: <code>${roleId}</code>\n` +
+          `🌐 Zone: <code>${zoneId}</code>\n\n` +
+          '🧪 Autenticação realizada pelo <b>mlbb-sdk</b>. A consulta de estatísticas continuará sendo testada nesta branch.',
+          { parse_mode: 'HTML' });
+        return;
+      }
+
       const payload = {
         role_id: Number(roleId),
         zone_id: Number(zoneId),
