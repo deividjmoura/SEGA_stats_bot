@@ -15,7 +15,8 @@ Bot do clã **SEGA** para Telegram + Mobile Legends: Bang Bang.
 | Comando      | Descrição                       |
 | ------------ | ------------------------------- |
 | `/start`     | Menu principal                  |
-| `/cadastrar` | Vincular seu jogador do MLBB    |
+| `/cadastrar` | Vincular seu jogador (1ª vez)   |
+| `/entrar`    | Reconectar sem redigitar IDs    |
 | `/stats`     | Suas estatísticas               |
 | `/ranking`   | Ranking do clã                  |
 | `/clan`      | Painel do clã                   |
@@ -23,6 +24,7 @@ Bot do clã **SEGA** para Telegram + Mobile Legends: Bang Bang.
 | `/cancelar`  | Cancelar o cadastro em andamento|
 | `/sair`      | Desvincular sua conta           |
 | `/ajuda`     | Ajuda                           |
+| `/diag`      | Diagnóstico da API (admin)      |
 
 ## Stack
 
@@ -40,7 +42,8 @@ Bot do clã **SEGA** para Telegram + Mobile Legends: Bang Bang.
    | Variável       | Obrigatória | Observação                                          |
    | -------------- | ----------- | --------------------------------------------------- |
    | `BOT_TOKEN`    | ✅          | Token do BotFather                                   |
-   | `MLBB_API_URL` | ❌          | Padrão `https://arena.rone.dev/api`                  |
+   | `MLBB_API_URL` | ❌          | Lista separada por vírgula; há failover embutido     |
+   | `ADMIN_TELEGRAM_ID` | ❌     | Restringe o `/diag` a você                           |
    | `PORT`         | ❌          | A Railway injeta sozinha                             |
 
 3. **Settings → Deploy → Replicas = 1.**
@@ -48,7 +51,7 @@ Bot do clã **SEGA** para Telegram + Mobile Legends: Bang Bang.
    com erro `409: Conflict`.
 4. O healthcheck usa `GET /` (já configurado em `railway.json`).
 
-### Persistir as sessões entre deploys
+### ⚠️ Persistir os cadastros entre deploys (OBRIGATÓRIO)
 
 O disco da Railway é **efêmero**: sem volume, todo mundo precisa se cadastrar de
 novo a cada deploy. Correção gratuita:
@@ -58,8 +61,27 @@ novo a cada deploy. Correção gratuita:
 3. Pronto. A Railway define `RAILWAY_VOLUME_MOUNT_PATH` e o bot passa a gravar em
    `/data/sessions.json` automaticamente.
 
+No boot o bot informa no log se o volume foi detectado, e o `/diag` mostra o mesmo.
+
 Os JWTs são gravados **criptografados** (AES-256-GCM, chave derivada do `BOT_TOKEN`).
 Se você trocar o token, as sessões antigas são descartadas — isso é esperado.
+
+**O JWT do MLBB expira sozinho depois de um tempo** — isso vem da Moonton e não dá
+para evitar. Mas o bot guarda o Role ID e o Zone ID em separado, então quando isso
+acontece o jogador usa `/entrar` e só precisa digitar o código novo: nunca mais
+precisa redigitar os IDs nem refazer o cadastro.
+
+### Sobre a API (Rone Arena)
+
+O bot fala com a [Rone Arena API](https://arena.rone.dev), gratuita e comunitária.
+Dois detalhes que quebram a integração se forem ignorados:
+
+- Ela fica atrás de um WAF que **rejeita clientes sem cara de navegador**. O bot
+  envia `User-Agent`, `Accept`, `Origin` e `Referer` reais — sem isso a resposta
+  vem em HTML e o JSON.parse falha.
+- O parâmetro de idioma aceita só `pt` (não `pt_BR`), senão a API devolve 422.
+
+Há **failover automático** entre `arena.rone.dev` e `arena-hv.fastapicloud.dev`.
 
 ### Modo webhook (opcional)
 

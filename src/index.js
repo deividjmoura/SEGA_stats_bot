@@ -3,17 +3,27 @@ import { Telegraf } from 'telegraf';
 
 import {
   BOT_TOKEN,
-  API_BASE,
   PORT,
   SESSION_FILE,
   WEBHOOK_URL,
   WEBHOOK_SECRET,
   WEBHOOK_PATH,
-  REGISTRATION_TTL_MS
+  REGISTRATION_TTL_MS,
+  ADMIN_ID,
+  HAS_PERSISTENT_DISK,
+  API_BASES
 } from './config.js';
-import { apiJson, authHeaders, jsonHeaders } from './api.js';
-import { authenticatedPlayers, restoreSessions, saveSessions } from './sessions.js';
-import { fetchPlayerStats, normalizeStats } from './stats.js';
+import { apiJson, authHeaders, jsonHeaders, currentBase } from './api.js';
+import {
+  authenticatedPlayers,
+  knownPlayers,
+  restoreSessions,
+  saveSessions,
+  rememberPlayer,
+  expireSession,
+  forgetPlayer
+} from './sessions.js';
+import { fetchPlayerStats, normalizeStats, readUserName } from './stats.js';
 import {
   BUTTONS,
   BUTTON_LABELS,
@@ -75,9 +85,23 @@ function keepTyping(ctx) {
   return () => clearInterval(timer);
 }
 
+/** Sessão inválida: some com o JWT mas guarda ID/Zone para o próximo login. */
 async function dropSession(userId) {
-  authenticatedPlayers.delete(userId);
+  expireSession(userId);
   await saveSessions();
+}
+
+/** Mensagem padrão de sessão expirada, já oferecendo o relogin curto. */
+function expiredSessionMessage(userId) {
+  const known = knownPlayers.get(userId);
+  if (known) {
+    return (
+      '🔐 <b>Sua sessão com o Mobile Legends expirou.</b>\n\n' +
+      `Seus dados seguem salvos aqui (ID <code>${escapeHtml(String(known.roleId))}</code>).\n\n` +
+      '👉 Use /entrar para receber um novo código — <b>não precisa digitar seus IDs de novo</b>.'
+    );
+  }
+  return '🔐 <b>Sua autenticação expirou.</b>\n\nUse /cadastrar para vincular seu jogador.';
 }
 
 // ---------------------------------------------------------------- menus
@@ -110,6 +134,19 @@ async function sendClan(ctx) {
 
 // ---------------------------------------------------------------- cadastro
 
+/** Reenvia o código usando os IDs já salvos — sem redigitar nada. */
+async function quickLogin(ctx) {
+  const known = knownPlayers.get(ctx.from.id);
+  if (!known) {
+    await ctx.reply(
+      'Ainda não conheço seu jogador. Use /cadastrar para vincular pela primeira vez.',
+      html(mainKeyboard())
+    );
+    return;
+  }
+  await requestVerificationCode(ctx, known.roleId, String(known.zoneId));
+}
+
 function askForRoleId(ctx) {
   setRegistration(ctx.from.id, { step: 'role_id' });
   return ctx.reply(
@@ -135,9 +172,17 @@ async function handleZoneId(ctx, value, state) {
     await ctx.reply('⚠️ Zone ID inválido. Envie <b>somente os números</b> do seu Zone ID.', html());
     return;
   }
+  await requestVerificationCode(ctx, state.roleId, value);
+}
 
+/**
+ * Pede o código de verificação à API e coloca o usuário no passo de digitar o código.
+ * Usado tanto no cadastro novo quanto no relogin rápido (/entrar).
+ */
+async function requestVerificationCode(ctx, roleId, zoneId) {
   await ctx.reply(
     '🔎 <b>Solicitando código de verificação...</b>\n\n' +
+      `🆔 ID <code>${escapeHtml(String(roleId))}</code>  •  🌐 Zone <code>${escapeHtml(String(zoneId))}</code>\n\n` +
       '📩 O código chega no correio interno do Mobile Legends.\n⏱️ Validade: 5 minutos.',
     html()
   );
@@ -145,22 +190,17 @@ async function handleZoneId(ctx, value, state) {
   const result = await apiJson('/user/auth/send-vc', {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify({ role_id: Number(state.roleId), zone_id: Number(value) })
+    body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(zoneId) })
   });
 
   if (!result.ok) {
-    console.error('❌ Falha ao solicitar código:', result.status, result.message);
+    console.error('❌ send-vc falhou:', result.status, result.message, '|', result.diagnostic);
     registration.delete(ctx.from.id);
-    await ctx.reply(
-      '⚠️ <b>Não consegui solicitar o código agora.</b>\n\n' +
-        'Confira se o ID e o Zone ID estão corretos e tente de novo com /cadastrar.' +
-        (result.message ? `\n\n📋 API: <code>${escapeHtml(result.message).slice(0, 150)}</code>` : ''),
-      html()
-    );
+    await ctx.reply(explainApiFailure(result, roleId, zoneId), html(mainKeyboard()));
     return;
   }
 
-  setRegistration(ctx.from.id, { step: 'verification_code', roleId: state.roleId, zoneId: value });
+  setRegistration(ctx.from.id, { step: 'verification_code', roleId, zoneId });
   await ctx.reply(
     '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
       '📩 O código foi enviado para o <b>correio interno do Mobile Legends</b>.\n\n' +
@@ -168,6 +208,43 @@ async function handleZoneId(ctx, value, state) {
       '🔒 <b>Segurança:</b> nunca pedimos sua senha, e-mail ou códigos de outras plataformas.\n\n' +
       '⏱️ O código é válido por 5 minutos.\n\nDigite /cancelar para desistir.',
     html()
+  );
+}
+
+/** Traduz a falha da API numa explicação útil, em vez de um "deu erro" genérico. */
+function explainApiFailure(result, roleId, zoneId) {
+  const header = '⚠️ <b>Não consegui solicitar o código agora.</b>\n\n';
+
+  if (result.status === 0) {
+    return (
+      header +
+      '🌐 A API do MLBB não respondeu (fora do ar ou muito lenta).\n\n' +
+      'Isso é do serviço externo, não do seu cadastro. Tente de novo em alguns minutos.'
+    );
+  }
+
+  if (result.status === 422) {
+    return (
+      header +
+      `O ID <code>${escapeHtml(String(roleId))}</code> ou o Zone <code>${escapeHtml(String(zoneId))}</code> foi recusado.\n\n` +
+      'Confira os dois no jogo: <i>Perfil → o número aparece como ID(Zone)</i>, por exemplo <code>907314674(1375)</code>.\n\n' +
+      'Depois tente /cadastrar de novo.' +
+      (result.message ? `\n\n📋 API: <code>${escapeHtml(result.message).slice(0, 150)}</code>` : '')
+    );
+  }
+
+  if (result.status === 429) {
+    return (
+      header +
+      '🚦 Muitas tentativas em pouco tempo. A API limitou temporariamente.\n\nEspere uns 10 minutos e tente de novo.'
+    );
+  }
+
+  return (
+    header +
+    `A API respondeu <b>HTTP ${result.status}</b>.\n\n` +
+    (result.message ? `📋 <code>${escapeHtml(result.message).slice(0, 200)}</code>\n\n` : '') +
+    'Se continuar, avise o admin do clã para rodar /diag.'
   );
 }
 
@@ -213,8 +290,8 @@ async function handleVerificationCode(ctx, value, state) {
     return;
   }
 
-  const name = info.body?.data?.name ?? 'Jogador';
-  authenticatedPlayers.set(ctx.from.id, { jwt, roleId: state.roleId, zoneId: state.zoneId, name });
+  const name = readUserName(info.body) ?? 'Jogador';
+  rememberPlayer(ctx.from.id, { jwt, roleId: state.roleId, zoneId: state.zoneId, name });
   await saveSessions();
   registration.delete(ctx.from.id);
 
@@ -236,10 +313,7 @@ async function sendStats(ctx) {
   const player = authenticatedPlayers.get(ctx.from.id);
 
   if (!player?.jwt) {
-    await ctx.reply(
-      '📊 <b>SUAS ESTATÍSTICAS</b>\n\nVocê ainda não tem uma sessão autenticada.\n\nUse /cadastrar para vincular seu jogador.',
-      html(mainKeyboard())
-    );
+    await ctx.reply(expiredSessionMessage(ctx.from.id), html(mainKeyboard()));
     return;
   }
 
@@ -257,7 +331,7 @@ async function runStats(ctx, player) {
 
   if (info.unauthorized) {
     await dropSession(ctx.from.id);
-    await ctx.reply('🔐 <b>Sua autenticação expirou.</b>\n\nUse /cadastrar para autenticar novamente.', html(mainKeyboard()));
+    await ctx.reply(expiredSessionMessage(ctx.from.id), html(mainKeyboard()));
     return;
   }
 
@@ -269,9 +343,9 @@ async function runStats(ctx, player) {
     return;
   }
 
-  const name = info.body?.data?.name || player.name || null;
+  const name = readUserName(info.body) || player.name || null;
   if (name && name !== player.name) {
-    authenticatedPlayers.set(ctx.from.id, { ...player, name });
+    rememberPlayer(ctx.from.id, { ...player, name });
     saveSessions();
   }
 
@@ -280,7 +354,7 @@ async function runStats(ctx, player) {
   if (result.source === 'error') {
     if (result.unauthorized) {
       await dropSession(ctx.from.id);
-      await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar de novo.', html(mainKeyboard()));
+      await ctx.reply(expiredSessionMessage(ctx.from.id), html(mainKeyboard()));
       return;
     }
 
@@ -359,7 +433,7 @@ async function runRanking(ctx, players) {
 
     const s = normalizeStats(stats.data);
     return {
-      name: info.body?.data?.name || player.name || 'Jogador',
+      name: readUserName(info.body) || player.name || 'Jogador',
       matches: s.matches,
       wins: s.wins,
       winRate: s.winRate,
@@ -369,7 +443,7 @@ async function runRanking(ctx, players) {
   });
 
   if (expired.length) {
-    for (const telegramId of expired) authenticatedPlayers.delete(telegramId);
+    for (const telegramId of expired) expireSession(telegramId);
     await saveSessions();
   }
 
@@ -408,12 +482,70 @@ async function runRanking(ctx, players) {
   );
 }
 
+// ---------------------------------------------------------------- diagnóstico
+
+/**
+ * Testa a API de dentro da Railway e mostra exatamente o que está acontecendo.
+ * É o atalho para descobrir se a culpa é do bot, da API ou do cadastro do jogador.
+ */
+async function sendDiagnostics(ctx) {
+  if (ADMIN_ID && ctx.from.id !== ADMIN_ID) {
+    await ctx.reply('Esse comando é só para o admin do clã.', html(mainKeyboard()));
+    return;
+  }
+
+  await ctx.reply('🩺 <b>Testando a API...</b>', html());
+
+  const checks = [];
+
+  // 1. Endpoint público: mostra se a API responde e se o WAF está deixando passar.
+  const heroes = await apiJson('/heroes?size=1');
+  checks.push({
+    name: 'API pública (/heroes)',
+    ok: heroes.ok,
+    detail: heroes.ok ? 'respondeu JSON normalmente' : `HTTP ${heroes.status} — ${heroes.message || 'sem mensagem'}`
+  });
+
+  // 2. Sessão do próprio usuário, se houver.
+  const player = authenticatedPlayers.get(ctx.from.id);
+  if (player?.jwt) {
+    const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
+    checks.push({
+      name: 'Sua sessão (/user/info)',
+      ok: info.ok,
+      detail: info.ok ? `válida — ${readUserName(info.body) || 'sem nome'}` : `HTTP ${info.status} — ${info.message || 'expirada'}`
+    });
+  } else {
+    checks.push({ name: 'Sua sessão', ok: false, detail: 'nenhuma sessão ativa neste Telegram' });
+  }
+
+  const lines = checks.map((c) => `${c.ok ? '✅' : '❌'} <b>${c.name}</b>\n   ${escapeHtml(c.detail)}`);
+
+  const diagnostic = heroes.diagnostic ? `\n\n🔍 Tentativas:\n<code>${escapeHtml(heroes.diagnostic).slice(0, 400)}</code>` : '';
+
+  await ctx.reply(
+    '🩺 <b>DIAGNÓSTICO</b>\n\n' +
+      lines.join('\n\n') +
+      '\n\n⚙️ <b>Ambiente</b>\n' +
+      `   Host em uso: <code>${escapeHtml(currentBase())}</code>\n` +
+      `   Hosts configurados: ${API_BASES.length}\n` +
+      `   Volume persistente: ${HAS_PERSISTENT_DISK ? '✅ sim' : '❌ NÃO (cadastros somem no deploy)'}\n` +
+      `   Jogadores conhecidos: ${knownPlayers.size}\n` +
+      `   Sessões ativas: ${authenticatedPlayers.size}\n` +
+      `   Uptime: ${Math.round(process.uptime() / 60)} min` +
+      diagnostic,
+    html(mainKeyboard())
+  );
+}
+
 // ---------------------------------------------------------------- handlers
 // Ordem importa no Telegraf: comandos e botões ANTES do handler genérico de texto.
 
 bot.start(sendMenu);
 bot.command('menu', sendMenu);
 bot.command('cadastrar', askForRoleId);
+bot.command('entrar', quickLogin);
+bot.command('diag', sendDiagnostics);
 bot.command('ajuda', sendHelp);
 bot.command('help', sendHelp);
 bot.command('stats', sendStats);
@@ -430,11 +562,12 @@ bot.command('cancelar', async (ctx) => {
 });
 
 bot.command('sair', async (ctx) => {
-  if (!authenticatedPlayers.has(ctx.from.id)) {
+  if (!knownPlayers.has(ctx.from.id)) {
     await ctx.reply('Você não tem nenhuma conta vinculada.', html(mainKeyboard()));
     return;
   }
-  await dropSession(ctx.from.id);
+  forgetPlayer(ctx.from.id);
+  await saveSessions();
   await ctx.reply('👋 Conta desvinculada. Use /cadastrar quando quiser voltar.', html(mainKeyboard()));
 });
 
@@ -504,6 +637,7 @@ bot.catch(async (error, ctx) => {
 const COMMANDS = [
   { command: 'start', description: 'Abrir o menu principal' },
   { command: 'cadastrar', description: 'Cadastrar jogador' },
+  { command: 'entrar', description: 'Reconectar sem redigitar os IDs' },
   { command: 'stats', description: 'Ver minhas estatísticas' },
   { command: 'ranking', description: 'Ver ranking do clã' },
   { command: 'clan', description: 'Ver o clã SEGA' },
@@ -551,7 +685,7 @@ function startHealthServer() {
 }
 
 async function main() {
-  console.log('🌐 API MLBB:', API_BASE);
+  console.log('🌐 Hosts da API MLBB:', API_BASES.join(', '));
   console.log('💾 Arquivo de sessão:', SESSION_FILE);
 
   await restoreSessions();

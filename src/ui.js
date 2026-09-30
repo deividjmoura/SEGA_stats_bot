@@ -33,12 +33,14 @@ Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua bat
 export const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 
 🎮 <code>/start</code> — abrir o menu principal
-📝 <code>/cadastrar</code> — cadastrar seu jogador
+📝 <code>/cadastrar</code> — vincular seu jogador (só na primeira vez)
+🔑 <code>/entrar</code> — reconectar sem redigitar seus IDs
 📊 <code>/stats</code> — suas estatísticas
 🏆 <code>/ranking</code> — ranking do clã
 👥 <code>/clan</code> — painel do clã SEGA
 📜 <code>/lore</code> — crônicas e heróis
 ❌ <code>/cancelar</code> — cancelar o cadastro em andamento
+🚪 <code>/sair</code> — desvincular sua conta
 ❓ <code>/ajuda</code> — mostrar esta ajuda
 
 ⚠️ <b>Para o /stats e o /ranking funcionarem</b>, seu <b>histórico de batalhas precisa estar público</b> no Mobile Legends:
@@ -115,12 +117,16 @@ export function renderStats(s, playerName) {
 
   if (s.hasKda) {
     const kda = s.deaths > 0 ? ((s.kills + s.assists) / s.deaths).toFixed(2) : '∞';
-    lines.push(`⚔️ K/D/A: <b>${s.kills}/${s.deaths}/${s.assists}</b> (KDA ${kda})`);
+    const scope = s.recent ? ` <i>(${s.recent} recentes)</i>` : '';
+    lines.push(`⚔️ K/D/A: <b>${s.kills}/${s.deaths}/${s.assists}</b> (KDA ${kda})${scope}`);
   }
 
   lines.push(`⭐ Pontuação média: <b>${s.avgScore != null ? s.avgScore.toFixed(1) : 'N/D'}</b>`);
   lines.push(`👑 MVPs: <b>${s.mvps}</b>`);
+  if (s.winStreak) lines.push(`🔥 Maior sequência de vitórias: <b>${s.winStreak}</b>`);
   if (s.mostPlayed) lines.push(`🎯 Herói mais usado: <b>${escapeHtml(s.mostPlayed)}</b>`);
+  if (s.mostPlayedLane) lines.push(`🛡️ Rota mais jogada: <b>${escapeHtml(s.mostPlayedLane)}</b>`);
+  if (s.hours) lines.push(`⏱️ Tempo de jogo: <b>${Number(s.hours).toFixed(0)}h</b>`);
 
   lines.push('', '<i>SEGA: cada partida escreve uma linha da história.</i>');
   return lines.join('\n');

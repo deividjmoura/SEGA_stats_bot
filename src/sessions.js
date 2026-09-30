@@ -5,8 +5,15 @@ import { BOT_TOKEN, SESSION_FILE, HAS_PERSISTENT_DISK } from './config.js';
 
 const SESSION_KEY = crypto.createHash('sha256').update(BOT_TOKEN || '').digest();
 
-/** telegramId -> { jwt, roleId, zoneId, name } */
+/** telegramId -> { jwt, roleId, zoneId, name } — quem tem sessão válida. */
 export const authenticatedPlayers = new Map();
+
+/**
+ * telegramId -> { roleId, zoneId, name } — quem já se cadastrou algum dia.
+ * Sobrevive à expiração do JWT: assim o jogador só reenvia o código,
+ * sem ter que digitar ID e Zone de novo.
+ */
+export const knownPlayers = new Map();
 
 function encrypt(text) {
   const iv = crypto.randomBytes(12);
@@ -25,61 +32,109 @@ function decrypt(payload) {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
 }
 
-// Grava de forma serializada para não corromper o arquivo com escritas concorrentes.
+/** Registra o jogador nos dois mapas de uma vez. */
+export function rememberPlayer(telegramId, { jwt, roleId, zoneId, name }) {
+  knownPlayers.set(telegramId, { roleId, zoneId, name: name ?? knownPlayers.get(telegramId)?.name ?? null });
+  if (jwt) authenticatedPlayers.set(telegramId, { jwt, roleId, zoneId, name: name ?? null });
+}
+
+/**
+ * Remove apenas a sessão (JWT), preservando ID/Zone para o próximo login.
+ * É o que roda quando a API devolve 401/403.
+ */
+export function expireSession(telegramId) {
+  const player = authenticatedPlayers.get(telegramId);
+  if (player) {
+    knownPlayers.set(telegramId, {
+      roleId: player.roleId,
+      zoneId: player.zoneId,
+      name: player.name ?? null
+    });
+  }
+  authenticatedPlayers.delete(telegramId);
+}
+
+/** Desvincula de vez (comando /sair). */
+export function forgetPlayer(telegramId) {
+  authenticatedPlayers.delete(telegramId);
+  knownPlayers.delete(telegramId);
+}
+
 let writeChain = Promise.resolve();
 
 export function saveSessions() {
-  writeChain = writeChain.then(() => writeNow()).catch((error) => {
-    console.error('❌ Erro ao salvar sessões:', error.message);
-  });
+  writeChain = writeChain
+    .then(() => writeNow())
+    .catch((error) => console.error('❌ Erro ao salvar sessões:', error.message));
   return writeChain;
 }
 
 async function writeNow() {
   const stored = {};
-  for (const [telegramId, player] of authenticatedPlayers) {
+
+  // Grava todo mundo que o bot conhece, tenha sessão ativa ou não.
+  for (const [telegramId, known] of knownPlayers) {
+    const session = authenticatedPlayers.get(telegramId);
     stored[telegramId] = {
-      jwt: encrypt(player.jwt),
-      roleId: player.roleId,
-      zoneId: player.zoneId,
-      name: player.name ?? null,
+      jwt: session?.jwt ? encrypt(session.jwt) : null,
+      roleId: known.roleId,
+      zoneId: known.zoneId,
+      name: known.name ?? null,
       savedAt: new Date().toISOString()
     };
   }
 
   await fs.mkdir(dirname(SESSION_FILE), { recursive: true });
-  // Escrita atômica: grava em temporário e renomeia.
   const tmp = `${SESSION_FILE}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(stored, null, 2), 'utf8');
-  await fs.rename(tmp, SESSION_FILE);
+  await fs.rename(tmp, SESSION_FILE); // troca atômica: nunca deixa arquivo pela metade
 }
 
 export async function restoreSessions() {
   try {
     const raw = await fs.readFile(SESSION_FILE, 'utf8');
     const stored = JSON.parse(raw);
-    let restored = 0;
+    let sessions = 0;
+    let known = 0;
     let failed = 0;
 
-    for (const [telegramId, player] of Object.entries(stored)) {
-      // try por entrada: um registro corrompido não pode derrubar os outros.
+    for (const [rawId, player] of Object.entries(stored)) {
+      const telegramId = Number(rawId);
+      if (!Number.isFinite(telegramId) || !player?.roleId) {
+        failed += 1;
+        continue;
+      }
+
+      knownPlayers.set(telegramId, {
+        roleId: player.roleId,
+        zoneId: player.zoneId,
+        name: player.name ?? null
+      });
+      known += 1;
+
+      if (!player.jwt) continue;
+
+      // try por entrada: um registro corrompido não derruba os outros.
       try {
-        authenticatedPlayers.set(Number(telegramId), {
+        authenticatedPlayers.set(telegramId, {
           jwt: decrypt(player.jwt),
           roleId: player.roleId,
           zoneId: player.zoneId,
           name: player.name ?? null
         });
-        restored += 1;
+        sessions += 1;
       } catch {
         failed += 1;
       }
     }
 
-    console.log(`🔐 Sessões restauradas: ${restored}${failed ? ` (${failed} inválidas ignoradas)` : ''}`);
+    console.log(
+      `🔐 Restaurado: ${sessions} sessão(ões) ativa(s), ${known} jogador(es) conhecido(s)` +
+        (failed ? ` — ${failed} registro(s) inválido(s) ignorado(s)` : '')
+    );
   } catch (error) {
     if (error.code === 'ENOENT') {
-      console.log('🔐 Nenhum arquivo de sessão encontrado ainda. Começando do zero.');
+      console.log('🔐 Nenhum arquivo de sessão ainda. Começando do zero.');
     } else {
       console.error('❌ Erro ao restaurar sessões:', error.message);
     }
@@ -87,8 +142,12 @@ export async function restoreSessions() {
 
   if (!HAS_PERSISTENT_DISK) {
     console.warn(
-      '⚠️  Sem volume persistente. Na Railway o disco é efêmero e as sessões serão perdidas a cada deploy/restart.\n' +
-      '    Solução gratuita: adicione um Volume ao serviço (a env RAILWAY_VOLUME_MOUNT_PATH é usada automaticamente).'
+      '\n⚠️  ATENÇÃO: NENHUM VOLUME PERSISTENTE DETECTADO\n' +
+        '   O disco da Railway é efêmero: TODOS os cadastros serão perdidos no próximo deploy.\n' +
+        '   Correção (gratuita): Railway → seu serviço → Settings → Volumes → New Volume\n' +
+        '   Mount path: /data — e pronto, o bot detecta sozinho.\n'
     );
+  } else {
+    console.log('💾 Volume persistente OK — os cadastros sobrevivem aos deploys.');
   }
 }
