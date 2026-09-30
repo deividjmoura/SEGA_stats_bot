@@ -12,11 +12,11 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-const startMessage = `🎮 <b>CEGA STATS BOT</b>
+const startMessage = `🎮 <b>SEGA STATS BOT</b>
 
 Fala, guerreiro! 👊
 
-Bem-vindo ao bot oficial do clã <b>CEGA</b>.
+Bem-vindo ao bot oficial do clã <b>SEGA</b>.
 
 Aqui você vai poder:
 
@@ -31,7 +31,7 @@ Aqui você vai poder:
 
 Bora descobrir quem realmente carrega nesse clã. 😎🔥`;
 
-const helpMessage = `📚 <b>COMANDOS DO CEGA STATS</b>
+const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 
 🎮 <code>/start</code> — abrir o menu principal
 📝 <code>/cadastrar</code> — cadastrar seu jogador
