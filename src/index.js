@@ -251,7 +251,13 @@ function mainKeyboard() {
 
 function askForRoleId(ctx) {
   registration.set(ctx.from.id, { step: 'role_id' });
-  return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
+  return ctx.reply(
+    '📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>\n\n💡 <i>Responda esta mensagem (reply) para eu receber o ID — funciona no privado e no grupo.</i>',
+    {
+      parse_mode: 'HTML',
+      reply_markup: { force_reply: true, selective: true }
+    }
+  );
 }
 
 async function sendMenu(ctx) {
@@ -295,7 +301,13 @@ bot.on('text', async (ctx, next) => {
       return;
     }
     registration.set(ctx.from.id, { step: 'zone_id', roleId: value });
-    await ctx.reply('🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>', { parse_mode: 'HTML' });
+    await ctx.reply(
+      '🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>\n\n💡 <i>Responda esta mensagem (reply).</i>',
+      {
+        parse_mode: 'HTML',
+        reply_markup: { force_reply: true, selective: true }
+      }
+    );
     return;
   }
 
@@ -327,11 +339,14 @@ bot.on('text', async (ctx, next) => {
       await ctx.reply(
         '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
         '📩 O código foi solicitado e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n' +
-        '🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n' +
+        '🔢 Quando receber o código, <b>responda esta mensagem</b> com somente o código.\n\n' +
         '🔒 <b>Sua segurança é importante:</b> nunca enviaremos ou pediremos sua senha, seu e-mail ou códigos de outras plataformas. O código solicitado aqui é usado para concluir a autenticação e liberar a consulta das suas estatísticas.\n\n' +
         '⏱️ <b>O código é válido por 5 minutos.</b>\n\n' +
         'Digite /cancelar para cancelar o processo.',
-        { parse_mode: 'HTML' }
+        {
+          parse_mode: 'HTML',
+          reply_markup: { force_reply: true, selective: true }
+        }
       );
     } catch (error) {
       console.error('❌ Erro ao solicitar código:', error);
@@ -386,7 +401,6 @@ bot.on('text', async (ctx, next) => {
 
       if (!infoResponse.ok || (infoBody.code !== 0 && infoBody.code !== '0')) {
         console.error('❌ Login realizado, mas não consegui consultar o perfil:', infoResponse.status, infoBody);
-        // Não apaga o registration para o usuário poder tentar de novo com outro código se quiser
         await ctx.reply('⚠️ A autenticação retornou token, mas a API não confirmou o perfil agora. Tente novamente em alguns instantes ou envie o código de novo.', { parse_mode: 'HTML' });
         return;
       }
