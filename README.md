@@ -1,61 +1,113 @@
-# 🎮 CEGA Stats Bot
+# 🎮 SEGA Stats Bot
 
-Bot oficial do clã **CEGA** para Telegram + Mobile Legends: Bang Bang.
+Bot do clã **SEGA** para Telegram + Mobile Legends: Bang Bang.
 
-## O que ele vai fazer
+## O que ele faz
 
 - 🏆 Ranking do clã
 - ⚔️ Histórico e desempenho nas partidas
-- 🛡️ Estatísticas por rota
+- 🛡️ Herói mais jogado
 - 📊 Pontuação e evolução dos membros
-- 👥 Comparação de desempenho entre jogadores
-- 🔗 Vinculação da conta do Telegram ao jogador do MLBB
+- 🔗 Vinculação da conta do Telegram ao jogador do MLBB (via código do correio interno)
 
-## Comandos iniciais
+## Comandos
 
-- `/start` — apresenta o bot e mostra as opções
-- `/cadastrar` — inicia o cadastro do jogador
-- `/ranking` — ranking do clã
-- `/stats` — estatísticas do jogador
-- `/ajuda` — mostra os comandos disponíveis
+| Comando      | Descrição                       |
+| ------------ | ------------------------------- |
+| `/start`     | Menu principal                  |
+| `/cadastrar` | Vincular seu jogador do MLBB    |
+| `/stats`     | Suas estatísticas               |
+| `/ranking`   | Ranking do clã                  |
+| `/clan`      | Painel do clã                   |
+| `/lore`      | Crônicas e heróis               |
+| `/cancelar`  | Cancelar o cadastro em andamento|
+| `/sair`      | Desvincular sua conta           |
+| `/ajuda`     | Ajuda                           |
 
 ## Stack
 
 - Node.js 20+
-- Telegraf
-- Vercel Functions
-- Webhook do Telegram
+- Telegraf 4
+- Railway (long polling, sem custo de webhook/domínio)
 
-## Deploy na Vercel
+---
 
-O bot usa **webhook**, não polling. Isso é importante porque a Vercel executa funções sob demanda, enquanto o código local de desenvolvimento pode usar polling.
+## Deploy na Railway (plano gratuito)
 
-1. Importe este repositório na Vercel.
-2. Configure estas variáveis de ambiente no projeto:
-   - `BOT_TOKEN` — token recebido do BotFather.
-   - `TELEGRAM_WEBHOOK_SECRET` — uma string aleatória para proteger o webhook.
-   - `TELEGRAM_SETUP_SECRET` — outra string aleatória, usada somente uma vez para configurar o webhook.
-3. Faça o deploy.
-4. Abra no navegador:
-   `https://SEU-DOMINIO.vercel.app/api/telegram?setup=SEU_TELEGRAM_SETUP_SECRET`
-5. A resposta deve ser `Webhook configurado.`.
-6. No Telegram, abra o bot e envie `/start`.
+1. **New Project → Deploy from GitHub repo** e selecione este repositório.
+2. Em **Variables**, adicione:
 
-A URL de produção da Vercel é detectada automaticamente por `VERCEL_URL`.
+   | Variável       | Obrigatória | Observação                                          |
+   | -------------- | ----------- | --------------------------------------------------- |
+   | `BOT_TOKEN`    | ✅          | Token do BotFather                                   |
+   | `MLBB_API_URL` | ❌          | Padrão `https://arena.rone.dev/api`                  |
+   | `PORT`         | ❌          | A Railway injeta sozinha                             |
 
-### Segurança
+3. **Settings → Deploy → Replicas = 1.**
+   ⚠️ Isso é obrigatório: duas réplicas com o mesmo `BOT_TOKEN` derrubam o polling
+   com erro `409: Conflict`.
+4. O healthcheck usa `GET /` (já configurado em `railway.json`).
 
-Nunca coloque `BOT_TOKEN` no código ou no GitHub. O token deve ficar somente nas variáveis de ambiente da Vercel.
+### Persistir as sessões entre deploys
 
-O `TELEGRAM_WEBHOOK_SECRET` é enviado pelo Telegram no header do webhook e é validado antes de processar a atualização.
+O disco da Railway é **efêmero**: sem volume, todo mundo precisa se cadastrar de
+novo a cada deploy. Correção gratuita:
+
+1. No serviço → **Settings → Volumes → New Volume**.
+2. Mount path: `/data`.
+3. Pronto. A Railway define `RAILWAY_VOLUME_MOUNT_PATH` e o bot passa a gravar em
+   `/data/sessions.json` automaticamente.
+
+Os JWTs são gravados **criptografados** (AES-256-GCM, chave derivada do `BOT_TOKEN`).
+Se você trocar o token, as sessões antigas são descartadas — isso é esperado.
+
+### Modo webhook (opcional)
+
+O padrão é long polling, que funciona sem domínio nenhum. Se quiser webhook:
+
+```
+USE_WEBHOOK=true
+TELEGRAM_WEBHOOK_SECRET=uma-string-aleatoria
+```
+
+O bot usa `https://$RAILWAY_PUBLIC_DOMAIN/telegram/webhook` e valida o header
+`x-telegram-bot-api-secret-token`.
+
+---
 
 ## Desenvolvimento local
 
-Para testar a lógica localmente:
-
 ```bash
 npm install
-npm start
+cp .env.example .env   # preencha BOT_TOKEN
+npm run dev
 ```
 
-A função da Vercel fica em `api/telegram.js`. O arquivo `src/index.js` mantém uma versão de polling para desenvolvimento local.
+Rodar os testes:
+
+```bash
+npm test
+```
+
+> Rode apenas **uma** instância por token. Se o bot estiver no ar na Railway,
+> pause o serviço antes de rodar localmente, senão o Telegram devolve `409`.
+
+## Estrutura
+
+```
+src/
+  index.js     handlers do Telegram, healthcheck HTTP e bootstrap
+  config.js    leitura e validação das variáveis de ambiente
+  api.js       cliente HTTP da API do MLBB (timeout + retry, nunca lança)
+  sessions.js  persistência criptografada das sessões
+  stats.js     busca e normalização das estatísticas
+  ui.js        textos, teclados e renderização
+test/
+  smoke.test.js
+```
+
+## Segurança
+
+- O `BOT_TOKEN` nunca vai para o repositório — só para as variáveis de ambiente.
+- O bot **nunca** pede senha, e-mail ou códigos de outras plataformas.
+- Nomes vindos da API são escapados antes de irem para o HTML do Telegram.

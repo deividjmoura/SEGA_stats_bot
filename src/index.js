@@ -1,422 +1,297 @@
-import 'dotenv/config';
-import { Telegraf, Markup } from 'telegraf';
-import { promises as fs } from 'node:fs';
-import crypto from 'node:crypto';
-import { dirname } from 'node:path';
+import http from 'node:http';
+import { Telegraf } from 'telegraf';
 
-const token = process.env.BOT_TOKEN;
-const RONE_API = 'https://arena.rone.dev/api';
-const SESSION_FILE = process.env.SESSION_FILE || ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/sessions.json');
-const API_TIMEOUT_MS = 12000;
-const SESSION_KEY = crypto.createHash('sha256').update(token || '').digest();
+import {
+  BOT_TOKEN,
+  API_BASE,
+  PORT,
+  SESSION_FILE,
+  WEBHOOK_URL,
+  WEBHOOK_SECRET,
+  WEBHOOK_PATH,
+  REGISTRATION_TTL_MS
+} from './config.js';
+import { apiJson, authHeaders, jsonHeaders } from './api.js';
+import { authenticatedPlayers, restoreSessions, saveSessions } from './sessions.js';
+import { fetchPlayerStats, normalizeStats } from './stats.js';
+import {
+  BUTTONS,
+  BUTTON_LABELS,
+  startMessage,
+  helpMessage,
+  loreMessage,
+  mainKeyboard,
+  quickActionsKeyboard,
+  renderStats,
+  escapeHtml,
+  html
+} from './ui.js';
 
-if (!token) {
-  console.error('❌ BOT_TOKEN não configurado. Crie um arquivo .env com o token do BotFather.');
+if (!BOT_TOKEN) {
+  console.error('❌ BOT_TOKEN não configurado. Defina a variável de ambiente BOT_TOKEN (BotFather).');
   process.exit(1);
 }
 
-const bot = new Telegraf(token);
+const bot = new Telegraf(BOT_TOKEN, { handlerTimeout: 60_000 });
+
+/** telegramId -> { step, roleId, zoneId, expiresAt } */
 const registration = new Map();
-const authenticatedPlayers = new Map();
 
-async function apiFetch(path, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  try {
-    return await fetch(RONE_API + path, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
+function setRegistration(userId, state) {
+  registration.set(userId, { ...state, expiresAt: Date.now() + REGISTRATION_TTL_MS });
+}
+
+function getRegistration(userId) {
+  const state = registration.get(userId);
+  if (!state) return null;
+  if (state.expiresAt < Date.now()) {
+    registration.delete(userId);
+    return null;
   }
+  return state;
 }
 
-async function apiJson(path, options = {}) {
-  const response = await apiFetch(path, options);
-  const body = await response.json().catch(() => ({}));
-  return { response, body };
-}
-
-function authHeaders(jwt) {
-  return { Authorization: 'Bearer ' + jwt };
-}
-
-function encrypt(text) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', SESSION_KEY, iv);
-  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
-}
-
-function decrypt(payload) {
-  const data = Buffer.from(payload, 'base64');
-  const iv = data.subarray(0, 12);
-  const tag = data.subarray(12, 28);
-  const encrypted = data.subarray(28);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', SESSION_KEY, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-}
-
-async function saveSessions() {
-  await fs.mkdir(dirname(SESSION_FILE), { recursive: true });
-  const stored = {};
-  for (const [telegramId, player] of authenticatedPlayers) {
-    stored[telegramId] = {
-      jwt: encrypt(player.jwt),
-      roleId: player.roleId,
-      zoneId: player.zoneId,
-      savedAt: new Date().toISOString()
-    };
+// Limpeza periódica para não vazar memória em execuções longas.
+const cleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [userId, state] of registration) {
+    if (state.expiresAt < now) registration.delete(userId);
   }
-  await fs.writeFile(SESSION_FILE, JSON.stringify(stored, null, 2), 'utf8');
+}, 60_000);
+cleanupTimer.unref();
+
+async function dropSession(userId) {
+  authenticatedPlayers.delete(userId);
+  await saveSessions();
 }
 
-async function restoreSessions() {
-  try {
-    const raw = await fs.readFile(SESSION_FILE, 'utf8');
-    const stored = JSON.parse(raw);
-    for (const [telegramId, player] of Object.entries(stored)) {
-      authenticatedPlayers.set(Number(telegramId), {
-        jwt: decrypt(player.jwt),
-        roleId: player.roleId,
-        zoneId: player.zoneId
-      });
-    }
-    console.log(`🔐 Sessões restauradas: ${authenticatedPlayers.size}`);
-  } catch (error) {
-    if (error.code !== 'ENOENT') console.error('❌ Erro ao restaurar sessões:', error);
-  }
-}
-
-bot.telegram.setMyCommands([
-  { command: 'start', description: 'Abrir o menu principal' },
-  { command: 'cadastrar', description: 'Cadastrar jogador' },
-  { command: 'ranking', description: 'Ver ranking do clã' },
-  { command: 'stats', description: 'Ver minhas estatísticas' },
-  { command: 'clan', description: 'Ver o clã SEGA' },
-  { command: 'ajuda', description: 'Mostrar ajuda' },
-  { command: 'cancelar', description: 'Cancelar cadastro' },
-  { command: 'lore', description: 'Crônicas e heróis' },
-  { command: 'menu', description: 'Abrir menu principal' }
-]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
-
-const startMessage = `🎮 <b>SEGA STATS</b>
-
-⚡ <b>Bem-vindo à arena, guerreiro!</b> 👊
-
-Bem-vindo ao bot oficial do clã <b>SEGA</b>.
-
-Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua batalha. Aqui você vai poder:
-
-🏆 Consultar o ranking do clã
-⚔️ Ver suas partidas e desempenho
-🛡️ Conferir sua rota mais jogada
-📊 Acompanhar seus pontos e estatísticas
-👥 Comparar seu desempenho com a galera do clã
-
-<b>Para começar:</b>
-👉 Use <code>/cadastrar</code> para vincular seu jogador.
-
-⚔️ <i>Entre na arena. Analise a batalha. Evolua.</i> 🔥
-
-<b>SEGA</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
-
-const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
-
-🎮 <code>/start</code> — abrir o menu principal
-📝 <code>/cadastrar</code> — cadastrar seu jogador
-🏆 <code>/ranking</code> — ranking do clã
-📊 <code>/stats</code> — suas estatísticas
-❓ <code>/ajuda</code> — mostrar esta ajuda
-👥 <code>/clan</code> — painel do clã SEGA
-📜 <code>/lore</code> — crônicas e heróis
-❌ <code>/cancelar</code> — cancelar cadastro`;
-
-
-function parseMatchStats(matches) {
-  const rows = Array.isArray(matches) ? matches : [];
-  const total = rows.length;
-  const wins = rows.filter(m => Number(m.res) === 1).length;
-  const mvps = rows.filter(m => Number(m.mvp) === 1).length;
-  const kills = rows.reduce((sum, m) => sum + Number(m.k || 0), 0);
-  const deaths = rows.reduce((sum, m) => sum + Number(m.d || 0), 0);
-  const assists = rows.reduce((sum, m) => sum + Number(m.a || 0), 0);
-  const scores = rows.map(m => Number(m.s || 0)).filter(Number.isFinite);
-  const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length / 100 : 0;
-  const heroes = new Map();
-  for (const m of rows) {
-    const name = m.hid_e?.n || String(m.hid || 'Desconhecido');
-    heroes.set(name, (heroes.get(name) || 0) + 1);
-  }
-  const mostPlayed = [...heroes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/D';
-  return { matches: total, wins, losses: Math.max(total - wins, 0), mvps, kills, deaths, assists, avgScore, mostPlayed };
-}
-
-async function fetchPlayerStats(jwt) {
-  // Preferir /user/stats quando disponível (ainda funciona em muitos casos, apesar de deprecated).
-  const direct = await apiJson('/user/stats?lang=pt', { headers: authHeaders(jwt) });
-  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
-    const data = direct.body.data;
-    // Se vier com totais úteis, usa direto.
-    if (data.tc != null || data.wc != null) {
-      return { source: 'stats', data };
-    }
-  }
-
-  // Fallback: montar estatísticas a partir da temporada + partidas recentes.
-  // IMPORTANTE: a API só aceita lang=pt (não pt_BR).
-  const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
-  const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
-  if (!season.response.ok || season.body?.code !== 0 || sids.length === 0) {
-    console.error('❌ Fallback season falhou:', season.response?.status, season.body);
-    return {
-      source: 'error',
-      response: season.response?.ok === false ? season.response : direct.response,
-      body: season.body?.code !== 0 ? season.body : direct.body
-    };
-  }
-
-  // Tenta a temporada mais recente e, se vier vazia, as anteriores.
-  let lastError = null;
-  for (const sid of sids.slice(0, 3)) {
-    const matches = await apiJson(
-      '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt',
-      { headers: authHeaders(jwt) }
-    );
-
-    if (!matches.response.ok || matches.body?.code !== 0) {
-      lastError = { response: matches.response, body: matches.body };
-      console.error('❌ Matches sid=' + sid + ' falhou:', matches.response?.status, matches.body);
-      continue;
-    }
-
-    const rows = matches.body?.data?.result;
-    if (Array.isArray(rows) && rows.length > 0) {
-      return { source: 'matches', data: parseMatchStats(rows), sid };
-    }
-
-    // Temporada sem partidas — tenta a próxima.
-    lastError = { response: matches.response, body: matches.body };
-  }
-
-  // Nenhuma temporada retornou partidas. Se /user/stats tinha algo, usa mesmo assim.
-  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
-    return { source: 'stats', data: direct.body.data };
-  }
-
-  return {
-    source: 'error',
-    response: lastError?.response || direct.response,
-    body: lastError?.body || direct.body
-  };
-}
-
-function renderStats(data) {
-  const matches = Number(data.matches ?? data.tc ?? 0);
-  const wins = Number(data.wins ?? data.wc ?? 0);
-  const losses = Number(data.losses ?? Math.max(matches - wins, 0));
-  const winRate = matches > 0 ? ((wins / matches) * 100).toFixed(1) : '0.0';
-  // API /user/stats devolve `as` em escala x100; o fallback por partidas já normaliza em avgScore.
-  let avgScore = 'N/D';
-  if (data.avgScore != null && Number.isFinite(Number(data.avgScore))) {
-    avgScore = Number(data.avgScore).toFixed(1);
-  } else if (data.as != null && Number.isFinite(Number(data.as))) {
-    const raw = Number(data.as);
-    avgScore = (raw > 20 ? raw / 100 : raw).toFixed(1);
-  }
-  const mvps = data.mvps ?? data.mvpc ?? 0;
-  const kda = data.kills != null ? (data.kills + '/' + data.deaths + '/' + data.assists) : 'N/D';
-  const mostPlayed = data.mostPlayed
-    || data.mo?.hid_e?.n
-    || data.ms?.hid_e?.n
-    || null;
-  return '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
-    '🎮 Partidas: <b>' + matches + '</b>\n' +
-    '🏆 Vitórias: <b>' + wins + '</b>\n' +
-    '💀 Derrotas: <b>' + losses + '</b>\n' +
-    '📈 Win rate: <b>' + winRate + '%</b>\n' +
-    '⚔️ K/D/A: <b>' + kda + '</b>\n' +
-    '⭐ Pontuação média: <b>' + avgScore + '</b>\n' +
-    '👑 MVPs: <b>' + mvps + '</b>\n' +
-    (mostPlayed ? '🎯 Herói mais usado: <b>' + mostPlayed + '</b>\n' : '') +
-    '\n<i>SEGA: cada partida escreve uma linha da história.</i>';
-}
-
-function mainKeyboard() {
-  return Markup.keyboard([
-    ['📝 Cadastrar jogador', '📊 Minhas stats'],
-    ['🏆 Ranking', '👥 Clã SEGA'],
-    ['❓ Ajuda', '📜 Lore']
-  ]).resize().persistent();
-}
-
-function askForRoleId(ctx) {
-  registration.set(ctx.from.id, { step: 'role_id' });
-  return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
-}
+// ---------------------------------------------------------------- menus
 
 async function sendMenu(ctx) {
-  await ctx.reply(startMessage, { parse_mode: 'HTML', ...mainKeyboard() });
-  await ctx.reply('⚡ <b>AÇÕES RÁPIDAS</b>', {
-    parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('📝 Cadastrar jogador', 'register')],
-      [Markup.button.callback('📊 Minhas stats', 'stats'), Markup.button.callback('🏆 Ranking', 'ranking')],
-      [Markup.button.callback('👥 Clã SEGA', 'clan'), Markup.button.callback('📜 Lore', 'lore')],
-      [Markup.button.callback('❓ Ajuda', 'help')]
-    ])
-  });
+  await ctx.reply(startMessage, html(mainKeyboard()));
+  await ctx.reply('⚡ <b>AÇÕES RÁPIDAS</b>', html(quickActionsKeyboard()));
 }
 
-bot.start(async (ctx) => await sendMenu(ctx));
-bot.command('menu', async (ctx) => await sendMenu(ctx));
+async function sendHelp(ctx) {
+  await ctx.reply(helpMessage, html(mainKeyboard()));
+}
 
-bot.command('cadastrar', async (ctx) => await askForRoleId(ctx));
-
-bot.command('cancelar', async (ctx) => {
-  registration.delete(ctx.from.id);
-  await ctx.reply('❌ Cadastro cancelado. Nenhuma alteração foi feita.');
-});
-
-bot.on('text', async (ctx, next) => {
-  const state = registration.get(ctx.from.id);
-
-  // Este handler trata somente as respostas do fluxo de cadastro.
-  // Comandos como /stats e /ranking precisam seguir para os handlers abaixo.
-  if (!state || ctx.message.text.startsWith('/')) {
-    await next();
-    return;
-  }
-
-  const value = ctx.message.text.trim();
-
-  if (state.step === 'role_id') {
-    if (!/^\d{6,12}$/.test(value)) {
-      await ctx.reply('⚠️ Esse ID não parece válido. Envie somente os números do seu ID do Mobile Legends.');
-      return;
-    }
-    registration.set(ctx.from.id, { step: 'zone_id', roleId: value });
-    await ctx.reply('🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>', { parse_mode: 'HTML' });
-    return;
-  }
-
-  if (state.step === 'zone_id') {
-    if (!/^\d{1,8}$/.test(value)) {
-      await ctx.reply('⚠️ Zone ID inválido. Envie somente os números do seu Zone ID.');
-      return;
-    }
-
-    const { roleId } = state;
-    await ctx.reply('🔎 <b>Solicitando código de verificação...</b>\n\n📩 Um código será enviado para o correio interno do Mobile Legends.\n⏱️ O código é válido por 5 minutos.', { parse_mode: 'HTML' });
-
-    try {
-      const response = await apiFetch('/user/auth/send-vc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(value) })
-      });
-      const body = await response.json().catch(() => ({}));
-
-      if (!response.ok || body.code !== 0) {
-        console.error('❌ Falha ao solicitar código:', response.status, body);
-        await ctx.reply('⚠️ Não consegui solicitar o código de verificação agora. Confira o ID e o Zone ID e tente novamente.');
-        registration.delete(ctx.from.id);
-        return;
-      }
-
-      registration.set(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
-      await ctx.reply(
-        '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
-        '📩 O código foi solicitado e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n' +
-        '🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n' +
-        '🔒 <b>Sua segurança é importante:</b> nunca enviaremos ou pediremos sua senha, seu e-mail ou códigos de outras plataformas. O código solicitado aqui é usado para concluir a autenticação e liberar a consulta das suas estatísticas.\n\n' +
-        '⏱️ <b>O código é válido por 5 minutos.</b>\n\n' +
-        'Digite /cancelar para cancelar o processo.',
-        { parse_mode: 'HTML' }
-      );
-    } catch (error) {
-      console.error('❌ Erro ao solicitar código:', error);
-      registration.delete(ctx.from.id);
-      await ctx.reply('⚠️ Não consegui conectar ao serviço de autenticação agora. Tente novamente.');
-    }
-    return;
-  }
-
-  if (state.step === 'verification_code') {
-    if (!/^\d{4,8}$/.test(value)) {
-      await ctx.reply('⚠️ Código inválido. Envie somente os números do código recebido no correio do Mobile Legends.');
-      return;
-    }
-
-    const { roleId, zoneId } = state;
-    await ctx.reply('🔐 <b>Validando o código...</b>', { parse_mode: 'HTML' });
-
-    try {
-      const payload = {
-        role_id: Number(roleId),
-        zone_id: Number(zoneId),
-        vc: Number(value)
-      };
-      const response = await apiFetch('/user/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const body = await response.json().catch(() => ({}));
-
-      // Aceita jwt ou token (a API devolve os dois no sucesso)
-      const jwt = body?.data?.jwt || body?.data?.token || null;
-      const ok = response.ok && (body.code === 0 || body.code === '0') && jwt;
-
-      if (!ok) {
-        const apiMsg = body?.msg || body?.message || body?.detail || '';
-        console.error('❌ Falha na autenticação:', response.status, JSON.stringify(body), 'payload=', payload);
-        let reply =
-          '❌ <b>Não foi possível validar o código.</b>\n\n' +
-          'Verifique se você digitou o código corretamente e se ele ainda está dentro do prazo de validade (5 minutos).\n\n' +
-          'Você pode enviar o código novamente ou digitar /cancelar para recomeçar.';
-        if (apiMsg) {
-          reply += '\n\n📋 Detalhe da API: <code>' + String(apiMsg).slice(0, 150) + '</code>';
-        }
-        await ctx.reply(reply, { parse_mode: 'HTML' });
-        return;
-      }
-
-      const infoResponse = await apiFetch('/user/info', { headers: { Authorization: 'Bearer ' + jwt } });
-      const infoBody = await infoResponse.json().catch(() => ({}));
-
-      if (!infoResponse.ok || (infoBody.code !== 0 && infoBody.code !== '0')) {
-        console.error('❌ Login realizado, mas não consegui consultar o perfil:', infoResponse.status, infoBody);
-        await ctx.reply('⚠️ A autenticação retornou token, mas a API não confirmou o perfil agora. Tente novamente em alguns instantes ou envie o código de novo.', { parse_mode: 'HTML' });
-        return;
-      }
-
-      authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId });
-      await saveSessions();
-      registration.delete(ctx.from.id);
-
-      await ctx.reply(
-        '✅ <b>CONTA VERIFICADA!</b>\n\n' +
-        `👤 <b>${infoBody.data?.name ?? 'Jogador'}</b>\n` +
-        `🆔 ID: <code>${roleId}</code>\n` +
-        `🌐 Zone: <code>${zoneId}</code>\n\n` +
-        '📊 Seu jogador foi vinculado ao <b>SEGA Stats</b>. Agora podemos consultar seus dados para gerar suas estatísticas e participar dos rankings do clã.',
-        { parse_mode: 'HTML' }
-      );
-    } catch (error) {
-      console.error('❌ Erro ao autenticar jogador:', error);
-      await ctx.reply('⚠️ Ocorreu um erro de conexão ao validar o código. Tente novamente em alguns segundos.');
-    }
-  }
-});
-
-bot.action('register', async (ctx) => {
-  await ctx.answerCbQuery();
-  await askForRoleId(ctx);
-});
+async function sendLore(ctx) {
+  await ctx.reply(loreMessage, html(mainKeyboard()));
+}
 
 async function sendClan(ctx) {
   const count = authenticatedPlayers.size;
-  await ctx.reply('👥 <b>CLÃ SEGA</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await ctx.reply(
+    '👥 <b>CLÃ SEGA</b>\n\n' +
+      `🛡️ Jogadores vinculados: <b>${count}</b>\n\n` +
+      (count
+        ? 'Use /ranking para ver a classificação atual do clã.'
+        : 'Ninguém vinculado ainda. Use /cadastrar para ser o primeiro.') +
+      '\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>',
+    html(mainKeyboard())
+  );
+}
+
+// ---------------------------------------------------------------- cadastro
+
+function askForRoleId(ctx) {
+  setRegistration(ctx.from.id, { step: 'role_id' });
+  return ctx.reply(
+    '📝 <b>CADASTRO DO JOGADOR</b>\n\n' +
+      'Me manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\n' +
+      'Exemplo: <code>123456789</code>\n\n' +
+      'Digite /cancelar a qualquer momento para sair.',
+    html()
+  );
+}
+
+async function handleRoleId(ctx, value) {
+  if (!/^\d{6,12}$/.test(value)) {
+    await ctx.reply('⚠️ Esse ID não parece válido. Envie <b>somente os números</b> do seu ID do Mobile Legends.', html());
+    return;
+  }
+  setRegistration(ctx.from.id, { step: 'zone_id', roleId: value });
+  await ctx.reply('🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>', html());
+}
+
+async function handleZoneId(ctx, value, state) {
+  if (!/^\d{1,8}$/.test(value)) {
+    await ctx.reply('⚠️ Zone ID inválido. Envie <b>somente os números</b> do seu Zone ID.', html());
+    return;
+  }
+
+  await ctx.reply(
+    '🔎 <b>Solicitando código de verificação...</b>\n\n' +
+      '📩 O código chega no correio interno do Mobile Legends.\n⏱️ Validade: 5 minutos.',
+    html()
+  );
+
+  const result = await apiJson('/user/auth/send-vc', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ role_id: Number(state.roleId), zone_id: Number(value) })
+  });
+
+  if (!result.ok) {
+    console.error('❌ Falha ao solicitar código:', result.status, result.message);
+    registration.delete(ctx.from.id);
+    await ctx.reply(
+      '⚠️ <b>Não consegui solicitar o código agora.</b>\n\n' +
+        'Confira se o ID e o Zone ID estão corretos e tente de novo com /cadastrar.' +
+        (result.message ? `\n\n📋 API: <code>${escapeHtml(result.message).slice(0, 150)}</code>` : ''),
+      html()
+    );
+    return;
+  }
+
+  setRegistration(ctx.from.id, { step: 'verification_code', roleId: state.roleId, zoneId: value });
+  await ctx.reply(
+    '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
+      '📩 O código foi enviado para o <b>correio interno do Mobile Legends</b>.\n\n' +
+      '🔢 Quando receber, envie <b>somente o código</b> aqui.\n\n' +
+      '🔒 <b>Segurança:</b> nunca pedimos sua senha, e-mail ou códigos de outras plataformas.\n\n' +
+      '⏱️ O código é válido por 5 minutos.\n\nDigite /cancelar para desistir.',
+    html()
+  );
+}
+
+async function handleVerificationCode(ctx, value, state) {
+  if (!/^\d{4,8}$/.test(value)) {
+    await ctx.reply('⚠️ Código inválido. Envie somente os números do código recebido no correio do Mobile Legends.', html());
+    return;
+  }
+
+  await ctx.reply('🔐 <b>Validando o código...</b>', html());
+
+  const login = await apiJson('/user/auth/login', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({
+      role_id: Number(state.roleId),
+      zone_id: Number(state.zoneId),
+      vc: Number(value)
+    })
+  });
+
+  const jwt = login.body?.data?.jwt || login.body?.data?.token || null;
+
+  if (!login.ok || !jwt) {
+    console.error('❌ Falha na autenticação:', login.status, login.message);
+    await ctx.reply(
+      '❌ <b>Não foi possível validar o código.</b>\n\n' +
+        'Confira se digitou certo e se ainda está dentro dos 5 minutos de validade.\n\n' +
+        'Você pode enviar o código novamente ou digitar /cancelar para recomeçar.' +
+        (login.message ? `\n\n📋 API: <code>${escapeHtml(login.message).slice(0, 150)}</code>` : ''),
+      html()
+    );
+    return;
+  }
+
+  const info = await apiJson('/user/info', { headers: authHeaders(jwt) });
+  if (!info.ok) {
+    console.error('❌ Login ok, mas /user/info falhou:', info.status, info.message);
+    await ctx.reply(
+      '⚠️ A autenticação retornou o token, mas a API não confirmou o perfil agora.\n\nTente novamente em alguns instantes.',
+      html()
+    );
+    return;
+  }
+
+  const name = info.body?.data?.name ?? 'Jogador';
+  authenticatedPlayers.set(ctx.from.id, { jwt, roleId: state.roleId, zoneId: state.zoneId, name });
+  await saveSessions();
+  registration.delete(ctx.from.id);
+
+  await ctx.reply(
+    '✅ <b>CONTA VERIFICADA!</b>\n\n' +
+      `👤 <b>${escapeHtml(name)}</b>\n` +
+      `🆔 ID: <code>${escapeHtml(state.roleId)}</code>\n` +
+      `🌐 Zone: <code>${escapeHtml(state.zoneId)}</code>\n\n` +
+      'Seu jogador foi vinculado ao <b>SEGA Stats</b>. Use /stats para ver seus números.',
+    html(mainKeyboard())
+  );
+}
+
+// ---------------------------------------------------------------- stats
+
+async function sendStats(ctx) {
+  const player = authenticatedPlayers.get(ctx.from.id);
+
+  if (!player?.jwt) {
+    await ctx.reply(
+      '📊 <b>SUAS ESTATÍSTICAS</b>\n\nVocê ainda não tem uma sessão autenticada.\n\nUse /cadastrar para vincular seu jogador.',
+      html(mainKeyboard())
+    );
+    return;
+  }
+
+  await ctx.replyWithChatAction('typing').catch(() => {});
+
+  const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
+
+  if (info.unauthorized) {
+    await dropSession(ctx.from.id);
+    await ctx.reply('🔐 <b>Sua autenticação expirou.</b>\n\nUse /cadastrar para autenticar novamente.', html(mainKeyboard()));
+    return;
+  }
+
+  if (!info.ok) {
+    await ctx.reply(
+      `⚠️ A API respondeu com erro ao validar sua sessão.\n\n${escapeHtml(info.message || 'Tente novamente em instantes.')}`,
+      html(mainKeyboard())
+    );
+    return;
+  }
+
+  const name = info.body?.data?.name || player.name || null;
+  if (name && name !== player.name) {
+    authenticatedPlayers.set(ctx.from.id, { ...player, name });
+    saveSessions();
+  }
+
+  const result = await fetchPlayerStats(player.jwt);
+
+  if (result.source === 'error') {
+    if (result.unauthorized) {
+      await dropSession(ctx.from.id);
+      await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar de novo.', html(mainKeyboard()));
+      return;
+    }
+
+    console.error('❌ Erro da API de stats:', result.status, result.message);
+    await ctx.reply(
+      '⚠️ <b>Sua sessão está válida, mas a API não retornou estatísticas.</b>\n\n' +
+        (result.message ? `📋 Detalhe: <code>${escapeHtml(result.message).slice(0, 150)}</code>\n\n` : '') +
+        'Verifique se o <b>histórico de batalhas está público</b> nas configurações de privacidade do Mobile Legends e tente de novo.',
+      html(mainKeyboard())
+    );
+    return;
+  }
+
+  await ctx.reply(renderStats(normalizeStats(result.data), name), html(mainKeyboard()));
+}
+
+// ---------------------------------------------------------------- ranking
+
+const RANKING_CONCURRENCY = 4;
+
+async function mapWithLimit(items, limit, worker) {
+  const results = [];
+  let index = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const current = index++;
+      try {
+        results[current] = await worker(items[current]);
+      } catch (error) {
+        console.error('❌ Erro no ranking:', error.message);
+        results[current] = null;
+      }
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 async function sendRanking(ctx) {
@@ -425,171 +300,279 @@ async function sendRanking(ctx) {
   if (!players.length) {
     await ctx.reply(
       '🏆 <b>RANKING SEGA</b>\n\nAinda não há jogadores autenticados no clã.\n\nUse /cadastrar para vincular seu jogador.',
-      { parse_mode: 'HTML', ...mainKeyboard() }
+      html(mainKeyboard())
     );
     return;
   }
 
-  await ctx.reply('🏆 <b>Calculando o ranking do SEGA...</b>\n\n⚔️ Consultando os dados dos jogadores vinculados.', { parse_mode: 'HTML' });
+  await ctx.reply('🏆 <b>Calculando o ranking do SEGA...</b>\n\n⚔️ Consultando os dados dos jogadores vinculados.', html());
+  await ctx.replyWithChatAction('typing').catch(() => {});
 
-  const results = await Promise.allSettled(
-    players.map(async ([telegramId, player]) => {
-      const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
-      if (!info.response.ok || info.body?.code !== 0) return null;
+  const expired = [];
 
-      const stats = await fetchPlayerStats(player.jwt);
-      if (stats.source === 'error') return null;
+  const rows = await mapWithLimit(players, RANKING_CONCURRENCY, async ([telegramId, player]) => {
+    const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
+    if (info.unauthorized) {
+      expired.push(telegramId);
+      return null;
+    }
+    if (!info.ok) return null;
 
-      const data = stats.data;
-      const matches = Number(data.matches ?? data.tc ?? 0);
-      const wins = Number(data.wins ?? data.wc ?? 0);
-      const winRate = matches > 0 ? (wins / matches) * 100 : 0;
-      let avgScore = Number(data.avgScore ?? 0);
-      if (!avgScore && data.as != null) {
-        const raw = Number(data.as);
-        avgScore = raw > 20 ? raw / 100 : raw;
-      }
+    const stats = await fetchPlayerStats(player.jwt);
+    if (stats.source === 'error') {
+      if (stats.unauthorized) expired.push(telegramId);
+      return null;
+    }
 
-      return {
-        telegramId,
-        name: info.body.data?.name || 'Jogador',
-        matches,
-        wins,
-        winRate,
-        avgScore,
-        mvps: Number(data.mvps ?? data.mvpc ?? 0)
-      };
-    })
-  );
+    const s = normalizeStats(stats.data);
+    return {
+      name: info.body?.data?.name || player.name || 'Jogador',
+      matches: s.matches,
+      wins: s.wins,
+      winRate: s.winRate,
+      avgScore: s.avgScore ?? 0,
+      mvps: s.mvps
+    };
+  });
 
-  const ranking = results
-    .filter(result => result.status === 'fulfilled' && result.value)
-    .map(result => result.value)
-    .sort((a, b) =>
-      b.winRate - a.winRate ||
-      b.wins - a.wins ||
-      b.avgScore - a.avgScore ||
-      b.matches - a.matches
+  if (expired.length) {
+    for (const telegramId of expired) authenticatedPlayers.delete(telegramId);
+    await saveSessions();
+  }
+
+  const ranking = rows
+    .filter(Boolean)
+    .filter((p) => p.matches > 0)
+    .sort(
+      (a, b) => b.winRate - a.winRate || b.wins - a.wins || b.avgScore - a.avgScore || b.matches - a.matches
     );
 
   if (!ranking.length) {
     await ctx.reply(
-      '⚠️ <b>RANKING SEGA</b>\n\nOs jogadores estão autenticados, mas a API não retornou estatísticas suficientes para montar o ranking agora.\n\nA autenticação continua válida. Tente novamente em alguns instantes.',
-      { parse_mode: 'HTML', ...mainKeyboard() }
+      '⚠️ <b>RANKING SEGA</b>\n\nOs jogadores estão autenticados, mas a API não retornou estatísticas suficientes agora.\n\nTente novamente em alguns instantes.',
+      html(mainKeyboard())
     );
     return;
   }
 
   const lines = ranking.slice(0, 10).map((player, index) => {
     const medal = ['🥇', '🥈', '🥉'][index] || '🏅';
-    return medal + ' <b>' + (index + 1) + '. ' + player.name + '</b>\n' +
-      '   📈 ' + player.winRate.toFixed(1) + '% WR  •  🏆 ' + player.wins + '/' + player.matches +
-      '  •  ⭐ ' + player.avgScore.toFixed(1);
+    return (
+      `${medal} <b>${index + 1}. ${escapeHtml(player.name)}</b>\n` +
+      `   📈 ${player.winRate.toFixed(1)}% WR  •  🏆 ${player.wins}/${player.matches}  •  ⭐ ${player.avgScore.toFixed(1)}`
+    );
   });
 
+  const skipped = players.length - ranking.length;
   await ctx.reply(
     '🏆 <b>RANKING SEGA</b>\n\n' +
-    lines.join('\n\n') +
-    '\n\n<i>Ranking calculado com os dados disponíveis na API.</i>',
-    { parse_mode: 'HTML', ...mainKeyboard() }
+      lines.join('\n\n') +
+      (skipped > 0 ? `\n\n<i>${skipped} jogador(es) sem dados disponíveis no momento.</i>` : '') +
+      '\n\n<i>Ranking calculado com os dados disponíveis na API.</i>',
+    html(mainKeyboard())
   );
 }
 
+// ---------------------------------------------------------------- handlers
+// Ordem importa no Telegraf: comandos e botões ANTES do handler genérico de texto.
+
+bot.start(sendMenu);
+bot.command('menu', sendMenu);
+bot.command('cadastrar', askForRoleId);
+bot.command('ajuda', sendHelp);
+bot.command('help', sendHelp);
+bot.command('stats', sendStats);
 bot.command('ranking', sendRanking);
 bot.command('clan', sendClan);
-bot.command('lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.command('lore', sendLore);
 
-async function sendStats(ctx) {
-  const player = authenticatedPlayers.get(ctx.from.id);
+bot.command('cancelar', async (ctx) => {
+  const had = registration.delete(ctx.from.id);
+  await ctx.reply(
+    had ? '❌ Cadastro cancelado. Nenhuma alteração foi feita.' : 'Não havia nenhum cadastro em andamento.',
+    html(mainKeyboard())
+  );
+});
 
-  if (!player?.jwt) {
-    await ctx.reply('📊 <b>SUAS ESTATÍSTICAS</b>\n\nVocê ainda não tem uma sessão autenticada neste bot. Use /cadastrar para vincular seu jogador.', { parse_mode: 'HTML' });
+bot.command('sair', async (ctx) => {
+  if (!authenticatedPlayers.has(ctx.from.id)) {
+    await ctx.reply('Você não tem nenhuma conta vinculada.', html(mainKeyboard()));
     return;
   }
-
-  await ctx.reply('📊 <b>Buscando suas estatísticas...</b>', { parse_mode: 'HTML' });
-
-  try {
-    const infoResponse = await apiFetch('/user/info', { headers: authHeaders(player.jwt) });
-    const infoBody = await infoResponse.json().catch(() => ({}));
-
-    if (infoResponse.status === 401 || infoResponse.status === 403) {
-      authenticatedPlayers.delete(ctx.from.id);
-      await saveSessions();
-      await ctx.reply('🔐 <b>Sua autenticação expirou ou foi invalidada.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
-      return;
-    }
-
-    if (!infoResponse.ok || infoBody.code !== 0) {
-      console.error('❌ Falha ao validar sessão:', infoResponse.status, infoBody);
-      await ctx.reply('⚠️ A API respondeu com erro ao validar sua sessão. Tente novamente em alguns instantes.');
-      return;
-    }
-
-    const statsResult = await fetchPlayerStats(player.jwt);
-
-    if (statsResult.source === 'error') {
-      const status = statsResult.response?.status;
-      if (status === 401 || status === 403) {
-        authenticatedPlayers.delete(ctx.from.id);
-        await saveSessions();
-        await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
-        return;
-      }
-      const apiMsg = statsResult.body?.message || statsResult.body?.msg || '';
-      console.error('❌ Erro da API de stats:', status, statsResult.body);
-      await ctx.reply(
-        '⚠️ <b>Sua autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\n' +
-        'O bot tentou /user/stats e o fallback por temporada/partidas.\n' +
-        (apiMsg ? ('Detalhe da API: <code>' + String(apiMsg).slice(0, 120) + '</code>\n\n') : '') +
-        'Verifique se o histórico de batalhas está <b>público</b> nas configurações de privacidade do Mobile Legends e tente de novo.',
-        { parse_mode: 'HTML' }
-      );
-      return;
-    }
-
-    await ctx.reply(renderStats(statsResult.data), { parse_mode: 'HTML', ...mainKeyboard() });
-
-  } catch (error) {
-    console.error('❌ Erro ao consultar stats:', error);
-    await ctx.reply('⚠️ Não foi possível consultar a API agora. Tente novamente em alguns instantes.');
-  }
-}
-
-bot.command('stats', sendStats);
-
-bot.command('ajuda', async (ctx) => {
-  await ctx.reply(helpMessage, { parse_mode: 'HTML' });
+  await dropSession(ctx.from.id);
+  await ctx.reply('👋 Conta desvinculada. Use /cadastrar quando quiser voltar.', html(mainKeyboard()));
 });
 
-bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendRanking(ctx); });
-bot.action('clan', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
-bot.action('lore', async (ctx) => {
+// Botões do teclado persistente — registrados antes do handler de texto livre.
+bot.hears(BUTTONS.register, askForRoleId);
+bot.hears(BUTTONS.stats, sendStats);
+bot.hears(BUTTONS.ranking, sendRanking);
+bot.hears(BUTTONS.clan, sendClan);
+bot.hears(BUTTONS.help, sendHelp);
+bot.hears(BUTTONS.lore, sendLore);
+
+// Botões inline.
+bot.action('register', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await askForRoleId(ctx);
 });
-
 bot.action('stats', async (ctx) => {
   await ctx.answerCbQuery();
   await sendStats(ctx);
 });
-
-bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }); });
-bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
-bot.hears('📊 Minhas stats', sendStats);
-bot.hears('🏆 Ranking', sendRanking);
-bot.hears('👥 Clã SEGA', sendClan);
-bot.hears('❓ Ajuda', async (ctx) => await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }));
-bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
-
-bot.catch((error) => console.error('❌ Erro no bot:', error));
-
-await restoreSessions();
-console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
-
-bot.launch().then(() => {
-  console.log('🎮 SEGA Stats Bot online!');
+bot.action('ranking', async (ctx) => {
+  await ctx.answerCbQuery();
+  await sendRanking(ctx);
+});
+bot.action('clan', async (ctx) => {
+  await ctx.answerCbQuery();
+  await sendClan(ctx);
+});
+bot.action('lore', async (ctx) => {
+  await ctx.answerCbQuery();
+  await sendLore(ctx);
+});
+bot.action('help', async (ctx) => {
+  await ctx.answerCbQuery();
+  await sendHelp(ctx);
 });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Fluxo de cadastro (texto livre). Só roda se nada acima tratou a mensagem.
+bot.on('text', async (ctx) => {
+  const value = ctx.message.text.trim();
+
+  // Botões do menu nunca devem ser lidos como ID/código.
+  if (BUTTON_LABELS.has(value) || value.startsWith('/')) return;
+
+  const state = getRegistration(ctx.from.id);
+  if (!state) {
+    await ctx.reply('🤔 Não entendi. Use /ajuda para ver os comandos disponíveis.', html(mainKeyboard()));
+    return;
+  }
+
+  if (state.step === 'role_id') return handleRoleId(ctx, value);
+  if (state.step === 'zone_id') return handleZoneId(ctx, value, state);
+  if (state.step === 'verification_code') return handleVerificationCode(ctx, value, state);
+});
+
+bot.catch(async (error, ctx) => {
+  console.error('❌ Erro no bot:', error);
+  try {
+    await ctx.reply('⚠️ Ops, algo deu errado por aqui. Tente novamente em alguns instantes.');
+  } catch {
+    /* ignora falha ao avisar o usuário */
+  }
+});
+
+// ---------------------------------------------------------------- bootstrap
+
+const COMMANDS = [
+  { command: 'start', description: 'Abrir o menu principal' },
+  { command: 'cadastrar', description: 'Cadastrar jogador' },
+  { command: 'stats', description: 'Ver minhas estatísticas' },
+  { command: 'ranking', description: 'Ver ranking do clã' },
+  { command: 'clan', description: 'Ver o clã SEGA' },
+  { command: 'lore', description: 'Crônicas e heróis' },
+  { command: 'cancelar', description: 'Cancelar cadastro' },
+  { command: 'sair', description: 'Desvincular minha conta' },
+  { command: 'ajuda', description: 'Mostrar ajuda' }
+];
+
+let server = null;
+
+function startHealthServer() {
+  server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+
+    if (req.method === 'POST' && WEBHOOK_URL && url.pathname === WEBHOOK_PATH) {
+      if (WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== WEBHOOK_SECRET) {
+        res.writeHead(401).end('unauthorized');
+        return;
+      }
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      try {
+        await bot.handleUpdate(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch (error) {
+        console.error('❌ Erro ao processar update:', error.message);
+      }
+      res.writeHead(200).end('ok');
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+      JSON.stringify({
+        ok: true,
+        service: 'SEGA Stats Bot',
+        mode: WEBHOOK_URL ? 'webhook' : 'polling',
+        players: authenticatedPlayers.size,
+        uptime: Math.round(process.uptime())
+      })
+    );
+  });
+
+  // 0.0.0.0 é obrigatório para o healthcheck da Railway enxergar o serviço.
+  server.listen(PORT, '0.0.0.0', () => console.log(`🩺 Healthcheck HTTP em :${PORT}`));
+}
+
+async function main() {
+  console.log('🌐 API MLBB:', API_BASE);
+  console.log('💾 Arquivo de sessão:', SESSION_FILE);
+
+  await restoreSessions();
+  startHealthServer();
+
+  await bot.telegram.setMyCommands(COMMANDS).catch((error) => {
+    console.error('⚠️ Não consegui registrar os comandos:', error.message);
+  });
+
+  if (WEBHOOK_URL) {
+    const url = `${WEBHOOK_URL.replace(/\/+$/, '')}${WEBHOOK_PATH}`;
+    await bot.telegram.setWebhook(url, {
+      secret_token: WEBHOOK_SECRET || undefined,
+      drop_pending_updates: true
+    });
+    console.log('🎮 SEGA Stats Bot online (webhook):', url);
+    return;
+  }
+
+  // Remove webhook antigo, senão o getUpdates falha com 409.
+  await bot.telegram.deleteWebhook({ drop_pending_updates: true }).catch(() => {});
+
+  // bot.launch() só resolve quando o bot PARA — por isso logamos no callback,
+  // e tratamos o erro aqui para a Railway reiniciar em vez de ficar zumbi.
+  bot
+    .launch({ dropPendingUpdates: true }, () => {
+      console.log('🎮 SEGA Stats Bot online (long polling)!');
+    })
+    .catch((error) => {
+      console.error('❌ O polling parou com erro:', error?.message || error);
+      // 409 = outra instância usando o mesmo token. Rodar apenas 1 réplica.
+      if (String(error?.message || '').includes('409')) {
+        console.error('   ⚠️  Há outra instância do bot rodando com este mesmo BOT_TOKEN.');
+      }
+      process.exit(1);
+    });
+}
+
+function shutdown(signal) {
+  console.log(`\n⏹️  Encerrando (${signal})...`);
+  try {
+    bot.stop(signal);
+  } catch {
+    /* já parado */
+  }
+  server?.close();
+  setTimeout(() => process.exit(0), 1000).unref();
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+
+process.on('unhandledRejection', (reason) => console.error('❌ Promise rejeitada sem tratamento:', reason));
+process.on('uncaughtException', (error) => console.error('❌ Exceção não capturada:', error));
+
+main().catch((error) => {
+  console.error('❌ Falha fatal ao iniciar o bot:', error);
+  process.exit(1);
+});

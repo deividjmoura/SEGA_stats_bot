@@ -1,0 +1,111 @@
+import { Markup } from 'telegraf';
+
+export const BUTTONS = {
+  register: '📝 Cadastrar jogador',
+  stats: '📊 Minhas stats',
+  ranking: '🏆 Ranking',
+  clan: '👥 Clã SEGA',
+  help: '❓ Ajuda',
+  lore: '📜 Lore'
+};
+
+export const BUTTON_LABELS = new Set(Object.values(BUTTONS));
+
+export const startMessage = `🎮 <b>SEGA STATS</b>
+
+⚡ <b>Bem-vindo à arena, guerreiro!</b> 👊
+
+Bot oficial do clã <b>SEGA</b>.
+
+Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua batalha. Aqui você pode:
+
+🏆 Consultar o ranking do clã
+⚔️ Ver suas partidas e desempenho
+🛡️ Conferir sua rota mais jogada
+📊 Acompanhar seus pontos e estatísticas
+👥 Comparar seu desempenho com a galera do clã
+
+<b>Para começar:</b>
+👉 Use <code>/cadastrar</code> para vincular seu jogador.
+
+⚔️ <i>Entre na arena. Analise a batalha. Evolua.</i> 🔥`;
+
+export const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
+
+🎮 <code>/start</code> — abrir o menu principal
+📝 <code>/cadastrar</code> — cadastrar seu jogador
+📊 <code>/stats</code> — suas estatísticas
+🏆 <code>/ranking</code> — ranking do clã
+👥 <code>/clan</code> — painel do clã SEGA
+📜 <code>/lore</code> — crônicas e heróis
+❌ <code>/cancelar</code> — cancelar o cadastro em andamento
+❓ <code>/ajuda</code> — mostrar esta ajuda
+
+🔒 O bot <b>nunca</b> pede sua senha ou e-mail. A verificação usa apenas o código enviado ao correio interno do Mobile Legends.`;
+
+export const loreMessage = `📜 <b>CRÔNICAS DO SEGA</b>
+
+🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.
+
+⚔️ <b>Saber</b> — precisão e evolução.
+🛡️ <b>Tigreal</b> — liderança e união.
+🔥 <b>Alucard</b> — persistência diante da adversidade.
+🎯 <b>Layla</b> — alcance e poder de fogo.
+
+No SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.
+
+✨ <i>Da arena para o placar. Do jogador para a lenda.</i>`;
+
+export function mainKeyboard() {
+  return Markup.keyboard([
+    [BUTTONS.register, BUTTONS.stats],
+    [BUTTONS.ranking, BUTTONS.clan],
+    [BUTTONS.help, BUTTONS.lore]
+  ])
+    .resize()
+    .persistent();
+}
+
+export function quickActionsKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(BUTTONS.register, 'register')],
+    [Markup.button.callback(BUTTONS.stats, 'stats'), Markup.button.callback(BUTTONS.ranking, 'ranking')],
+    [Markup.button.callback(BUTTONS.clan, 'clan'), Markup.button.callback(BUTTONS.lore, 'lore')],
+    [Markup.button.callback(BUTTONS.help, 'help')]
+  ]);
+}
+
+export function html(extra = {}) {
+  return { parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra };
+}
+
+export function renderStats(s, playerName) {
+  const title = playerName ? `📊 <b>ESTATÍSTICAS DE ${escapeHtml(playerName).toUpperCase()}</b>` : '📊 <b>SUAS ESTATÍSTICAS</b>';
+  const lines = [
+    title,
+    '',
+    `🎮 Partidas: <b>${s.matches}</b>`,
+    `🏆 Vitórias: <b>${s.wins}</b>`,
+    `💀 Derrotas: <b>${s.losses}</b>`,
+    `📈 Win rate: <b>${s.winRate.toFixed(1)}%</b>`
+  ];
+
+  if (s.hasKda) {
+    const kda = s.deaths > 0 ? ((s.kills + s.assists) / s.deaths).toFixed(2) : '∞';
+    lines.push(`⚔️ K/D/A: <b>${s.kills}/${s.deaths}/${s.assists}</b> (KDA ${kda})`);
+  }
+
+  lines.push(`⭐ Pontuação média: <b>${s.avgScore != null ? s.avgScore.toFixed(1) : 'N/D'}</b>`);
+  lines.push(`👑 MVPs: <b>${s.mvps}</b>`);
+  if (s.mostPlayed) lines.push(`🎯 Herói mais usado: <b>${escapeHtml(s.mostPlayed)}</b>`);
+
+  lines.push('', '<i>SEGA: cada partida escreve uma linha da história.</i>');
+  return lines.join('\n');
+}
+
+export function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
