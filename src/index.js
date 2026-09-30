@@ -152,26 +152,62 @@ function parseMatchStats(matches) {
 }
 
 async function fetchPlayerStats(jwt) {
-  const direct = await apiJson('/user/stats', { headers: authHeaders(jwt) });
+  // Preferir /user/stats quando disponível (ainda funciona em muitos casos, apesar de deprecated).
+  const direct = await apiJson('/user/stats?lang=pt', { headers: authHeaders(jwt) });
+  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
+    const data = direct.body.data;
+    // Se vier com totais úteis, usa direto.
+    if (data.tc != null || data.wc != null) {
+      return { source: 'stats', data };
+    }
+  }
+
+  // Fallback: montar estatísticas a partir da temporada + partidas recentes.
+  // IMPORTANTE: a API só aceita lang=pt (não pt_BR).
+  const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
+  const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
+  if (!season.response.ok || season.body?.code !== 0 || sids.length === 0) {
+    console.error('❌ Fallback season falhou:', season.response?.status, season.body);
+    return {
+      source: 'error',
+      response: season.response?.ok === false ? season.response : direct.response,
+      body: season.body?.code !== 0 ? season.body : direct.body
+    };
+  }
+
+  // Tenta a temporada mais recente e, se vier vazia, as anteriores.
+  let lastError = null;
+  for (const sid of sids.slice(0, 3)) {
+    const matches = await apiJson(
+      '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt',
+      { headers: authHeaders(jwt) }
+    );
+
+    if (!matches.response.ok || matches.body?.code !== 0) {
+      lastError = { response: matches.response, body: matches.body };
+      console.error('❌ Matches sid=' + sid + ' falhou:', matches.response?.status, matches.body);
+      continue;
+    }
+
+    const rows = matches.body?.data?.result;
+    if (Array.isArray(rows) && rows.length > 0) {
+      return { source: 'matches', data: parseMatchStats(rows), sid };
+    }
+
+    // Temporada sem partidas — tenta a próxima.
+    lastError = { response: matches.response, body: matches.body };
+  }
+
+  // Nenhuma temporada retornou partidas. Se /user/stats tinha algo, usa mesmo assim.
   if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
     return { source: 'stats', data: direct.body.data };
   }
 
-  // /user/stats está marcado como deprecated na API. Tentamos montar as estatísticas pelas partidas.
-  const season = await apiJson('/user/season?lang=pt_BR', { headers: authHeaders(jwt) });
-  const sid = season.body?.data?.sids?.[0];
-  if (!season.response.ok || season.body?.code !== 0 || !sid) {
-    return { source: 'error', response: direct.response, body: direct.body };
-  }
-
-  const matches = await apiJson('/user/matches?sid=' + encodeURIComponent(sid) + '&limit=20&lang=pt_BR', {
-    headers: authHeaders(jwt)
-  });
-  if (!matches.response.ok || matches.body?.code !== 0) {
-    return { source: 'error', response: matches.response, body: matches.body };
-  }
-
-  return { source: 'matches', data: parseMatchStats(matches.body?.data?.result) };
+  return {
+    source: 'error',
+    response: lastError?.response || direct.response,
+    body: lastError?.body || direct.body
+  };
 }
 
 function renderStats(data) {
@@ -179,9 +215,20 @@ function renderStats(data) {
   const wins = Number(data.wins ?? data.wc ?? 0);
   const losses = Number(data.losses ?? Math.max(matches - wins, 0));
   const winRate = matches > 0 ? ((wins / matches) * 100).toFixed(1) : '0.0';
-  const avgScore = data.avgScore != null ? Number(data.avgScore).toFixed(1) : (data.as != null ? Number(data.as).toFixed(1) : 'N/D');
+  // API /user/stats devolve `as` em escala x100; o fallback por partidas já normaliza em avgScore.
+  let avgScore = 'N/D';
+  if (data.avgScore != null && Number.isFinite(Number(data.avgScore))) {
+    avgScore = Number(data.avgScore).toFixed(1);
+  } else if (data.as != null && Number.isFinite(Number(data.as))) {
+    const raw = Number(data.as);
+    avgScore = (raw > 20 ? raw / 100 : raw).toFixed(1);
+  }
   const mvps = data.mvps ?? data.mvpc ?? 0;
   const kda = data.kills != null ? (data.kills + '/' + data.deaths + '/' + data.assists) : 'N/D';
+  const mostPlayed = data.mostPlayed
+    || data.mo?.hid_e?.n
+    || data.ms?.hid_e?.n
+    || null;
   return '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
     '🎮 Partidas: <b>' + matches + '</b>\n' +
     '🏆 Vitórias: <b>' + wins + '</b>\n' +
@@ -190,7 +237,7 @@ function renderStats(data) {
     '⚔️ K/D/A: <b>' + kda + '</b>\n' +
     '⭐ Pontuação média: <b>' + avgScore + '</b>\n' +
     '👑 MVPs: <b>' + mvps + '</b>\n' +
-    (data.mostPlayed ? '🎯 Herói mais usado: <b>' + data.mostPlayed + '</b>\n' : '') +
+    (mostPlayed ? '🎯 Herói mais usado: <b>' + mostPlayed + '</b>\n' : '') +
     '\n<i>SEGA: cada partida escreve uma linha da história.</i>';
 }
 
@@ -382,7 +429,11 @@ async function sendRanking(ctx) {
       const matches = Number(data.matches ?? data.tc ?? 0);
       const wins = Number(data.wins ?? data.wc ?? 0);
       const winRate = matches > 0 ? (wins / matches) * 100 : 0;
-      const avgScore = Number(data.avgScore ?? data.as ?? 0);
+      let avgScore = Number(data.avgScore ?? 0);
+      if (!avgScore && data.as != null) {
+        const raw = Number(data.as);
+        avgScore = raw > 20 ? raw / 100 : raw;
+      }
 
       return {
         telegramId,
@@ -470,8 +521,15 @@ async function sendStats(ctx) {
         await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
         return;
       }
+      const apiMsg = statsResult.body?.message || statsResult.body?.msg || '';
       console.error('❌ Erro da API de stats:', status, statsResult.body);
-      await ctx.reply('⚠️ <b>Sua autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\nO bot tentou a rota principal e a alternativa por partidas. Tente novamente em alguns instantes.', { parse_mode: 'HTML' });
+      await ctx.reply(
+        '⚠️ <b>Sua autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\n' +
+        'O bot tentou /user/stats e o fallback por temporada/partidas.\n' +
+        (apiMsg ? ('Detalhe da API: <code>' + String(apiMsg).slice(0, 120) + '</code>\n\n') : '') +
+        'Verifique se o histórico de batalhas está <b>público</b> nas configurações de privacidade do Mobile Legends e tente de novo.',
+        { parse_mode: 'HTML' }
+      );
       return;
     }
 
