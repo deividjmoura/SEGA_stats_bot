@@ -209,6 +209,45 @@ export async function processScreenshot(ctx, player) {
   return createdRecord;
 }
 
+export async function cleanupScreenshots() {
+  const retentionDays = Math.max(1, Number(process.env.SCREENSHOT_RETENTION_DAYS || 90));
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const referenced = new Set();
+
+  await updateJson(MATCHES_FILE, {}, async matches => {
+    for (const [telegramId, records] of Object.entries(matches || {})) {
+      if (!Array.isArray(records)) continue;
+      const kept = [];
+
+      for (const record of records) {
+        const createdAt = Date.parse(record.createdAt || '');
+        if (Number.isFinite(createdAt) && createdAt < cutoff) {
+          if (record.imageFile) {
+            await fs.unlink(path.join(DATA_DIR, record.imageFile)).catch(() => {});
+          }
+          continue;
+        }
+        if (record.imageFile) referenced.add(path.resolve(DATA_DIR, record.imageFile));
+        kept.push(record);
+      }
+
+      matches[telegramId] = kept;
+    }
+    return matches;
+  });
+
+  const files = await fs.readdir(SCREENSHOT_DIR).catch(() => []);
+  for (const file of files) {
+    if (!/\.(?:jpg|jpeg|png|webp)$/i.test(file)) continue;
+    const fullPath = path.resolve(SCREENSHOT_DIR, file);
+    if (referenced.has(fullPath)) continue;
+    const stat = await fs.stat(fullPath).catch(() => null);
+    if (stat?.mtimeMs && stat.mtimeMs < cutoff) {
+      await fs.unlink(fullPath).catch(() => {});
+    }
+  }
+}
+
 export async function getPlayerScreenshots(telegramId) {
   const matches = await loadMatches();
   return Array.isArray(matches[String(telegramId)]) ? matches[String(telegramId)] : [];
