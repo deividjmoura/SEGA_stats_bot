@@ -98,9 +98,14 @@ O objetivo é poder trocar a fonte de dados sem reescrever a lógica do bot.
 - O vínculo é iniciado pelo próprio jogador.
 - O jogador fornece Role ID e Zone ID.
 - O código de verificação é enviado pelo sistema do jogo.
-- Tokens de sessão são armazenados criptografados no arquivo de sessão.
-- Segredos como `BOT_TOKEN` devem permanecer somente em variáveis de ambiente.
+- Tokens de sessão são armazenados criptografados com uma `SESSION_ENCRYPTION_KEY` própria, separada do `BOT_TOKEN`.
+- Segredos como `BOT_TOKEN` e `SESSION_ENCRYPTION_KEY` devem permanecer somente em variáveis de ambiente.
 - Dados de autenticação não devem ser commitados no Git.
+- Role ID, Zone ID e código de verificação são aceitos somente no chat privado.
+- No grupo, imagens só são processadas quando têm a legenda `#print` ou respondem a uma mensagem do bot.
+- Prints classificados como desconhecidos são descartados; prints processados podem conter nicks de outros jogadores visíveis na imagem.
+- O OCR é usado para localizar/validar a tela e o Battle ID; depois da confirmação, K/D/A, resultado, MVP, herói e pontuação vêm da API de partidas como fonte de verdade.
+- Dados de OCR e screenshots são mantidos no volume até serem removidos pela manutenção da aplicação. Planejamos migrar esse armazenamento para banco de dados.
 
 **Importante:** qualquer integração oficial futura deverá respeitar os termos, requisitos técnicos, privacidade e regras de acesso da MOONTON.
 
@@ -122,11 +127,14 @@ O objetivo é poder trocar a fonte de dados sem reescrever a lógica do bot.
 
 ```text
 SEGA_stats_bot/
-├── api/
-│   └── telegram.js       # Endpoint experimental para webhook/Vercel
-│
 ├── src/
-│   └── index.js          # Implementação principal do bot
+│   ├── index.js          # Orquestração do bot e handlers
+│   ├── ocr.js            # Parser OCR e funções puras de reconhecimento
+│   ├── screenshotStats.js # Download, OCR e armazenamento de screenshots
+│   ├── storage/
+│   │   └── jsonStore.js  # Escrita JSON atômica e serializada
+│   └── ...
+
 │
 ├── docs/
 │   ├── ARCHITECTURE.md   # Arquitetura e responsabilidades
@@ -172,7 +180,10 @@ Preencha:
 
 ```env
 BOT_TOKEN=seu_token_do_botfather
+SESSION_ENCRYPTION_KEY=uma_chave_secreta_propria_e_estavel
 ```
+
+> **Importante:** `SESSION_ENCRYPTION_KEY` é obrigatória. Gere uma chave aleatória forte e mantenha-a estável no Railway. Ela não deve ser derivada do `BOT_TOKEN`.
 
 ### 4. Executar
 
@@ -188,13 +199,14 @@ npm run dev
 
 ## ☁️ Deploy
 
-A implementação principal em `src/index.js` utiliza **polling** e é adequada para um processo Node.js persistente, como Railway ou outro serviço equivalente.
+A implementação de produção em `src/index.js` utiliza **polling** e é adequada para um processo Node.js persistente, como Railway ou outro serviço equivalente.
 
-O arquivo `api/telegram.js` contém uma implementação separada para webhook/Vercel e ainda não representa a implementação principal de produção.
+O antigo stub experimental de webhook/Vercel foi removido para evitar duas implementações divergentes do bot. O serviço de produção atual é o processo de polling no Railway.
 
 ### Persistência obrigatória no Railway
 
-O bot grava <b>cadastros, sessões, prints e estatísticas derivadas</b> em arquivos dentro de `DATA_DIR`.
+O bot grava cadastros, sessões, prints, perguntas e estatísticas derivadas em arquivos dentro de `DATA_DIR`.
+As escritas dos JSONs runtime são serializadas e feitas de forma atômica (arquivo temporário + rename), evitando corrupção por escrita concorrente ou interrupção no meio da gravação.
 Em Railway, esses arquivos só sobrevivem a redeploys se o serviço tiver um **Volume** anexado.
 
 Configuração recomendada:
@@ -203,7 +215,7 @@ Configuração recomendada:
 - o Railway fornece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`, e o bot passa a gravar tudo nesse volume;
 - opcionalmente, defina `DATA_DIR=/data` se quiser controlar explicitamente o caminho.
 
-Sem Volume, um redeploy pode apagar `sessions.json`, `registrations.json`, `matches.json` e as imagens salvas.
+Sem Volume, um redeploy pode apagar `sessions.json`, `registrations.json`, `matches.json`, `questions.json` e as imagens salvas.
 
 Se o deploy utilizar armazenamento persistente para as sessões, configure:
 
