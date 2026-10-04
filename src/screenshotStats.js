@@ -74,11 +74,14 @@ function parseWinRate(text) {
 function detectKind(text) {
   const source = normalizeOcrText(text).toLowerCase();
   const finalWords = ['victory', 'defeat', 'mvp', 'battlefield', 'result', 'vitória', 'derrota', 'resultado'];
-  const profileWords = ['win rate', 'winrate', 'matches', 'games', 'heroes', 'history', 'season', 'taxa de vitória', 'partidas', 'histórico'];
+  const profileWords = ['win rate', 'winrate', 'matches', 'games', 'heroes', 'season', 'taxa de vitória', 'partidas'];
+  const battlesWords = ['batalhas', 'battles', 'battle history', 'match history', 'histórico de batalhas', 'histórico'];
   const finalScore = finalWords.filter(word => source.includes(word)).length;
   const profileScore = profileWords.filter(word => source.includes(word)).length;
-  if (finalScore > profileScore) return 'match_result';
-  if (profileScore > finalScore) return 'profile';
+  const battlesScore = battlesWords.filter(word => source.includes(word)).length;
+  if (finalScore > profileScore && finalScore >= battlesScore) return 'match_result';
+  if (battlesScore > profileScore) return 'battles';
+  if (profileScore > 0) return 'profile';
   return 'unknown';
 }
 
