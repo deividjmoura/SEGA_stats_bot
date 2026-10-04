@@ -16,7 +16,13 @@ const SESSION_FILE = process.env.SESSION_FILE || (DATA_DIR + '/sessions.json');
 const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registrations.json');
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
 const API_TIMEOUT_MS = 12000;
-const SESSION_KEY = crypto.createHash('sha256').update(token || '').digest();
+const sessionEncryptionSecret = process.env.SESSION_ENCRYPTION_KEY;
+const SESSION_KEY = crypto.createHash('sha256')
+  .update(sessionEncryptionSecret || '')
+  .digest();
+if (!sessionEncryptionSecret) {
+  console.warn('⚠️ SESSION_ENCRYPTION_KEY não configurada. Configure uma chave própria; não use BOT_TOKEN como chave de sessão.');
+}
 
 if (!token) {
   console.error('❌ BOT_TOKEN não configurado. Crie um arquivo .env com o token do BotFather.');
@@ -84,54 +90,36 @@ function getReplyIdentity(ctx) {
   };
 }
 
-function getNaturalReplyIntro(ctx, text) {
+function getReplyIntro(ctx, kind) {
   const identity = getReplyIdentity(ctx);
   if (!identity) return '';
 
-  const body = String(text || '');
   const who = identity.mention;
+  const intros = {
+    general: '🎮 ' + who + ', olha só:\n\n',
+    ranking: '🏆 ' + who + ', olha como está o ranking:\n\n',
+    stats: '📊 ' + who + ', aqui estão seus dados:\n\n',
+    print: '📸 ' + who + ', sobre esse print:\n\n',
+    auth: '🔐 ' + who + ', vamos continuar o cadastro com segurança:\n\n',
+    counter: '🎮 Então, ' + who + ', geralmente são esses:\n\n',
+    items: '🛡️ ' + who + ', contra esse herói eu olharia primeiro para estes itens:\n\n',
+    tips: '🧠 ' + who + ', o caminho mais seguro costuma ser este:\n\n',
+    build: '🧩 ' + who + ', sobre a build, olha só:\n\n'
+  };
+  return intros[kind] || intros.general;
+}
 
-  if (/COUNTERS DE/i.test(body)) {
-    return '🎮 Então, ' + who + ', geralmente são esses:\n\n';
+async function replyAs(ctx, kind, text, extra = {}) {
+  const options = { ...extra };
+  markBanterHandled(ctx);
+  if (typeof text === 'string') {
+    const intro = getReplyIntro(ctx, kind);
+    if (intro) {
+      text = intro + text;
+      if (!options.parse_mode) options.parse_mode = 'HTML';
+    }
   }
-
-  if (/ITENS CONTRA/i.test(body)) {
-    return '🛡️ ' + who + ', contra esse herói eu olharia primeiro para estes itens:\n\n';
-  }
-
-  if (/COMO JOGAR CONTRA/i.test(body)) {
-    return '🧠 ' + who + ', o caminho mais seguro costuma ser este:\n\n';
-  }
-
-  if (/BUILD \/|BUILD DE|BUILD DO|BUILD DA/i.test(body)) {
-    return '🧩 ' + who + ', sobre a build, olha só:\n\n';
-  }
-
-  if (/RANKING SEGA|Calculando o ranking/i.test(body)) {
-    return '🏆 ' + who + ', olha como está essa parte do ranking:\n\n';
-  }
-
-  if (/SUAS ESTATÍSTICAS|Buscando suas estatísticas|DADOS COLETADOS|COLETA DE PARTIDAS/i.test(body)) {
-    return '📊 ' + who + ', aqui estão seus dados:\n\n';
-  }
-
-  if (/CONTA VERIFICADA|jogador foi vinculado/i.test(body)) {
-    return '✅ ' + who + ', cadastro confirmado. Agora sim:\n\n';
-  }
-
-  if (/^(?:❌|⚠️|🔐|🚫)/u.test(body.trim())) {
-    return '⚠️ ' + who + ', tive um imprevisto por aqui:\n\n';
-  }
-
-  if (/PRINT|screenshot|foto/i.test(body)) {
-    return '📸 ' + who + ', sobre esse print:\n\n';
-  }
-
-  if (/Não identifiquei esse herói|ainda não entendeu essa pergunta/i.test(body)) {
-    return '🤔 ' + who + ', não consegui fechar essa resposta ainda. Olha só:\n\n';
-  }
-
-  return '🎮 ' + who + ', olha só:\n\n';
+  return replyAs(ctx, 'general', text, options);
 }
 
 const memberTagCache = new Map();
@@ -153,7 +141,9 @@ async function syncMemberTag(ctx, player) {
   if (!tag) return;
 
   const cacheKey = String(ctx.chat.id) + ':' + String(ctx.from.id);
-  if (memberTagCache.get(cacheKey) === tag) return;
+  const cachedTag = memberTagCache.get(cacheKey);
+  if (cachedTag === tag) return;
+  if (cachedTag?.tag === tag && Date.now() - cachedTag.failedAt < 6 * 60 * 60 * 1000) return;
 
   try {
     await ctx.telegram.callApi('setChatMemberTag', {
@@ -163,7 +153,8 @@ async function syncMemberTag(ctx, player) {
     });
     memberTagCache.set(cacheKey, tag);
   } catch (error) {
-    // Falha de permissão/configuração não deve impedir o bot de responder.
+    // Guarda também falhas para não repetir uma chamada ao Telegram a cada mensagem.
+    memberTagCache.set(cacheKey, { tag, failedAt: Date.now() });
     console.warn(
       '⚠️ Não consegui atualizar a tag do membro ' +
       ctx.from.id + ' no grupo ' + ctx.chat.id + ':',
@@ -172,36 +163,12 @@ async function syncMemberTag(ctx, player) {
   }
 }
 
-// Toda resposta textual do bot chama quem acionou a interação pelo nome.
-// Depois do cadastro, priorizamos sempre o nick do Mobile Legends e variamos
-// a introdução conforme o assunto para a conversa não parecer automatizada.
 bot.use(async (ctx, next) => {
   const player = authenticatedPlayers.get(Number(ctx.from?.id));
   if (player) {
     await refreshPlayerName(ctx.from?.id);
     await syncMemberTag(ctx, player);
   }
-
-  const originalReply = ctx.reply.bind(ctx);
-
-  ctx.reply = async (text, extra = {}) => {
-    const options = { ...extra };
-
-    // Uma resposta do bot também conta como interação: cancela qualquer timer
-    // de “ninguém respondeu” armado pela mensagem que originou esta resposta.
-    markBanterHandled(ctx);
-
-    if (typeof text === 'string') {
-      const intro = getNaturalReplyIntro(ctx, text);
-      if (intro) {
-        text = intro + text;
-        if (!options.parse_mode) options.parse_mode = 'HTML';
-      }
-    }
-
-    return originalReply(text, options);
-  };
-
   return next();
 });
 
@@ -401,27 +368,15 @@ function isGroupChat(ctx) {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 }
 
-let cachedBotUsername = null;
-async function getBotUsername() {
-  if (cachedBotUsername) return cachedBotUsername;
-  try {
-    const me = await ctxBotGetMe();
-    cachedBotUsername = me.username || null;
-  } catch {
-    cachedBotUsername = null;
-  }
-  return cachedBotUsername;
-}
-
-async function ctxBotGetMe() {
-  return bot.telegram.getMe();
+function getBotUsername() {
+  return bot.botInfo?.username || null;
 }
 
 async function requirePrivateChat(ctx) {
-  if (!isGroupChat(ctx)) return true;
-  const username = await getBotUsername();
+  if (ctx.chat?.type === 'private') return true;
+  const username = getBotUsername();
   const link = username ? 'https://t.me/' + username : 'o chat privado deste bot';
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '🔐 <b>Cadastro é feito no privado.</b>\n\n' +
     'Para proteger seu Role ID, Zone ID e o código de verificação, abra o chat privado do SEGA Stats e use <code>/cadastrar</code> por lá.\n\n' +
     (username ? '👉 <a href="' + link + '?start=cadastro">Abrir cadastro no SEGA Stats</a>' : '👉 Abra o chat privado do bot pelo perfil acima.'),
@@ -708,7 +663,7 @@ async function sendHelp(ctx) {
     const helpLink = username ? 'https://t.me/' + username + '?start=ajuda' : null;
     const registerLink = username ? 'https://t.me/' + username + '?start=cadastro' : null;
 
-    await ctx.reply(groupGuideMessage, {
+    await replyAs(ctx, 'general', groupGuideMessage, {
       parse_mode: 'HTML',
       disable_web_page_preview: true,
       ...Markup.inlineKeyboard([
@@ -719,7 +674,7 @@ async function sendHelp(ctx) {
     return;
   }
 
-  await ctx.reply(helpMessage, {
+  await replyAs(ctx, 'general', helpMessage, {
     parse_mode: 'HTML',
     ...mainKeyboard()
   });
@@ -735,7 +690,7 @@ function mainKeyboard() {
 }
 
 async function sendPrintInstructions(ctx) {
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '📸 <b>ENVIAR PRINT</b>\n\n' +
     'Agora é só anexar a imagem nesta conversa pelo botão de <b>clipe/câmera do Telegram</b>.\n\n' +
     '🥇 <b>Resultado final</b> — melhor opção; se aparecerem Battle ID, K/D/A e seu nick, melhor ainda.\n' +
@@ -747,13 +702,14 @@ async function sendPrintInstructions(ctx) {
 }
 
 async function askForRoleId(ctx) {
+  if (!(await requirePrivateChat(ctx))) return false;
   await setRegistration(ctx.from.id, { step: 'role_id' });
-  return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
+  return replyAs(ctx, 'general', '📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
 }
 
 async function sendMenu(ctx) {
   if (isGroupChat(ctx)) {
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '🎮 <b>SEGA STATS ONLINE</b>\n\n' +
       '🏆 Ranking • 📊 Stats • 📸 Prints\n\n' +
       '🔐 O cadastro de cada jogador é feito no privado, para não expor Role ID, Zone ID ou código de verificação no grupo.\n\n' +
@@ -769,8 +725,8 @@ async function sendMenu(ctx) {
     return;
   }
 
-  await ctx.reply(startMessage, { parse_mode: 'HTML', ...mainKeyboard() });
-  await ctx.reply('⚡ <b>AÇÕES RÁPIDAS</b>', {
+  await replyAs(ctx, 'general', startMessage, { parse_mode: 'HTML', ...mainKeyboard() });
+  await replyAs(ctx, 'general', '⚡ <b>AÇÕES RÁPIDAS</b>', {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       [Markup.button.callback('📝 Cadastrar jogador', 'register')],
@@ -802,17 +758,26 @@ bot.command('cadastrar', async (ctx) => await askForRoleId(ctx));
 
 bot.command('cancelar', async (ctx) => {
   await deleteRegistration(ctx.from.id);
-  await ctx.reply('❌ Cadastro cancelado. Nenhuma alteração foi feita.');
+  await replyAs(ctx, 'general', '❌ Cadastro cancelado. Nenhuma alteração foi feita.');
 });
 
 bot.on('text', async (ctx, next) => {
   const state = registration.get(ctx.from.id);
 
+  if (state && ctx.chat?.type !== 'private') {
+    await replyAs(ctx, 'auth',
+      '🔐 <b>Cadastro protegido.</b>\n\n' +
+      'Continue este cadastro somente no chat privado do SEGA Stats. Não envie Role ID, Zone ID ou código de verificação no grupo.',
+      { parse_mode: 'HTML' }
+    );
+    return next();
+  }
+
   // Este handler trata somente as respostas do fluxo de cadastro.
   // Comandos como /stats e /ranking precisam seguir para os handlers abaixo.
   if (!state) {
     if (!isGroupChat(ctx) && /^\d{4,8}$/.test(ctx.message.text.trim())) {
-      await ctx.reply(
+      await replyAs(ctx, 'general', 
         '⚠️ <b>Não encontrei um cadastro pendente para esse código.</b>\n\n' +
         'O bot pode ter sido reiniciado antes de você enviar o código. Use /cadastrar novamente para iniciar uma nova verificação.',
         { parse_mode: 'HTML' }
@@ -831,22 +796,22 @@ bot.on('text', async (ctx, next) => {
 
   if (state.step === 'role_id') {
     if (!/^\d{6,12}$/.test(value)) {
-      await ctx.reply('⚠️ Esse ID não parece válido. Envie somente os números do seu ID do Mobile Legends.');
+      await replyAs(ctx, 'general', '⚠️ Esse ID não parece válido. Envie somente os números do seu ID do Mobile Legends.');
       return;
     }
     await setRegistration(ctx.from.id, { step: 'zone_id', roleId: value });
-    await ctx.reply('🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>', { parse_mode: 'HTML' });
+    await replyAs(ctx, 'general', '🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>', { parse_mode: 'HTML' });
     return;
   }
 
   if (state.step === 'zone_id') {
     if (!/^\d{1,8}$/.test(value)) {
-      await ctx.reply('⚠️ Zone ID inválido. Envie somente os números do seu Zone ID.');
+      await replyAs(ctx, 'general', '⚠️ Zone ID inválido. Envie somente os números do seu Zone ID.');
       return;
     }
 
     const { roleId } = state;
-    await ctx.reply('🔎 <b>Solicitando código de verificação...</b>\n\n📩 Um código será enviado para o correio interno do Mobile Legends.\n⏱️ O código é válido por 5 minutos.', { parse_mode: 'HTML' });
+    await replyAs(ctx, 'general', '🔎 <b>Solicitando código de verificação...</b>\n\n📩 Um código será enviado para o correio interno do Mobile Legends.\n⏱️ O código é válido por 5 minutos.', { parse_mode: 'HTML' });
 
     try {
       const response = await apiFetch('/user/auth/send-vc', {
@@ -867,20 +832,20 @@ bot.on('text', async (ctx, next) => {
         } else {
           reply =
             '⚠️ <b>Não consegui solicitar o código de verificação.</b>\n\n' +
-            (apiMsg ? '📋 Motivo informado pela API: <code>' + String(apiMsg).slice(0, 180).replace(/[<>]/g, '') + '</code>\n\n' : '') +
+            (apiMsg ? '📋 Motivo informado pela API: <code>' + escapeHtml(String(apiMsg).slice(0, 180)) + '</code>\n\n' : '') +
             'Confira o Role ID e o Zone ID e tente novamente.' +
-            (trace ? '\n\n🔎 Trace ID: <code>' + String(trace).replace(/[<>]/g, '') + '</code>' : '');
+            (trace ? '\n\n🔎 Trace ID: <code>' + escapeHtml(String(trace)) + '</code>' : '');
         }
 
         // Mantém o Role ID/Zone ID em memória e no volume para permitir uma nova tentativa
         // sem obrigar o jogador a reiniciar todo o cadastro.
         await setRegistration(ctx.from.id, { step: 'zone_id', roleId });
-        await ctx.reply(reply, { parse_mode: 'HTML' });
+        await replyAs(ctx, 'general', reply, { parse_mode: 'HTML' });
         return;
       }
 
       await setRegistration(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
-      await ctx.reply(
+      await replyAs(ctx, 'general', 
         '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
         '📩 O código foi solicitado e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n' +
         '🔢 Quando receber o código, envie <b>somente o código</b> aqui no bot.\n\n' +
@@ -894,19 +859,19 @@ bot.on('text', async (ctx, next) => {
       // Mantém o cadastro em zone_id: se a falha for de rede/timeout,
       // o jogador pode tentar novamente sem redigitar o Role ID.
       await setRegistration(ctx.from.id, { step: 'zone_id', roleId });
-      await ctx.reply('⚠️ Não consegui conectar ao serviço de autenticação agora. Tente novamente. Seu cadastro foi mantido; envie o Zone ID novamente.');
+      await replyAs(ctx, 'general', '⚠️ Não consegui conectar ao serviço de autenticação agora. Tente novamente. Seu cadastro foi mantido; envie o Zone ID novamente.');
     }
     return;
   }
 
   if (state.step === 'verification_code') {
     if (!/^\d{4,8}$/.test(value)) {
-      await ctx.reply('⚠️ Código inválido. Envie somente os números do código recebido no correio do Mobile Legends.');
+      await replyAs(ctx, 'general', '⚠️ Código inválido. Envie somente os números do código recebido no correio do Mobile Legends.');
       return;
     }
 
     const { roleId, zoneId } = state;
-    await ctx.reply('🔐 <b>Validando o código...</b>', { parse_mode: 'HTML' });
+    await replyAs(ctx, 'auth', '🔐 <b>Validando o código...</b>', { parse_mode: 'HTML' });
 
     try {
       const payload = {
@@ -927,15 +892,15 @@ bot.on('text', async (ctx, next) => {
 
       if (!ok) {
         const apiMsg = apiErrorMessage(body);
-        console.error('❌ Falha na autenticação:', response.status, JSON.stringify(body), 'payload=', payload);
+        console.error('❌ Falha na autenticação:', response.status, JSON.stringify(body));
         let reply =
           '❌ <b>Não foi possível validar o código.</b>\n\n' +
           'Verifique se você digitou o código corretamente e se ele ainda está dentro do prazo de validade (5 minutos).\n\n' +
           'Você pode enviar o código novamente ou digitar /cancelar para recomeçar.';
         if (apiMsg) {
-          reply += '\n\n📋 Detalhe da API: <code>' + String(apiMsg).slice(0, 150) + '</code>';
+          reply += '\n\n📋 Detalhe da API: <code>' + escapeHtml(String(apiMsg).slice(0, 150)) + '</code>';
         }
-        await ctx.reply(reply, { parse_mode: 'HTML' });
+        await replyAs(ctx, 'general', reply, { parse_mode: 'HTML' });
         return;
       }
 
@@ -944,7 +909,7 @@ bot.on('text', async (ctx, next) => {
 
       if (!infoResponse.ok || !isApiSuccess(infoBody)) {
         console.error('❌ Login realizado, mas não consegui consultar o perfil:', infoResponse.status, infoBody);
-        await ctx.reply('⚠️ A autenticação retornou token, mas a API não confirmou o perfil agora. Tente novamente em alguns instantes ou envie o código de novo.', { parse_mode: 'HTML' });
+        await replyAs(ctx, 'general', '⚠️ A autenticação retornou token, mas a API não confirmou o perfil agora. Tente novamente em alguns instantes ou envie o código de novo.', { parse_mode: 'HTML' });
         return;
       }
 
@@ -959,7 +924,7 @@ bot.on('text', async (ctx, next) => {
       await saveSessions();
       await deleteRegistration(ctx.from.id);
 
-      await ctx.reply(
+      await replyAs(ctx, 'general', 
         '✅ <b>CONTA VERIFICADA!</b>\n\n' +
         `🎮 Nick confirmado: <b>${escapeHtml(verifiedName)}</b>\n` +
         `🆔 ID: <code>${roleId}</code>\n` +
@@ -977,7 +942,7 @@ bot.on('text', async (ctx, next) => {
       );
     } catch (error) {
       console.error('❌ Erro ao autenticar jogador:', error);
-      await ctx.reply('⚠️ Ocorreu um erro de conexão ao validar o código. Tente novamente em alguns segundos.');
+      await replyAs(ctx, 'general', '⚠️ Ocorreu um erro de conexão ao validar o código. Tente novamente em alguns segundos.');
     }
   }
 });
@@ -989,7 +954,7 @@ bot.action('register', async (ctx) => {
 
 async function sendClan(ctx) {
   const count = authenticatedPlayers.size;
-  await ctx.reply('👥 <b>CLÃ SEGA</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await replyAs(ctx, 'general', '👥 <b>CLÃ SEGA</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 }
 
 async function sendRanking(ctx) {
@@ -1013,7 +978,7 @@ async function sendRanking(ctx) {
     );
 
   if (!ranking.length) {
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '🏆 <b>RANKING SEGA</b>\n\n' +
       'Ainda não há partidas verificadas suficientes nos prints para montar o ranking.\n\n' +
       '📸 Envie telas finais das partidas pelo botão <b>Enviar print</b>. Assim que houver partidas válidas, o ranking aparece aqui.',
@@ -1030,7 +995,7 @@ async function sendRanking(ctx) {
       (player.averageScore > 0 ? '  •  ⭐ ' + player.averageScore.toFixed(1) : '');
   });
 
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '🏆 <b>RANKING SEGA</b>\n\n' +
     lines.join('\n\n') +
     '\n\n<i>Ranking calculado exclusivamente com partidas verificadas a partir dos prints salvos.</i>',
@@ -1040,7 +1005,7 @@ async function sendRanking(ctx) {
 
 bot.command('ranking', sendRanking);
 bot.command('clan', sendClan);
-bot.command('lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.command('lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 async function sendStats(ctx) {
   const records = await getPlayerScreenshots(ctx.from.id);
@@ -1048,7 +1013,7 @@ async function sendStats(ctx) {
   const player = authenticatedPlayers.get(ctx.from.id);
 
   if (!summary.verifiedMatches) {
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
       'Ainda não tenho nenhuma partida <b>verificada</b> salva para você.\n\n' +
       (summary.rejectedMatches
@@ -1069,7 +1034,7 @@ async function sendStats(ctx) {
   const kda = summary.kills + '/' + summary.deaths + '/' + summary.assists;
   const name = player?.name ? ' • ' + escapeHtml(player.name) : '';
 
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '📊 <b>SUAS ESTATÍSTICAS' + name + '</b>\n\n' +
     '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
     '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
@@ -1089,14 +1054,14 @@ bot.command('stats', sendStats);
 bot.command('prints', async (ctx) => {
   const player = authenticatedPlayers.get(ctx.from.id);
   if (!player?.jwt) {
-    await ctx.reply('📸 <b>COLETA DE PARTIDAS</b>\n\nVocê ainda não tem um jogador vinculado. Use /cadastrar primeiro.', { parse_mode: 'HTML' });
+    await replyAs(ctx, 'general', '📸 <b>COLETA DE PARTIDAS</b>\n\nVocê ainda não tem um jogador vinculado. Use /cadastrar primeiro.', { parse_mode: 'HTML' });
     return;
   }
 
   const records = await getPlayerScreenshots(ctx.from.id);
   const summary = summarizePlayerScreenshots(records);
 
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '📸 <b>DADOS COLETADOS</b>\n\n' +
     '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\n' +
     '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
@@ -1115,7 +1080,7 @@ bot.on('photo', async (ctx, next) => {
   const player = authenticatedPlayers.get(ctx.from.id);
 
   if (!player?.jwt) {
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '📸 <b>PRINT DE PARTIDA</b>\n\n' +
       'Primeiro vincule seu jogador com /cadastrar. Depois pode mandar os prints aqui que eu vou guardar e extrair os dados.',
       { parse_mode: 'HTML' }
@@ -1123,7 +1088,7 @@ bot.on('photo', async (ctx, next) => {
     return;
   }
 
-  await ctx.reply('📸 <b>Print recebido.</b>\n\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
+  await replyAs(ctx, 'print', '📸 <b>Print recebido.</b>\n\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
 
   try {
     // Para contabilizar um novo print precisamos confirmar o nick atual agora.
@@ -1144,7 +1109,7 @@ bot.on('photo', async (ctx, next) => {
 
     if (record.duplicate) {
       await updateScreenshotVerification(ctx.from.id, record.id, 'duplicate');
-      await ctx.reply(
+      await replyAs(ctx, 'general', 
         '♻️ <b>PRINT DUPLICADO</b>\n\n' +
         'Esse print ou Battle ID já foi registrado para sua conta. Não vou contar a mesma partida duas vezes.',
         { parse_mode: 'HTML', ...mainKeyboard() }
@@ -1178,7 +1143,7 @@ bot.on('photo', async (ctx, next) => {
 
     let detail;
     if (verification === 'rejected_name_mismatch') {
-      await ctx.reply(
+      await replyAs(ctx, 'general', 
         '🚫 <b>PRINT NÃO CONTABILIZADO</b>\n\n' +
         'O nick encontrado na imagem não corresponde ao nick atual confirmado da sua conta: <b>' +
         escapeHtml(liveName || player.name || 'desconhecido') + '</b>.\n\n' +
@@ -1190,7 +1155,7 @@ bot.on('photo', async (ctx, next) => {
     }
 
     if (verification === 'pending_name_confirmation') {
-      await ctx.reply(
+      await replyAs(ctx, 'general', 
         '⏳ <b>PRINT AINDA NÃO CONTABILIZADO</b>\n\n' +
         'Não consegui confirmar seu <b>nick atual</b> na conta agora. Para evitar contabilizar uma imagem de outro jogador ou de um nick antigo, deixei esse print pendente.\n\n' +
         'Tente novamente em alguns instantes. Quando o nick atual puder ser confirmado, envie o print novamente.',
@@ -1223,7 +1188,7 @@ bot.on('photo', async (ctx, next) => {
         'Ainda não consegui classificar essa tela com segurança. Os dados brutos foram guardados para melhorarmos o leitor.';
     }
 
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '✅ <b>DADO REGISTRADO NO SEGA</b>\n\n' +
       detail +
       '\n\n🧠 O OCR salvou também o texto lido da imagem para podermos melhorar o parser sem perder o print.',
@@ -1231,7 +1196,7 @@ bot.on('photo', async (ctx, next) => {
     );
   } catch (error) {
     console.error('❌ Erro ao processar screenshot:', error);
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '⚠️ Recebi o print, mas o leitor não conseguiu processá-lo agora. A imagem pode não ter sido salva; tente novamente com a tela inteira e boa resolução.',
       { parse_mode: 'HTML' }
     );
@@ -1251,7 +1216,7 @@ async function isKnowledgeAdmin(ctx) {
 
 bot.command('conhecimento', async (ctx) => {
   const summary = knowledgeSummary();
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '🧠 <b>CONHECIMENTO SEGA</b>\n\n' +
     '🎮 Heróis reconhecidos: <b>' + summary.heroes + '</b>\n' +
     '🧠 Matchups locais: <b>' + summary.detailedHeroes + '</b>\n' +
@@ -1265,14 +1230,14 @@ bot.command('conhecimento', async (ctx) => {
 
 bot.command('perguntas', async (ctx) => {
   if (!(await isKnowledgeAdmin(ctx))) {
-    await ctx.reply('🔐 Esse relatório é reservado aos administradores do SEGA.');
+    await replyAs(ctx, 'general', '🔐 Esse relatório é reservado aos administradores do SEGA.');
     return;
   }
   const report = await getQuestionReport(15);
   const top = report.top.length
     ? report.top.map(item => item.rank + '. <code>' + item.question.replace(/[<>]/g, '') + '</code> — ' + item.count + 'x').join('\n')
     : 'Ainda não há perguntas registradas.';
-  await ctx.reply(
+  await replyAs(ctx, 'general', 
     '📚 <b>PERGUNTAS DO SEGA</b>\n\n' +
     '📝 Total: <b>' + report.total + '</b>\n' +
     '✅ Respondidas: <b>' + report.answered + '</b>\n' +
@@ -1289,7 +1254,7 @@ bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendRank
 bot.action('clan', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
 bot.action('lore', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 });
 
 bot.action('stats', async (ctx) => {
@@ -1318,9 +1283,9 @@ bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
     console.error('⚠️ Não foi possível registrar pergunta:', error);
   }
   if (answer) {
-    await ctx.reply(answer, { parse_mode: 'HTML' });
+    await replyAs(ctx, 'general', answer, { parse_mode: 'HTML' });
   } else {
-    await ctx.reply(
+    await replyAs(ctx, 'general', 
       '🧠 <b>SEGA Stats ainda não entendeu essa pergunta.</b>\n\n' +
       'Tente uma destas formas:\n' +
       listKnowledgeExamples().map(item => '• ' + item).join('\n') +
@@ -1333,10 +1298,10 @@ bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
 bot.hears('📸 Enviar print', sendPrintInstructions);
-bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await ctx.reply('📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await ctx.reply('📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
+bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await replyAs(ctx, 'general', '📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await replyAs(ctx, 'general', '📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('👥 Clã SEGA', sendClan);
 bot.hears('❓ Ajuda', sendHelp);
-bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.hears('📜 Lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 bot.catch((error) => console.error('❌ Erro no bot:', error));
 
