@@ -1,39 +1,42 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
+import { readJson, writeJson } from './storage/jsonStore.js';
+import { normalizeOcrText, parseScreenshotStats } from './ocr.js';
 
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 const SCREENSHOT_DIR = path.join(DATA_DIR, 'screenshots');
 const MATCHES_FILE = path.join(DATA_DIR, 'matches.json');
 
 let workerPromise = null;
+let ocrQueue = Promise.resolve();
 
 async function ensureStorage() {
   await fs.mkdir(SCREENSHOT_DIR, { recursive: true });
 }
 
 async function loadMatches() {
-  await ensureStorage();
-  try {
-    return JSON.parse(await fs.readFile(MATCHES_FILE, 'utf8'));
-  } catch (error) {
-    if (error.code === 'ENOENT') return {};
-    throw error;
-  }
+  const rows = await readJson(MATCHES_FILE, {});
+  return rows && typeof rows === 'object' && !Array.isArray(rows) ? rows : {};
 }
 
 async function saveMatches(matches) {
-  await ensureStorage();
-  await fs.writeFile(MATCHES_FILE, JSON.stringify(matches, null, 2), 'utf8');
+  await writeJson(MATCHES_FILE, matches);
+}
+
+function withOcrLock(task) {
+  const next = ocrQueue
+    .catch(() => {})
+    .then(task);
+  ocrQueue = next.catch(() => {});
+  return next;
 }
 
 async function getWorker() {
   if (!workerPromise) {
-    workerPromise = (async () => {
-      const worker = await createWorker(['eng', 'por']);
-      return worker;
-    })().catch(error => {
+    workerPromise = createWorker('eng').catch(error => {
       workerPromise = null;
       throw error;
     });
@@ -41,80 +44,72 @@ async function getWorker() {
   return workerPromise;
 }
 
-function normalizeOcrText(text) {
-  return String(text || '')
-    .replace(/[|]/g, '1')
-    .replace(/\s+/g, ' ')
-    .trim();
+async function preprocessImage(inputPath, outputPath) {
+  await sharp(inputPath)
+    .grayscale()
+    .resize({ width: 2200, withoutEnlargement: false })
+    .normalize()
+    .sharpen()
+    .png()
+    .toFile(outputPath);
 }
 
-function parseNumbers(text) {
-  const source = normalizeOcrText(text);
-  return [...source.matchAll(/\b\d{1,4}(?:[.,]\d{1,2})?\b/g)].map(match =>
-    Number(match[0].replace(',', '.'))
-  ).filter(Number.isFinite);
+function parseTsvWords(tsv) {
+  return String(tsv || '')
+    .split(/\r?\n/)
+    .slice(1)
+    .map(line => line.split('\t'))
+    .filter(parts => parts.length >= 12)
+    .map(parts => ({
+      left: Number(parts[6]),
+      top: Number(parts[7]),
+      width: Number(parts[8]),
+      height: Number(parts[9]),
+      text: String(parts[11] || '').trim()
+    }))
+    .filter(word => Number.isFinite(word.left) && Number.isFinite(word.top) && word.width > 0 && word.height > 0 && word.text);
 }
 
-function parseKda(text) {
-  const source = normalizeOcrText(text);
-  const matches = [...source.matchAll(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/g)];
-  if (!matches.length) return null;
-  return {
-    kills: Number(matches[0][1]),
-    deaths: Number(matches[0][2]),
-    assists: Number(matches[0][3])
-  };
-}
+async function improveBattleId(worker, imagePath, initialText, tsv) {
+  const initial = String(initialText || '').match(/\b\d{14,18}\b/g);
+  if (initial?.length) return initial.sort((a, b) => b.length - a.length)[0];
 
-function parseWinRate(text) {
-  const match = normalizeOcrText(text).match(/(\d{1,3}(?:[.,]\d{1,2})?)\s*%/);
-  return match ? Number(match[1].replace(',', '.')) : null;
-}
+  const candidate = parseTsvWords(tsv).find(word =>
+    /\d{8,18}/.test(word.text.replace(/[Oo]/g, '0').replace(/[Il]/g, '1'))
+  );
 
-function detectKind(text) {
-  const source = normalizeOcrText(text).toLowerCase();
-  const finalWords = ['victory', 'defeat', 'mvp', 'battlefield', 'result', 'vitória', 'derrota', 'resultado'];
-  const profileWords = ['win rate', 'winrate', 'matches', 'games', 'heroes', 'season', 'taxa de vitória', 'partidas'];
-  const battlesWords = ['batalhas', 'battles', 'battle history', 'match history', 'histórico de batalhas', 'histórico'];
-  const finalScore = finalWords.filter(word => source.includes(word)).length;
-  const profileScore = profileWords.filter(word => source.includes(word)).length;
-  const battlesScore = battlesWords.filter(word => source.includes(word)).length;
-  if (finalScore > profileScore && finalScore >= battlesScore) return 'match_result';
-  if (battlesScore > profileScore) return 'battles';
-  if (profileScore > 0) return 'profile';
-  return 'unknown';
-}
+  let targetPath = imagePath;
+  let cropPath = null;
 
-function parseScreenshotStats(text) {
-  const source = normalizeOcrText(text);
-  const kda = parseKda(source);
-  const winRate = parseWinRate(source);
-  const numbers = parseNumbers(source);
-  const longNumbers = source.match(/\b\d{14,18}\b/g) || [];
-  const battleId = longNumbers.sort((a, b) => b.length - a.length)[0] || null;
+  try {
+    if (candidate) {
+      const metadata = await sharp(imagePath).metadata();
+      const margin = 40;
+      const left = Math.max(0, candidate.left - margin);
+      const top = Math.max(0, candidate.top - margin);
+      const right = Math.min(metadata.width || candidate.left + candidate.width, candidate.left + candidate.width + margin);
+      const bottom = Math.min(metadata.height || candidate.top + candidate.height, candidate.top + candidate.height + margin);
+      const width = Math.max(1, right - left);
+      const height = Math.max(1, bottom - top);
+      cropPath = imagePath.replace(/\.png$/i, '.battle.png');
+      await sharp(imagePath).extract({ left, top, width, height }).resize({ width: Math.max(width * 3, 900) }).png().toFile(cropPath);
+      targetPath = cropPath;
+    }
 
-  const parsed = {
-    kind: detectKind(source),
-    winRate,
-    kda,
-    battleId,
-    mvp: /\bmvp\b/i.test(source),
-    rawNumbers: numbers.slice(0, 30)
-  };
+    await worker.setParameters({ tessedit_char_whitelist: '0123456789' });
+    const result = await worker.recognize(targetPath);
+    await worker.setParameters({ tessedit_char_whitelist: '' });
 
-  if (/\b(victory|vitória)\b/i.test(source)) {
-    parsed.result = 'win';
-  } else if (/\b(defeat|derrota)\b/i.test(source)) {
-    parsed.result = 'loss';
+    const text = normalizeOcrText(result.data?.text || '');
+    const ids = text.match(/\b\d{10,18}\b/g) || [];
+    return ids.sort((a, b) => b.length - a.length)[0] || null;
+  } finally {
+    await worker.setParameters({ tessedit_char_whitelist: '' }).catch(() => {});
+    if (cropPath) await fs.unlink(cropPath).catch(() => {});
   }
-
-  const scoreMatch = source.match(/(?:score|rating|grade|pontua[cç][aã]o)\s*[:=]?\s*(\d{1,3}(?:[.,]\d{1,2})?)/i);
-  if (scoreMatch) parsed.score = Number(scoreMatch[1].replace(',', '.'));
-
-  return parsed;
 }
 
-async function downloadTelegramPhoto(ctx, fileId, filePath) {
+async function downloadTelegramFile(ctx, fileId, filePath) {
   const url = await ctx.telegram.getFileLink(fileId);
   const response = await fetch(url.href || String(url));
   if (!response.ok) throw new Error('Falha ao baixar a imagem do Telegram: HTTP ' + response.status);
@@ -125,20 +120,31 @@ async function downloadTelegramPhoto(ctx, fileId, filePath) {
 export async function processScreenshot(ctx, player) {
   await ensureStorage();
 
-  const photos = ctx.message?.photo || [];
-  if (!photos.length) throw new Error('Nenhuma foto recebida.');
+  const message = ctx.message || {};
+  const photos = Array.isArray(message.photo) ? message.photo : [];
+  const document = message.document;
+  if (!photos.length && !(document?.mime_type || '').startsWith('image/')) {
+    throw new Error('Nenhuma imagem recebida.');
+  }
 
-  const largest = photos[photos.length - 1];
   const id = crypto.randomUUID();
-  const imagePath = path.join(SCREENSHOT_DIR, id + '.jpg');
+  const originalName = document?.file_name || '';
+  const extension = photos.length
+    ? '.jpg'
+    : (path.extname(originalName).toLowerCase() || '.jpg');
+  const imagePath = path.join(SCREENSHOT_DIR, id + extension);
 
-  await downloadTelegramPhoto(ctx, largest.file_id, imagePath);
+  const fileId = photos.length ? photos[photos.length - 1].file_id : document.file_id;
+  await downloadTelegramFile(ctx, fileId, imagePath);
 
   const imageBuffer = await fs.readFile(imagePath);
   const imageHash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
 
   const worker = await getWorker();
-  const result = await worker.recognize(imagePath);
+  const processedPath = path.join(SCREENSHOT_DIR, id + '-ocr.png');
+  await preprocessImage(imagePath, processedPath);
+
+  const result = await withOcrLock(() => worker.recognize(processedPath, {}, { text: true, tsv: true }));
   const rawOcrText = String(result.data?.text || '');
   const ocrText = normalizeOcrText(rawOcrText);
   const ocrLines = rawOcrText
@@ -146,7 +152,26 @@ export async function processScreenshot(ctx, player) {
     .map(line => line.trim())
     .filter(Boolean)
     .slice(0, 120);
-  const parsed = parseScreenshotStats(ocrText);
+
+  const parsed = parseScreenshotStats(rawOcrText, player.name);
+  if (!parsed.battleId) {
+    parsed.battleId = await withOcrLock(() =>
+      improveBattleId(worker, processedPath, rawOcrText, result.data?.tsv)
+    );
+  }
+
+  await fs.unlink(processedPath).catch(() => {});
+
+  // Uma tela que não foi reconhecida com segurança não deve ser persistida.
+  if (parsed.kind === 'unknown') {
+    await fs.unlink(imagePath).catch(() => {});
+    return {
+      id,
+      ignored: true,
+      reason: 'unknown_screenshot',
+      parsed
+    };
+  }
 
   const matches = await loadMatches();
   const telegramId = String(ctx.from.id);
@@ -195,36 +220,21 @@ export function summarizePlayerScreenshots(records) {
   const kills = kdas.reduce((sum, kda) => sum + Number(kda.kills || 0), 0);
   const deaths = kdas.reduce((sum, kda) => sum + Number(kda.deaths || 0), 0);
   const assists = kdas.reduce((sum, kda) => sum + Number(kda.assists || 0), 0);
-  const scores = validMatches
-    .map(item => Number(item.parsed?.score))
-    .filter(Number.isFinite);
-  const averageScore = scores.length
-    ? scores.reduce((sum, score) => sum + score, 0) / scores.length
-    : 0;
+  const scores = validMatches.map(item => Number(item.parsed?.score)).filter(Number.isFinite);
+  const averageScore = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
   const mvps = validMatches.filter(item => item.parsed?.mvp === true).length;
   const matches = validMatches.length;
   const winRate = matches > 0 ? (wins / matches) * 100 : 0;
 
   return {
     screenshots: list.length,
-    verifiedMatches: validMatches.length,
-    pendingMatches: list.filter(item =>
-      item.verification === 'pending_api_confirmation' ||
-      item.verification === 'pending_name_confirmation' ||
-      item.verification === 'pending'
-    ).length,
+    verifiedMatches: matches,
+    pendingMatches: list.filter(item => ['pending_api_confirmation', 'pending_name_confirmation', 'pending'].includes(item.verification)).length,
     rejectedMatches: list.filter(item => item.verification === 'rejected_name_mismatch').length,
     duplicates: list.filter(item => item.verification === 'duplicate').length,
     verifiedProfiles: list.filter(item => item.verification === 'verified_profile').length,
     matchResults: wins + losses,
-    wins,
-    losses,
-    kills,
-    deaths,
-    assists,
-    averageScore,
-    mvps,
-    winRate
+    wins, losses, kills, deaths, assists, averageScore, mvps, winRate
   };
 }
 
@@ -233,20 +243,16 @@ export async function getAllPlayerScreenshotSummaries() {
   return Object.entries(matches).map(([telegramId, records]) => {
     const list = Array.isArray(records) ? records : [];
     const latestNamed = [...list].reverse().find(item => item.playerName);
-    return {
-      telegramId: Number(telegramId),
-      name: latestNamed?.playerName || null,
-      summary: summarizePlayerScreenshots(list)
-    };
+    return { telegramId: Number(telegramId), name: latestNamed?.playerName || null, summary: summarizePlayerScreenshots(list) };
   });
 }
 
-export async function updateScreenshotVerification(telegramId, recordId, verification) {
+export async function updateScreenshotVerification(telegramId, recordId, verification, patch = {}) {
   const matches = await loadMatches();
   const list = Array.isArray(matches[String(telegramId)]) ? matches[String(telegramId)] : [];
   const record = list.find(item => item.id === recordId);
   if (!record) return null;
-  record.verification = verification;
+  Object.assign(record, patch, { verification });
   await saveMatches(matches);
   return record;
 }
