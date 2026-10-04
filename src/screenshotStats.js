@@ -132,9 +132,16 @@ function findPlayerOcrLine(tsv, expectedNick) {
       const text = group.map(word => word.text).join(' ');
       const compact = normalizeNickForOcr(text);
       const targetIndex = compact.indexOf(target);
-      const similarity = targetIndex >= 0
-        ? 1
-        : levenshteinSimilarity(target, compact.slice(0, Math.max(target.length + 6, target.length)));
+      let similarity = targetIndex >= 0 ? 1 : 0;
+      if (targetIndex < 0 && compact) {
+        const minWindow = Math.max(3, target.length - 2);
+        const maxWindow = Math.min(compact.length, target.length + 4);
+        for (let size = minWindow; size <= maxWindow; size += 1) {
+          for (let start = 0; start + size <= compact.length; start += 1) {
+            similarity = Math.max(similarity, levenshteinSimilarity(target, compact.slice(start, start + size)));
+          }
+        }
+      }
       return {
         words: group,
         text,
