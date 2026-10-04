@@ -10,7 +10,9 @@ import { logQuestion, getQuestionReport } from './questionLog.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
-const SESSION_FILE = process.env.SESSION_FILE || ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/sessions.json');
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const SESSION_FILE = process.env.SESSION_FILE || (DATA_DIR + '/sessions.json');
+const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registrations.json');
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
 const API_TIMEOUT_MS = 12000;
 const SESSION_KEY = crypto.createHash('sha256').update(token || '').digest();
@@ -25,6 +27,40 @@ bot.use(groupBanterMiddleware(resolvePlayerName));
 
 const registration = new Map();
 const authenticatedPlayers = new Map();
+
+async function saveRegistrations() {
+  await fs.mkdir(dirname(REGISTRATION_FILE), { recursive: true });
+  const stored = {};
+  for (const [telegramId, state] of registration) {
+    stored[telegramId] = state;
+  }
+  await fs.writeFile(REGISTRATION_FILE, JSON.stringify(stored, null, 2), 'utf8');
+}
+
+async function setRegistration(telegramId, state) {
+  registration.set(Number(telegramId), state);
+  await saveRegistrations();
+}
+
+async function deleteRegistration(telegramId) {
+  registration.delete(Number(telegramId));
+  await saveRegistrations();
+}
+
+async function restoreRegistrations() {
+  try {
+    const raw = await fs.readFile(REGISTRATION_FILE, 'utf8');
+    const stored = JSON.parse(raw);
+    for (const [telegramId, state] of Object.entries(stored)) {
+      if (state && ['role_id', 'zone_id', 'verification_code'].includes(state.step)) {
+        registration.set(Number(telegramId), state);
+      }
+    }
+    console.log('📝 Cadastros pendentes restaurados: ' + registration.size);
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.error('❌ Erro ao restaurar cadastros pendentes:', error);
+  }
+}
 
 async function resolvePlayerName(telegramId) {
   const player = authenticatedPlayers.get(Number(telegramId));
@@ -494,7 +530,7 @@ function mainKeyboard() {
 }
 
 function askForRoleId(ctx) {
-  registration.set(ctx.from.id, { step: 'role_id' });
+  await setRegistration(ctx.from.id, { step: 'role_id' });
   return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
 }
 
@@ -548,7 +584,7 @@ bot.command('menu', async (ctx) => await sendMenu(ctx));
 bot.command('cadastrar', async (ctx) => await askForRoleId(ctx));
 
 bot.command('cancelar', async (ctx) => {
-  registration.delete(ctx.from.id);
+  await deleteRegistration(ctx.from.id);
   await ctx.reply('❌ Cadastro cancelado. Nenhuma alteração foi feita.');
 });
 
@@ -569,7 +605,7 @@ bot.on('text', async (ctx, next) => {
       await ctx.reply('⚠️ Esse ID não parece válido. Envie somente os números do seu ID do Mobile Legends.');
       return;
     }
-    registration.set(ctx.from.id, { step: 'zone_id', roleId: value });
+    await setRegistration(ctx.from.id, { step: 'zone_id', roleId: value });
     await ctx.reply('🌐 Agora me manda o <b>Zone ID</b> do seu jogador.\n\nExemplo: <code>1234</code>', { parse_mode: 'HTML' });
     return;
   }
@@ -594,11 +630,11 @@ bot.on('text', async (ctx, next) => {
       if (!response.ok || body.code !== 0) {
         console.error('❌ Falha ao solicitar código:', response.status, body);
         await ctx.reply('⚠️ Não consegui solicitar o código de verificação agora. Confira o ID e o Zone ID e tente novamente.');
-        registration.delete(ctx.from.id);
+        await deleteRegistration(ctx.from.id);
         return;
       }
 
-      registration.set(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
+      await setRegistration(ctx.from.id, { step: 'verification_code', roleId, zoneId: value });
       await ctx.reply(
         '🔐 <b>VERIFICAÇÃO DO JOGADOR</b>\n\n' +
         '📩 O código foi solicitado e deve chegar no <b>correio interno do Mobile Legends</b>.\n\n' +
@@ -667,7 +703,7 @@ bot.on('text', async (ctx, next) => {
 
       authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId, name: infoBody.data?.name || 'Jogador' });
       await saveSessions();
-      registration.delete(ctx.from.id);
+      await deleteRegistration(ctx.from.id);
 
       await ctx.reply(
         '✅ <b>CONTA VERIFICADA!</b>\n\n' +
@@ -1051,7 +1087,9 @@ bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA
 bot.catch((error) => console.error('❌ Erro no bot:', error));
 
 await restoreSessions();
+await restoreRegistrations();
 console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
+console.log('📝 Arquivo de cadastros pendentes: ' + REGISTRATION_FILE);
 
 bot.launch().then(() => {
   console.log('🎮 SEGA Stats Bot online!');
