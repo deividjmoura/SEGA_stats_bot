@@ -12,3 +12,5 @@ data/matches.json
 data/questions.json
 data/screenshots/
 *.log
+data/*.corrupt-*
+data/.*.tmp
