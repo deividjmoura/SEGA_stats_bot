@@ -35,6 +35,9 @@ if (!sessionEncryptionSecret) {
   process.exit(1);
 }
 const SESSION_KEY = crypto.createHash('sha256').update(sessionEncryptionSecret).digest();
+const LEGACY_SESSION_KEY = process.env.SESSION_LEGACY_KEY
+  ? crypto.createHash('sha256').update(process.env.SESSION_LEGACY_KEY).digest()
+  : null;
 
 if (!token) {
   console.error('❌ BOT_TOKEN não configurado. Crie um arquivo .env com o token do BotFather.');
@@ -252,12 +255,12 @@ function encrypt(text) {
   return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
 }
 
-function decrypt(payload) {
+function decrypt(payload, key = SESSION_KEY) {
   const data = Buffer.from(payload, 'base64');
   const iv = data.subarray(0, 12);
   const tag = data.subarray(12, 28);
   const encrypted = data.subarray(28);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', SESSION_KEY, iv);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
 }
@@ -280,10 +283,21 @@ async function saveSessions() {
 async function restoreSessions() {
   try {
     const stored = await readJson(SESSION_FILE, {});
+    let migrated = false;
+
     for (const [telegramId, player] of Object.entries(stored || {})) {
       try {
         if (!player?.jwt) throw new Error('sessão sem token criptografado');
-        const jwt = decrypt(player.jwt);
+
+        let jwt;
+        try {
+          jwt = decrypt(player.jwt);
+        } catch (primaryError) {
+          if (!LEGACY_SESSION_KEY) throw primaryError;
+          jwt = decrypt(player.jwt, LEGACY_SESSION_KEY);
+          migrated = true;
+        }
+
         if (!jwt) throw new Error('token vazio após descriptografia');
         authenticatedPlayers.set(Number(telegramId), {
           jwt,
@@ -295,6 +309,11 @@ async function restoreSessions() {
       } catch (error) {
         console.warn('⚠️ Sessão ignorada durante restore (' + telegramId + '):', error?.message || error);
       }
+    }
+
+    if (migrated) {
+      await saveSessions();
+      console.log('🔄 Sessões legadas migradas para SESSION_ENCRYPTION_KEY.');
     }
     console.log('🔐 Sessões restauradas: ' + authenticatedPlayers.size);
   } catch (error) {
