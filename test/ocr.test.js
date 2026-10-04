@@ -21,9 +21,10 @@ test('parseKda prefere a linha do jogador quando o nick aparece no OCR', () => {
   });
 });
 
-test('nickMatches aceita símbolos do nick sem transformar em substring permissiva', () => {
+test('nickMatches encontra o nick mesmo quando o OCR cola clã, separadores ou símbolos', () => {
   assert.equal(nickMatches('Lucas&SEGA', 'Lucas&SEGA'), true);
   assert.equal(nickMatches('Lucas&SEGA', 'LucasSEGA'), true);
+  assert.equal(nickMatches('Lucas&SEGA', 'CLAN-SEGA-LUCAS&SEGA'), true);
   assert.equal(nickMatches('Lucas&SEGA', 'Lucas'), false);
 });
 
