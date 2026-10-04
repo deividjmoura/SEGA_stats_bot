@@ -279,9 +279,29 @@ async function getAcademyCounters(heroName) {
 
 async function getAcademyBuild(heroName) {
   try {
+    const catalog = await loadAcademyCatalog();
+    const target = catalog.find(record => compact(record?.data?.hero?.data?.name) === compact(heroName));
+    const lanes = target?.data?.hero?.data?.roadsort || [];
+    const laneTitles = lanes
+      .map(item => item?.data?.road_sort_title || item?.road_sort_title)
+      .filter(Boolean)
+      .map(title => compact(title));
+    const laneMap = [
+      ['gold', 'gold'],
+      ['gold lane', 'gold'],
+      ['exp', 'exp'],
+      ['exp lane', 'exp'],
+      ['mid', 'mid'],
+      ['mid lane', 'mid'],
+      ['jungle', 'jungle'],
+      ['roam', 'roam'],
+      ['roam lane', 'roam']
+    ];
+    const lane = laneMap.find(([label]) => laneTitles.includes(label))?.[1];
+
     const body = await academyFetch(
       '/academy/heroes/' + encodeURIComponent(heroName) + '/builds',
-      { rank: 'all', size: 10, lang: 'pt' }
+      { rank: 'all', lane, size: 10, lang: 'pt' }
     );
     const records = body?.data?.records || [];
     const candidates = [];
