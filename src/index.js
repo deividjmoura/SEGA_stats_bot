@@ -47,6 +47,29 @@ if (!token) {
   process.exit(1);
 }
 
+const PERSISTENCE_REQUIRED = process.env.REQUIRE_PERSISTENT_STORAGE !== 'false';
+const CLAN_CHAT_ID = process.env.CLAN_CHAT_ID || null;
+
+function persistenceIsAvailable() {
+  return Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
+}
+
+async function notifyPersistenceProblem() {
+  if (!CLAN_CHAT_ID) return;
+  try {
+    await bot.telegram.sendMessage(
+      CLAN_CHAT_ID,
+      '🚨 <b>SEGA Stats pausado por segurança</b>\\n\\n' +
+      'O Railway iniciou esta versão sem armazenamento persistente.\\n\\n' +
+      'Para proteger cadastros, prints e estatísticas, o bot não vai operar até um Volume ser montado em <code>/app/data</code> (ou até REQUIRE_PERSISTENT_STORAGE=false, somente para testes).\\n\\n' +
+      'Nenhum cadastro deve ser refeito enquanto essa configuração não for corrigida.',
+      { parse_mode: 'HTML' }
+    );
+  } catch (error) {
+    console.warn('⚠️ Não consegui avisar o grupo sobre a persistência:', error?.description || error?.message || error);
+  }
+}
+
 const bot = new Telegraf(token);
 
 const registration = new Map();
@@ -1188,6 +1211,13 @@ await restoreSessions();
 await restoreRegistrations();
 await cleanupScreenshots();
 console.log('💾 Diretório de dados: ' + DATA_DIR);
+
+if (process.env.RAILWAY_ENVIRONMENT && PERSISTENCE_REQUIRED && !persistenceIsAvailable()) {
+  console.error('🚨 ARQUIVOS DE DADOS NÃO ESTÃO EM VOLUME PERSISTENTE.');
+  console.error('🚨 Monte um Railway Volume em /app/data antes de iniciar o bot.');
+  await notifyPersistenceProblem();
+  process.exit(1);
+}
 console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
 console.log('📝 Arquivo de cadastros pendentes: ' + REGISTRATION_FILE);
 if (!HAS_PERSISTENT_VOLUME && process.env.RAILWAY_ENVIRONMENT) {
