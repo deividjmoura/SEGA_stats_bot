@@ -3,14 +3,15 @@ import { Telegraf, Markup } from 'telegraf';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
-import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
+import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const HAS_PERSISTENT_VOLUME = Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
 const SESSION_FILE = process.env.SESSION_FILE || (DATA_DIR + '/sessions.json');
 const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registrations.json');
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
@@ -290,26 +291,33 @@ function normalizeNick(value) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
-function nickMatches(expected, text) {
+function nickMatches(expected, text, lines = []) {
   const target = normalizeNick(expected);
   if (!target || target.length < 3) return false;
 
-  // Nicks muito curtos não devem validar por simples substring.
-  // Para 3-4 caracteres exigimos um token inteiro no OCR.
-  const compact = String(text || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ');
-  const words = compact.split(/\s+/).filter(Boolean);
+  // Validação intencionalmente estrita: não aceitamos substring ou similaridade,
+  // pois isso poderia contabilizar print de outro jogador ou de um nick antigo.
+  const candidates = [
+    ...(Array.isArray(lines) ? lines : []),
+    ...String(text || '').split(/\r?\n/)
+  ];
 
-  if (target.length <= 4) {
-    return words.includes(target);
+  for (const line of candidates) {
+    const compactLine = normalizeNick(line);
+    if (compactLine === target) return true;
+
+    const tokens = String(line || '')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .map(normalizeNick)
+      .filter(Boolean);
+
+    if (tokens.includes(target)) return true;
   }
 
-  const source = normalizeNick(text);
-  if (source.includes(target)) return true;
-  return words.some(word => word.length >= 4 && (target.includes(word) || word.includes(target)));
+  return false;
 }
 
 function sameId(a, b) {
@@ -985,65 +993,30 @@ async function sendClan(ctx) {
 }
 
 async function sendRanking(ctx) {
-  const players = [...authenticatedPlayers.entries()];
-
-  if (!players.length) {
-    await ctx.reply(
-      '🏆 <b>RANKING SEGA</b>\n\nAinda não há jogadores autenticados no clã.\n\nUse /cadastrar para vincular seu jogador.',
-      { parse_mode: 'HTML', ...mainKeyboard() }
-    );
-    return;
-  }
-
-  await ctx.reply('🏆 <b>Calculando o ranking do SEGA...</b>\n\n⚔️ Consultando os dados dos jogadores vinculados.', { parse_mode: 'HTML' });
-
-  const results = await Promise.allSettled(
-    players.map(async ([telegramId, player]) => {
-      const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
-      if (!info.response.ok || !isApiSuccess(info.body)) return null;
-      player.name = profileName(info.body.data) || player.name || 'Jogador';
-      player.nameVerified = Boolean(profileName(info.body.data)) || player.nameVerified;
-
-      const stats = await fetchPlayerStats(player.jwt);
-      if (stats.source === 'error') return null;
-
-      const data = stats.data;
-      const matches = Number(data.matches ?? data.tc ?? 0);
-      const wins = Number(data.wins ?? data.wc ?? 0);
-      const winRate = matches > 0 ? (wins / matches) * 100 : 0;
-      let avgScore = Number(data.avgScore ?? 0);
-      if (!avgScore && data.as != null) {
-        const raw = Number(data.as);
-        avgScore = raw > 20 ? raw / 100 : raw;
-      }
-
+  const rows = await getAllPlayerScreenshotSummaries();
+  const ranking = rows
+    .filter(row => row.summary.verifiedMatches > 0)
+    .map(row => {
+      const registered = authenticatedPlayers.get(Number(row.telegramId));
+      const name = registered?.name || row.name || ('Jogador ' + row.telegramId);
       return {
-        telegramId,
-        name: info.body.data?.name || 'Jogador',
-        matches,
-        wins,
-        winRate,
-        avgScore,
-        mvps: Number(data.mvps ?? data.mvpc ?? 0)
+        ...row.summary,
+        telegramId: row.telegramId,
+        name
       };
     })
-  );
-
-  await saveSessions();
-
-  const ranking = results
-    .filter(result => result.status === 'fulfilled' && result.value)
-    .map(result => result.value)
     .sort((a, b) =>
       b.winRate - a.winRate ||
       b.wins - a.wins ||
-      b.avgScore - a.avgScore ||
-      b.matches - a.matches
+      b.averageScore - a.averageScore ||
+      b.verifiedMatches - a.verifiedMatches
     );
 
   if (!ranking.length) {
     await ctx.reply(
-      '⚠️ <b>RANKING SEGA</b>\n\nOs jogadores estão autenticados, mas a API não retornou estatísticas suficientes para montar o ranking agora.\n\nA autenticação continua válida. Tente novamente em alguns instantes.',
+      '🏆 <b>RANKING SEGA</b>\n\n' +
+      'Ainda não há partidas verificadas suficientes nos prints para montar o ranking.\n\n' +
+      '📸 Envie telas finais das partidas pelo botão <b>Enviar print</b>. Assim que houver partidas válidas, o ranking aparece aqui.',
       { parse_mode: 'HTML', ...mainKeyboard() }
     );
     return;
@@ -1051,15 +1024,16 @@ async function sendRanking(ctx) {
 
   const lines = ranking.slice(0, 10).map((player, index) => {
     const medal = ['🥇', '🥈', '🥉'][index] || '🏅';
-    return medal + ' <b>' + (index + 1) + '. ' + player.name + '</b>\n' +
-      '   📈 ' + player.winRate.toFixed(1) + '% WR  •  🏆 ' + player.wins + '/' + player.matches +
-      '  •  ⭐ ' + player.avgScore.toFixed(1);
+    return medal + ' <b>' + (index + 1) + '. ' + escapeHtml(player.name) + '</b>\n' +
+      '   📈 ' + player.winRate.toFixed(1) + '% WR  •  🏆 ' +
+      player.wins + '/' + player.verifiedMatches +
+      (player.averageScore > 0 ? '  •  ⭐ ' + player.averageScore.toFixed(1) : '');
   });
 
   await ctx.reply(
     '🏆 <b>RANKING SEGA</b>\n\n' +
     lines.join('\n\n') +
-    '\n\n<i>Ranking calculado com os dados disponíveis na API.</i>',
+    '\n\n<i>Ranking calculado exclusivamente com partidas verificadas a partir dos prints salvos.</i>',
     { parse_mode: 'HTML', ...mainKeyboard() }
   );
 }
@@ -1069,64 +1043,44 @@ bot.command('clan', sendClan);
 bot.command('lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 async function sendStats(ctx) {
+  const records = await getPlayerScreenshots(ctx.from.id);
+  const summary = summarizePlayerScreenshots(records);
   const player = authenticatedPlayers.get(ctx.from.id);
 
-  if (!player?.jwt) {
-    await ctx.reply('📊 <b>SUAS ESTATÍSTICAS</b>\n\nVocê ainda não tem uma sessão autenticada neste bot. Use /cadastrar para vincular seu jogador.', { parse_mode: 'HTML' });
+  if (!summary.verifiedMatches) {
+    await ctx.reply(
+      '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
+      'Ainda não tenho nenhuma partida <b>verificada</b> salva para você.\n\n' +
+      (summary.rejectedMatches
+        ? '🚫 Há <b>' + summary.rejectedMatches + '</b> print(s) rejeitado(s) por não corresponderem ao nick atual da conta.\n\n'
+        : '') +
+      '📸 Envie a <b>tela final da partida</b> pelo botão <b>Enviar print</b>. ' +
+      'Depois que o nick for confirmado e os dados forem lidos, suas estatísticas passam a ser montadas daqui.',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('📸 ENVIAR PRINT AGORA', 'send_print')]
+        ])
+      }
+    );
     return;
   }
 
-  await ctx.reply('📊 <b>Buscando suas estatísticas...</b>', { parse_mode: 'HTML' });
+  const kda = summary.kills + '/' + summary.deaths + '/' + summary.assists;
+  const name = player?.name ? ' • ' + escapeHtml(player.name) : '';
 
-  try {
-    const infoResponse = await apiFetch('/user/info', { headers: authHeaders(player.jwt) });
-    const infoBody = await infoResponse.json().catch(() => ({}));
-
-    if (infoResponse.status === 401 || infoResponse.status === 403) {
-      authenticatedPlayers.delete(ctx.from.id);
-      await saveSessions();
-      await ctx.reply('🔐 <b>Sua autenticação expirou ou foi invalidada.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
-      return;
-    }
-
-    if (!infoResponse.ok || !isApiSuccess(infoBody)) {
-      console.error('❌ Falha ao validar sessão:', infoResponse.status, infoBody);
-      await ctx.reply('⚠️ A API respondeu com erro ao validar sua sessão. Tente novamente em alguns instantes.');
-      return;
-    }
-
-    player.name = profileName(infoBody.data) || player.name || 'Jogador';
-    player.nameVerified = Boolean(profileName(infoBody.data)) || player.nameVerified;
-    await saveSessions();
-
-    const statsResult = await fetchPlayerStats(player.jwt);
-
-    if (statsResult.source === 'error') {
-      const status = statsResult.response?.status;
-      if (status === 401 || status === 403) {
-        authenticatedPlayers.delete(ctx.from.id);
-        await saveSessions();
-        await ctx.reply('🔐 <b>A autenticação foi rejeitada pela API.</b>\n\nUse /cadastrar para autenticar novamente.', { parse_mode: 'HTML' });
-        return;
-      }
-      const apiMsg = statsResult.body?.message || statsResult.body?.msg || '';
-      console.error('❌ Erro da API de stats:', status, statsResult.body);
-      await ctx.reply(
-        '⚠️ <b>Sua autenticação está válida, mas a API de estatísticas não retornou os dados.</b>\n\n' +
-        'O bot tentou /user/stats e o fallback por temporada/partidas.\n' +
-        (apiMsg ? ('Detalhe da API: <code>' + String(apiMsg).slice(0, 120) + '</code>\n\n') : '') +
-        'Verifique se o histórico de batalhas está <b>público</b> nas configurações de privacidade do Mobile Legends e tente de novo.',
-        { parse_mode: 'HTML' }
-      );
-      return;
-    }
-
-    await ctx.reply(renderStats(statsResult.data), { parse_mode: 'HTML', ...mainKeyboard() });
-
-  } catch (error) {
-    console.error('❌ Erro ao consultar stats:', error);
-    await ctx.reply('⚠️ Não foi possível consultar a API agora. Tente novamente em alguns instantes.');
-  }
+  await ctx.reply(
+    '📊 <b>SUAS ESTATÍSTICAS' + name + '</b>\n\n' +
+    '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
+    '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
+    '💀 Derrotas: <b>' + summary.losses + '</b>\n' +
+    '📈 Win rate: <b>' + summary.winRate.toFixed(1) + '%</b>\n' +
+    '⚔️ K/D/A somado: <b>' + kda + '</b>\n' +
+    (summary.averageScore > 0 ? '⭐ Pontuação média: <b>' + summary.averageScore.toFixed(1) + '</b>\n' : '') +
+    (summary.mvps > 0 ? '👑 MVPs detectados: <b>' + summary.mvps + '</b>\n' : '') +
+    '\n<i>Dados calculados somente a partir dos prints verificados e armazenados pelo bot.</i>',
+    { parse_mode: 'HTML', ...mainKeyboard() }
+  );
 }
 
 bot.command('stats', sendStats);
@@ -1172,12 +1126,16 @@ bot.on('photo', async (ctx, next) => {
   await ctx.reply('📸 <b>Print recebido.</b>\n\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
 
   try {
-    const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
-    const liveName = profileName(info.body?.data);
-    const currentName = liveName || player.name || 'Jogador';
-    if (info.response.ok && isApiSuccess(info.body)) {
-      player.name = currentName;
-      player.nameVerified = Boolean(liveName) || player.nameVerified;
+    // Para contabilizar um novo print precisamos confirmar o nick atual agora.
+    // Nunca usamos silenciosamente um nick antigo salvo na sessão.
+    const info = await apiJson('/user/info?lang=pt', { headers: authHeaders(player.jwt) });
+    const liveName = info.response.ok && isApiSuccess(info.body)
+      ? profileName(info.body?.data)
+      : null;
+
+    if (liveName) {
+      player.name = liveName;
+      player.nameVerified = true;
       await saveSessions();
     }
 
@@ -1194,21 +1152,53 @@ bot.on('photo', async (ctx, next) => {
       return;
     }
 
-    const nameOk = nickMatches(currentName, record.ocrText);
-    let verification = nameOk ? 'name_match' : 'rejected_name_mismatch';
+    let verification;
 
-    if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
-      verification = nameOk ? 'verified_profile' : 'rejected_name_mismatch';
-    } else if (parsed.kind === 'battles') {
-      verification = nameOk ? 'verified_battles_snapshot' : 'rejected_name_mismatch';
-    } else if (parsed.kind === 'match_result' && parsed.battleId && nameOk) {
-      const battleCheck = await battleBelongsToPlayer(player.jwt, player.roleId, player.zoneId, parsed.battleId);
-      verification = battleCheck.verified ? 'verified_match' : 'pending_api_confirmation';
+    if (!liveName) {
+      verification = 'pending_name_confirmation';
+    } else {
+      const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines);
+
+      if (!nameOk) {
+        verification = 'rejected_name_mismatch';
+      } else if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
+        verification = 'verified_profile';
+      } else if (parsed.kind === 'battles') {
+        verification = 'verified_battles_snapshot';
+      } else if (parsed.kind === 'match_result') {
+        // As estatísticas agora vêm dos prints; não dependemos mais dos
+        // endpoints antigos de histórico/partidas da API.
+        verification = 'verified_match';
+      } else {
+        verification = 'name_match';
+      }
     }
 
     await updateScreenshotVerification(ctx.from.id, record.id, verification);
 
     let detail;
+    if (verification === 'rejected_name_mismatch') {
+      await ctx.reply(
+        '🚫 <b>PRINT NÃO CONTABILIZADO</b>\n\n' +
+        'O nick encontrado na imagem não corresponde ao nick atual confirmado da sua conta: <b>' +
+        escapeHtml(liveName || player.name || 'desconhecido') + '</b>.\n\n' +
+        'Esse print foi guardado apenas para auditoria, mas <b>não entra nas suas estatísticas nem no ranking</b>.\n\n' +
+        '📸 Envie uma tela da sua conta atual, com o nick visível.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    if (verification === 'pending_name_confirmation') {
+      await ctx.reply(
+        '⏳ <b>PRINT AINDA NÃO CONTABILIZADO</b>\n\n' +
+        'Não consegui confirmar seu <b>nick atual</b> na conta agora. Para evitar contabilizar uma imagem de outro jogador ou de um nick antigo, deixei esse print pendente.\n\n' +
+        'Tente novamente em alguns instantes. Quando o nick atual puder ser confirmado, envie o print novamente.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
     if (verification === 'duplicate') {
       detail = '♻️ <b>Esse print já foi registrado.</b>\nNão vou contar a mesma partida duas vezes.';
     } else if (parsed.kind === 'match_result') {
@@ -1352,8 +1342,12 @@ bot.catch((error) => console.error('❌ Erro no bot:', error));
 
 await restoreSessions();
 await restoreRegistrations();
+console.log('💾 Diretório de dados: ' + DATA_DIR);
 console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
 console.log('📝 Arquivo de cadastros pendentes: ' + REGISTRATION_FILE);
+if (!HAS_PERSISTENT_VOLUME && process.env.RAILWAY_ENVIRONMENT) {
+  console.warn('⚠️ Railway sem volume persistente detectado. Cadastros, prints e estatísticas serão perdidos em um redeploy. Anexe um Volume e monte em /app/data ou /data.');
+}
 
 bot.launch().then(() => {
   console.log('🎮 SEGA Stats Bot online!');

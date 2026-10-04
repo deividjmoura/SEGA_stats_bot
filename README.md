@@ -192,6 +192,19 @@ A implementação principal em `src/index.js` utiliza **polling** e é adequada 
 
 O arquivo `api/telegram.js` contém uma implementação separada para webhook/Vercel e ainda não representa a implementação principal de produção.
 
+### Persistência obrigatória no Railway
+
+O bot grava <b>cadastros, sessões, prints e estatísticas derivadas</b> em arquivos dentro de `DATA_DIR`.
+Em Railway, esses arquivos só sobrevivem a redeploys se o serviço tiver um **Volume** anexado.
+
+Configuração recomendada:
+- anexe um Railway Volume ao serviço do bot;
+- use mount path `/app/data` (compatível com o fallback local `./data`) ou `/data`;
+- o Railway fornece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`, e o bot passa a gravar tudo nesse volume;
+- opcionalmente, defina `DATA_DIR=/data` se quiser controlar explicitamente o caminho.
+
+Sem Volume, um redeploy pode apagar `sessions.json`, `registrations.json`, `matches.json` e as imagens salvas.
+
 Se o deploy utilizar armazenamento persistente para as sessões, configure:
 
 ```env

@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createWorker } from 'tesseract.js';
 
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 const SCREENSHOT_DIR = path.join(DATA_DIR, 'screenshots');
 const MATCHES_FILE = path.join(DATA_DIR, 'matches.json');
 
@@ -98,6 +98,7 @@ function parseScreenshotStats(text) {
     winRate,
     kda,
     battleId,
+    mvp: /\bmvp\b/i.test(source),
     rawNumbers: numbers.slice(0, 30)
   };
 
@@ -138,7 +139,13 @@ export async function processScreenshot(ctx, player) {
 
   const worker = await getWorker();
   const result = await worker.recognize(imagePath);
-  const ocrText = normalizeOcrText(result.data?.text || '');
+  const rawOcrText = String(result.data?.text || '');
+  const ocrText = normalizeOcrText(rawOcrText);
+  const ocrLines = rawOcrText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, 120);
   const parsed = parseScreenshotStats(ocrText);
 
   const matches = await loadMatches();
@@ -155,6 +162,7 @@ export async function processScreenshot(ctx, player) {
     telegramId: ctx.from.id,
     roleId: player.roleId,
     zoneId: player.zoneId,
+    playerName: player.name || null,
     createdAt: new Date().toISOString(),
     imageFile: path.relative(DATA_DIR, imagePath),
     imageHash,
@@ -163,7 +171,8 @@ export async function processScreenshot(ctx, player) {
     verification: duplicate ? 'duplicate' : 'pending',
     duplicateOf: duplicate?.id || null,
     duplicate: Boolean(duplicate),
-    ocrText: ocrText.slice(0, 5000)
+    ocrText: ocrText.slice(0, 5000),
+    ocrLines
   };
 
   matches[telegramId].push(record);
@@ -186,11 +195,24 @@ export function summarizePlayerScreenshots(records) {
   const kills = kdas.reduce((sum, kda) => sum + Number(kda.kills || 0), 0);
   const deaths = kdas.reduce((sum, kda) => sum + Number(kda.deaths || 0), 0);
   const assists = kdas.reduce((sum, kda) => sum + Number(kda.assists || 0), 0);
+  const scores = validMatches
+    .map(item => Number(item.parsed?.score))
+    .filter(Number.isFinite);
+  const averageScore = scores.length
+    ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+    : 0;
+  const mvps = validMatches.filter(item => item.parsed?.mvp === true).length;
+  const matches = validMatches.length;
+  const winRate = matches > 0 ? (wins / matches) * 100 : 0;
 
   return {
     screenshots: list.length,
     verifiedMatches: validMatches.length,
-    pendingMatches: list.filter(item => item.verification === 'pending_api_confirmation').length,
+    pendingMatches: list.filter(item =>
+      item.verification === 'pending_api_confirmation' ||
+      item.verification === 'pending_name_confirmation' ||
+      item.verification === 'pending'
+    ).length,
     rejectedMatches: list.filter(item => item.verification === 'rejected_name_mismatch').length,
     duplicates: list.filter(item => item.verification === 'duplicate').length,
     verifiedProfiles: list.filter(item => item.verification === 'verified_profile').length,
@@ -199,8 +221,24 @@ export function summarizePlayerScreenshots(records) {
     losses,
     kills,
     deaths,
-    assists
+    assists,
+    averageScore,
+    mvps,
+    winRate
   };
+}
+
+export async function getAllPlayerScreenshotSummaries() {
+  const matches = await loadMatches();
+  return Object.entries(matches).map(([telegramId, records]) => {
+    const list = Array.isArray(records) ? records : [];
+    const latestNamed = [...list].reverse().find(item => item.playerName);
+    return {
+      telegramId: Number(telegramId),
+      name: latestNamed?.playerName || null,
+      summary: summarizePlayerScreenshots(list)
+    };
+  });
 }
 
 export async function updateScreenshotVerification(telegramId, recordId, verification) {
