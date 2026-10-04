@@ -66,13 +66,27 @@ export function parseKda(text, expectedNick = null) {
     const nearbyMatches = [];
     for (const nickIndex of nickLineIndexes) {
       for (let lineIndex = 0; lineIndex < rawLines.length; lineIndex += 1) {
-        const match = rawLines[lineIndex].match(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/);
+        const line = rawLines[lineIndex]
+          .replace(/[Oo]/g, '0')
+          .replace(/[Il]/g, '1');
+
+        // Formato normal: 12/3/7, 12:3:7, etc.
+        let match = line.match(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/);
+
+        // Fallback para OCR que perde os separadores: "12 3 7".
+        if (!match) {
+          match = line.match(/\b(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\b/);
+        }
+
         if (!match) continue;
+        const values = [Number(match[1]), Number(match[2]), Number(match[3])];
+        if (values.some(value => value > 99)) continue;
+
         nearbyMatches.push({
           distance: Math.abs(lineIndex - nickIndex),
-          kills: Number(match[1]),
-          deaths: Number(match[2]),
-          assists: Number(match[3])
+          kills: values[0],
+          deaths: values[1],
+          assists: values[2]
         });
       }
     }
