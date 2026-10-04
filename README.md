@@ -157,50 +157,6 @@ SEGA_stats_bot/
 - **AES-256-GCM** para armazenamento local dos tokens de sessão
 - **Rone Arena API** como integração comunitária atual
 
-## 🚀 Desenvolvimento local
-
-### 1. Clonar
-
-```bash
-git clone https://github.com/deividjmoura/SEGA_stats_bot.git
-cd SEGA_stats_bot
-```
-
-### 2. Instalar dependências
-
-```bash
-npm install
-```
-
-### 3. Configurar ambiente
-
-```bash
-cp .env.example .env
-```
-
-Preencha:
-
-```env
-BOT_TOKEN=seu_token_do_botfather
-SESSION_ENCRYPTION_KEY=uma_chave_secreta_propria_e_estavel
-```
-
-> **Importante:** `SESSION_ENCRYPTION_KEY` é obrigatória. Gere uma chave aleatória forte e mantenha-a estável no Railway. Ela não deve ser derivada do `BOT_TOKEN`.
->
-> Para migrar sessões antigas que foram criptografadas com o `BOT_TOKEN`, defina temporariamente `SESSION_LEGACY_KEY` com o valor antigo. Após a primeira inicialização bem-sucedida, as sessões são regravadas com `SESSION_ENCRYPTION_KEY` e a variável legada pode ser removida.
-
-### 4. Executar
-
-```bash
-npm start
-```
-
-Para desenvolvimento com reinício automático:
-
-```bash
-npm run dev
-```
-
 ## ☁️ Deploy
 
 A implementação de produção em `src/index.js` utiliza **polling** e é adequada para um processo Node.js persistente, como Railway ou outro serviço equivalente.
@@ -215,19 +171,27 @@ Em Railway, esses arquivos só sobrevivem a redeploys se o serviço tiver um **V
 
 Configuração recomendada:
 - anexe um Railway Volume ao serviço do bot;
-- use mount path `/app/data` (compatível com o fallback local `./data`) ou `/data`;
+- use **mount path `/app/data`** se o bot estiver usando o fallback `./data`;
 - o Railway fornece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`, e o bot passa a gravar tudo nesse volume;
-- opcionalmente, defina `DATA_DIR=/data` se quiser controlar explicitamente o caminho.
+- mantenha `REQUIRE_PERSISTENT_STORAGE=true`.
 
-Sem Volume, um redeploy pode apagar `sessions.json`, `registrations.json`, `matches.json`, `questions.json` e as imagens salvas.
+Sem Volume, um redeploy pode apagar `sessions.json`, `registrations.json`, `matches.json`, `questions.json` e as imagens salvas. **O bot agora detecta essa situação no Railway e se recusa a iniciar**, em vez de ficar online e induzir os jogadores a refazer cadastro achando que os dados continuam seguros.
 
-Se o deploy utilizar armazenamento persistente para as sessões, configure:
+Para receber o aviso no grupo caso isso aconteça:
 
 ```env
-SESSION_FILE=/caminho/para/data/sessions.json
+CLAN_CHAT_ID=-100xxxxxxxxxx
 ```
 
-Em ambientes efêmeros, o armazenamento local pode desaparecer quando a instância for recriada. Para uma versão de produção mais robusta, a sessão deverá migrar para um banco de dados ou outro armazenamento persistente.
+### Recuperação após recadastro
+
+Os registros de partidas são indexados pelo `telegramId` do jogador. Portanto, com o Volume funcionando, se um jogador precisar autenticar novamente, o novo cadastro **não apaga nem recria seus prints**: os registros anteriores continuam associados ao mesmo usuário do Telegram.
+
+A nova sessão apenas substitui a autenticação atual. Os dados históricos permanecem em `matches.json`.
+
+Se a conta do jogo for trocada de propósito, não devemos misturar automaticamente as duas contas; nesse caso, os registros antigos continuam associados ao histórico anterior.
+
+**Importante:** dados que já foram gravados apenas no filesystem efêmero de um deployment antigo não podem ser recuperados depois que aquele deployment é removido. Por isso, antes do próximo deploy de produção, configure o Volume e faça um backup do estado atual que ainda existir.
 
 ## 🧪 Estado atual
 

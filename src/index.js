@@ -47,6 +47,32 @@ if (!token) {
   process.exit(1);
 }
 
+const PERSISTENCE_REQUIRED = process.env.REQUIRE_PERSISTENT_STORAGE !== 'false';
+const CLAN_CHAT_ID = process.env.CLAN_CHAT_ID || null;
+
+function persistenceIsAvailable() {
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    return Boolean(process.env.RAILWAY_VOLUME_MOUNT_PATH);
+  }
+  return Boolean(process.env.DATA_DIR);
+}
+
+async function notifyPersistenceProblem() {
+  if (!CLAN_CHAT_ID) return;
+  try {
+    await bot.telegram.sendMessage(
+      CLAN_CHAT_ID,
+      '🚨 <b>SEGA Stats pausado por segurança</b>\\n\\n' +
+      'O Railway iniciou esta versão sem armazenamento persistente.\\n\\n' +
+      'Para proteger cadastros, prints e estatísticas, o bot não vai operar até um Volume ser montado em <code>/app/data</code> (ou até REQUIRE_PERSISTENT_STORAGE=false, somente para testes).\\n\\n' +
+      'Nenhum cadastro deve ser refeito enquanto essa configuração não for corrigida.',
+      { parse_mode: 'HTML' }
+    );
+  } catch (error) {
+    console.warn('⚠️ Não consegui avisar o grupo sobre a persistência:', error?.description || error?.message || error);
+  }
+}
+
 const bot = new Telegraf(token);
 
 const registration = new Map();
@@ -1183,6 +1209,13 @@ bot.hears('❓ Ajuda', sendHelp);
 bot.hears('📜 Lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 bot.catch((error) => console.error('❌ Erro no bot:', error));
+
+if (process.env.RAILWAY_ENVIRONMENT && PERSISTENCE_REQUIRED && !persistenceIsAvailable()) {
+  console.error('🚨 ARQUIVOS DE DADOS NÃO ESTÃO EM VOLUME PERSISTENTE.');
+  console.error('🚨 Monte um Railway Volume em /app/data antes de iniciar o bot.');
+  await notifyPersistenceProblem();
+  process.exit(1);
+}
 
 await restoreSessions();
 await restoreRegistrations();
