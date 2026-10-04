@@ -87,11 +87,14 @@ function parseScreenshotStats(text) {
   const kda = parseKda(source);
   const winRate = parseWinRate(source);
   const numbers = parseNumbers(source);
+  const longNumbers = source.match(/\b\d{14,18}\b/g) || [];
+  const battleId = longNumbers.sort((a, b) => b.length - a.length)[0] || null;
 
   const parsed = {
     kind: detectKind(source),
     winRate,
     kda,
+    battleId,
     rawNumbers: numbers.slice(0, 30)
   };
 
@@ -145,6 +148,7 @@ export async function processScreenshot(ctx, player) {
     imageFile: path.relative(DATA_DIR, imagePath),
     kind: parsed.kind,
     parsed,
+    verification: 'pending',
     ocrText: ocrText.slice(0, 5000)
   };
 
