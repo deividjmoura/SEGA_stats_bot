@@ -1414,7 +1414,7 @@ bot.command('perguntas', async (ctx) => {
   }
   const report = await getQuestionReport(15);
   const top = report.top.length
-    ? report.top.map(item => item.rank + '. <code>' + item.question.replace(/[<>]/g, '') + '</code> — ' + item.count + 'x').join('\n')
+    ? report.top.map(item => item.rank + '. <code>' + escapeHtml(item.question) + '</code> — ' + item.count + 'x').join('\n')
     : 'Ainda não há perguntas registradas.';
   await replyAs(ctx, 'general', 
     '📚 <b>PERGUNTAS DO SEGA</b>\n\n' +
