@@ -119,7 +119,7 @@ async function replyAs(ctx, kind, text, extra = {}) {
       if (!options.parse_mode) options.parse_mode = 'HTML';
     }
   }
-  return replyAs(ctx, 'general', text, options);
+  return ctx.reply(text, options);
 }
 
 const memberTagCache = new Map();
@@ -368,13 +368,13 @@ function isGroupChat(ctx) {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 }
 
-function getBotUsername() {
-  return bot.botInfo?.username || null;
+function getBotUsername(ctx) {
+  return ctx.botInfo?.username || bot.botInfo?.username || null;
 }
 
 async function requirePrivateChat(ctx) {
   if (ctx.chat?.type === 'private') return true;
-  const username = getBotUsername();
+  const username = getBotUsername(ctx);
   const link = username ? 'https://t.me/' + username : 'o chat privado deste bot';
   await replyAs(ctx, 'general', 
     '🔐 <b>Cadastro é feito no privado.</b>\n\n' +
