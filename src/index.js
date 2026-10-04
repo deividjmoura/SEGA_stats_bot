@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
 import crypto from 'node:crypto';
 import { processScreenshot, recordVerifiedBattle, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification, cleanupScreenshots } from './screenshotStats.js';
-import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
+import { groupBanterMiddleware, markBanterHandled, restoreGroupBanters } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { nickMatches } from './ocr.js';
 import { escapeHtml, renderRanking, renderPlayerStats } from './render.js';
@@ -185,11 +185,24 @@ async function syncMemberTag(ctx, player) {
   } catch (error) {
     // Guarda também falhas para não repetir uma chamada ao Telegram a cada mensagem.
     memberTagCache.set(cacheKey, { tag, failedAt: Date.now() });
-    console.warn(
-      '⚠️ Não consegui atualizar a tag do membro ' +
-      ctx.from.id + ' no grupo ' + ctx.chat.id + ':',
-      error?.description || error?.message || error
-    );
+    const description = error?.description || error?.message || String(error);
+    if (/CHAT_CREATOR_REQUIRED/i.test(description)) {
+      console.warn(
+        'ℹ️ O membro ' + ctx.from.id + ' é o criador do grupo ' + ctx.chat.id +
+        ' e o Telegram não permite que bots alterem a tag dele. O nick continua sendo usado nas respostas do bot.'
+      );
+    } else if (/CHAT_ADMIN_REQUIRED|RIGHT_FORBIDDEN|METHOD_FORBIDDEN/i.test(description)) {
+      console.warn(
+        '⚠️ Não consegui atualizar a tag do membro ' + ctx.from.id +
+        ': o bot precisa ser administrador com a permissão "Gerenciar tags" no grupo.'
+      );
+    } else {
+      console.warn(
+        '⚠️ Não consegui atualizar a tag do membro ' +
+        ctx.from.id + ' no grupo ' + ctx.chat.id + ':',
+        description
+      );
+    }
   }
 }
 
@@ -1384,6 +1397,7 @@ if (process.env.RAILWAY_ENVIRONMENT && PERSISTENCE_REQUIRED && !persistenceIsAva
 
 await restoreSessions();
 await restoreRegistrations();
+await restoreGroupBanters(bot.telegram);
 await cleanupScreenshots();
 console.log('💾 Diretório de dados: ' + DATA_DIR);
 console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
