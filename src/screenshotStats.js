@@ -77,9 +77,43 @@ async function improveBattleId(worker, imagePath, initialText, tsv) {
   const initial = String(initialText || '').match(/\b\d{14,18}\b/g);
   if (initial?.length) return initial.sort((a, b) => b.length - a.length)[0];
 
-  const candidate = parseTsvWords(tsv).find(word =>
-    /\d{8,18}/.test(word.text.replace(/[Oo]/g, '0').replace(/[Il]/g, '1'))
-  );
+  const numericWords = parseTsvWords(tsv)
+    .map(word => ({
+      ...word,
+      normalized: word.text.replace(/[^0-9OoIl]/g, '').replace(/[Oo]/g, '0').replace(/[Il]/g, '1')
+    }))
+    .filter(word => /^\d{1,18}$/.test(word.normalized));
+
+  const candidate = numericWords.find(word => word.normalized.length >= 8);
+
+  // Alguns prints fazem o Tesseract separar o Battle ID em vários blocos.
+  // Tentamos juntar blocos numéricos que estejam na mesma linha e próximos.
+  if (!candidate && numericWords.length) {
+    const sorted = numericWords.slice().sort((a, b) => {
+      const lineDistance = Math.abs(a.top - b.top);
+      return lineDistance || a.left - b.left;
+    });
+
+    for (let i = 0; i < sorted.length; i += 1) {
+      let combined = sorted[i].normalized;
+      let last = sorted[i];
+
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        const next = sorted[j];
+        const sameLine = Math.abs(next.top - last.top) <= Math.max(last.height, next.height) * 0.8;
+        const closeEnough = next.left - (last.left + last.width) <= Math.max(120, last.height * 2.5);
+        if (!sameLine || !closeEnough) break;
+
+        combined += next.normalized;
+        last = next;
+
+        if (combined.length >= 10 && combined.length <= 18) {
+          return combined;
+        }
+        if (combined.length > 18) break;
+      }
+    }
+  }
 
   let targetPath = imagePath;
   let cropPath = null;
