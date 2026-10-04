@@ -18,6 +18,8 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
+bot.use(groupBanterMiddleware());
+
 const registration = new Map();
 const authenticatedPlayers = new Map();
 
@@ -538,8 +540,6 @@ bot.command('cancelar', async (ctx) => {
   registration.delete(ctx.from.id);
   await ctx.reply('❌ Cadastro cancelado. Nenhuma alteração foi feita.');
 });
-
-bot.use(groupBanterMiddleware());
 
 bot.on('text', async (ctx, next) => {
   const state = registration.get(ctx.from.id);
