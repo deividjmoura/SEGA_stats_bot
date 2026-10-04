@@ -894,6 +894,8 @@ bot.on('photo', async (ctx, next) => {
 
     if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
       verification = nameOk ? 'verified_profile' : 'rejected_name_mismatch';
+    } else if (parsed.kind === 'battles') {
+      verification = nameOk ? 'verified_battles_snapshot' : 'rejected_name_mismatch';
     } else if (parsed.kind === 'match_result' && parsed.battleId && nameOk) {
       const battleCheck = await battleBelongsToPlayer(player.jwt, player.roleId, player.zoneId, parsed.battleId);
       verification = battleCheck.verified ? 'verified_match' : 'pending_api_confirmation';
@@ -912,9 +914,14 @@ bot.on('photo', async (ctx, next) => {
         (parsed.score != null ? '⭐ Pontuação: <b>' + parsed.score + '</b>\n' : '');
     } else if (parsed.kind === 'profile') {
       detail =
-        '📊 <b>Print geral detectado!</b>\n' +
+        '📊 <b>Print de perfil detectado!</b>\n' +
         (parsed.winRate != null ? '📈 Win rate lido: <b>' + parsed.winRate + '%</b>\n' : '') +
         'Esse tipo de print serve como <b>snapshot geral</b>; ele não conta como uma partida individual.';
+    } else if (parsed.kind === 'battles') {
+      detail =
+        '📋 <b>Tela de Batalhas detectada!</b>\n' +
+        (parsed.battleId ? '🆔 Battle ID encontrado: <code>' + parsed.battleId + '</code>\n' : '') +
+        'O histórico foi guardado como <b>snapshot de conferência</b>. Para registrar uma partida individual com mais segurança, prefira enviar a tela final da partida.';
     } else {
       detail =
         '🗂️ <b>Print armazenado.</b>\n' +
