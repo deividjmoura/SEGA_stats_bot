@@ -1302,8 +1302,11 @@ bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
   } else {
     await replyAs(ctx, 'general', 
       '🧠 <b>SEGA Stats ainda não entendeu essa pergunta.</b>\n\n' +
-      'Tente uma destas formas:\n' +
-      listKnowledgeExamples().map(item => '• ' + item).join('\n') +
+      'Atualmente você pode pedir <b>builds</b>, saber <b>quem countera quem</b>, consultar <b>itens, funções, rotas e dicas</b> de heróis.\n\n' +
+      '⚠️ <b>No grupo, é necessário chamar o bot no início da pergunta</b> para ele responder.\n\n' +
+      '<b>Exemplos de perguntas aceitas:</b>\n' +
+      listKnowledgeExamples().map(item => '• <code>' + item + '</code>').join('\n') +
+      '\n\n💬 <b>Exemplo completo:</b> <code>@SEGA Stats qual build faço de Harley?</code>' +
       '\n\n📌 A pergunta foi registrada para podermos ampliar o conhecimento do bot.',
       { parse_mode: 'HTML' }
     );
