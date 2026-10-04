@@ -1,7 +1,7 @@
 import { readJson, updateJson, quarantineJson } from './storage/jsonStore.js';
 
 export const QUESTIONS_FILE = process.env.QUESTIONS_FILE ||
-  ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/questions.json');
+  ((process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/questions.json');
 
 async function readRows() {
   try {
