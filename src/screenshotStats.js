@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
-import { readJson, updateJson } from './storage/jsonStore.js';
+import { readJson, updateJson, quarantineJson } from './storage/jsonStore.js';
 import { normalizeOcrText, parseScreenshotStats } from './ocr.js';
 
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
@@ -18,8 +18,14 @@ async function ensureStorage() {
 }
 
 async function loadMatches() {
-  const rows = await readJson(MATCHES_FILE, {});
-  return rows && typeof rows === 'object' && !Array.isArray(rows) ? rows : {};
+  try {
+    const rows = await readJson(MATCHES_FILE, {});
+    return rows && typeof rows === 'object' && !Array.isArray(rows) ? rows : {};
+  } catch (error) {
+    console.error('❌ matches.json corrompido; preservando cópia antes de continuar:', error);
+    await quarantineJson(MATCHES_FILE).catch(() => {});
+    return {};
+  }
 }
 
 
