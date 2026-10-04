@@ -6,7 +6,7 @@ import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { nickMatches } from './ocr.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
-import { readJson, writeJson } from './storage/jsonStore.js';
+import { readJson, writeJson, quarantineJson } from './storage/jsonStore.js';
 import {
   apiFetch,
   apiJson,
@@ -219,7 +219,10 @@ async function restoreRegistrations() {
     }
     console.log('📝 Cadastros pendentes restaurados: ' + registration.size);
   } catch (error) {
-    if (error.code !== 'ENOENT') console.error('❌ Erro ao restaurar cadastros pendentes:', error);
+    if (error.code !== 'ENOENT') {
+      console.error('❌ Erro ao restaurar cadastros pendentes:', error);
+      await quarantineJson(REGISTRATION_FILE).catch(() => {});
+    }
   }
 }
 
@@ -319,7 +322,10 @@ async function restoreSessions() {
     }
     console.log('🔐 Sessões restauradas: ' + authenticatedPlayers.size);
   } catch (error) {
-    if (error.code !== 'ENOENT') console.error('❌ Erro ao restaurar sessões:', error);
+    if (error.code !== 'ENOENT') {
+      console.error('❌ Erro ao restaurar sessões:', error);
+      await quarantineJson(SESSION_FILE).catch(() => {});
+    }
   }
 }
 
