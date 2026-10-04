@@ -72,7 +72,15 @@ async function apiFetch(path, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
-    return await fetch(RONE_API + path, { ...options, signal: controller.signal });
+    return await fetch(RONE_API + path, {
+      ...options,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'SEGA-Stats-Bot/1.0',
+        ...(options.headers || {})
+      },
+      signal: controller.signal
+    });
   } finally {
     clearTimeout(timer);
   }
@@ -82,6 +90,14 @@ async function apiJson(path, options = {}) {
   const response = await apiFetch(path, options);
   const body = await response.json().catch(() => ({}));
   return { response, body };
+}
+
+function isApiSuccess(body) {
+  return body?.code === 0 || body?.code === '0';
+}
+
+function apiErrorMessage(body) {
+  return body?.msg || body?.message || body?.detail || '';
 }
 
 function authHeaders(jwt) {
@@ -128,7 +144,7 @@ async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
   try {
     const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
     const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
-    if (!season.response.ok || season.body?.code !== 0 || !sids.length) {
+    if (!season.response.ok || !isApiSuccess(season.body) || !sids.length) {
       return { verified: false, reason: 'history_api_unavailable' };
     }
 
@@ -144,7 +160,7 @@ async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
           '&lang=pt';
 
         const response = await apiJson(query, { headers: authHeaders(jwt) });
-        if (!response.response.ok || response.body?.code !== 0) break;
+        if (!response.response.ok || !isApiSuccess(response.body)) break;
 
         const rows = Array.isArray(response.body?.data?.result) ? response.body.data.result : [];
         const match = rows.find(row => sameId(row.bid_s ?? row.bid, battleId));
@@ -157,7 +173,7 @@ async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
             { headers: authHeaders(jwt) }
           );
 
-          if (!details.response.ok || details.body?.code !== 0) {
+          if (!details.response.ok || !isApiSuccess(details.body)) {
             return { verified: false, reason: 'match_details_unavailable', sid, matchId };
           }
 
@@ -410,7 +426,7 @@ function parseMatchStats(matches) {
 async function fetchPlayerStats(jwt) {
   // Preferir /user/stats quando disponível (ainda funciona em muitos casos, apesar de deprecated).
   const direct = await apiJson('/user/stats?lang=pt', { headers: authHeaders(jwt) });
-  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
+  if (direct.response.ok && isApiSuccess(direct.body) && direct.body.data) {
     const data = direct.body.data;
     // Se vier com totais úteis, usa direto.
     if (data.tc != null || data.wc != null) {
@@ -422,12 +438,12 @@ async function fetchPlayerStats(jwt) {
   // IMPORTANTE: a API só aceita lang=pt (não pt_BR).
   const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
   const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
-  if (!season.response.ok || season.body?.code !== 0 || sids.length === 0) {
+  if (!season.response.ok || !isApiSuccess(season.body) || sids.length === 0) {
     console.error('❌ Fallback season falhou:', season.response?.status, season.body);
     return {
       source: 'error',
       response: season.response?.ok === false ? season.response : direct.response,
-      body: season.body?.code !== 0 ? season.body : direct.body
+      body: !isApiSuccess(season.body) ? season.body : direct.body
     };
   }
 
@@ -439,7 +455,7 @@ async function fetchPlayerStats(jwt) {
       { headers: authHeaders(jwt) }
     );
 
-    if (!matches.response.ok || matches.body?.code !== 0) {
+    if (!matches.response.ok || !isApiSuccess(matches.body)) {
       lastError = { response: matches.response, body: matches.body };
       console.error('❌ Matches sid=' + sid + ' falhou:', matches.response?.status, matches.body);
       continue;
@@ -455,7 +471,7 @@ async function fetchPlayerStats(jwt) {
   }
 
   // Nenhuma temporada retornou partidas. Se /user/stats tinha algo, usa mesmo assim.
-  if (direct.response.ok && direct.body.code === 0 && direct.body.data) {
+  if (direct.response.ok && isApiSuccess(direct.body) && direct.body.data) {
     return { source: 'stats', data: direct.body.data };
   }
 
@@ -639,10 +655,26 @@ bot.on('text', async (ctx, next) => {
       });
       const body = await response.json().catch(() => ({}));
 
-      if (!response.ok || body.code !== 0) {
+      if (!response.ok || !isApiSuccess(body)) {
+        const apiMsg = apiErrorMessage(body);
+        const trace = body?.traceID || body?.traceId || '';
         console.error('❌ Falha ao solicitar código:', response.status, body);
-        await ctx.reply('⚠️ Não consegui solicitar o código de verificação agora. Confira o ID e o Zone ID e tente novamente.');
-        await deleteRegistration(ctx.from.id);
+
+        let reply;
+        if (response.status === 429) {
+          reply = '⏳ <b>A API limitou novas solicitações por alguns instantes.</b>\n\nAguarde um pouco e envie o Zone ID novamente.';
+        } else {
+          reply =
+            '⚠️ <b>Não consegui solicitar o código de verificação.</b>\n\n' +
+            (apiMsg ? '📋 Motivo informado pela API: <code>' + String(apiMsg).slice(0, 180).replace(/[<>]/g, '') + '</code>\n\n' : '') +
+            'Confira o Role ID e o Zone ID e tente novamente.' +
+            (trace ? '\n\n🔎 Trace ID: <code>' + String(trace).replace(/[<>]/g, '') + '</code>' : '');
+        }
+
+        // Mantém o Role ID/Zone ID em memória e no volume para permitir uma nova tentativa
+        // sem obrigar o jogador a reiniciar todo o cadastro.
+        await setRegistration(ctx.from.id, { step: 'zone_id', roleId });
+        await ctx.reply(reply, { parse_mode: 'HTML' });
         return;
       }
 
@@ -688,10 +720,10 @@ bot.on('text', async (ctx, next) => {
 
       // Aceita jwt ou token (a API devolve os dois no sucesso)
       const jwt = body?.data?.jwt || body?.data?.token || null;
-      const ok = response.ok && (body.code === 0 || body.code === '0') && jwt;
+      const ok = response.ok && isApiSuccess(body) && jwt;
 
       if (!ok) {
-        const apiMsg = body?.msg || body?.message || body?.detail || '';
+        const apiMsg = apiErrorMessage(body);
         console.error('❌ Falha na autenticação:', response.status, JSON.stringify(body), 'payload=', payload);
         let reply =
           '❌ <b>Não foi possível validar o código.</b>\n\n' +
@@ -707,7 +739,7 @@ bot.on('text', async (ctx, next) => {
       const infoResponse = await apiFetch('/user/info', { headers: { Authorization: 'Bearer ' + jwt } });
       const infoBody = await infoResponse.json().catch(() => ({}));
 
-      if (!infoResponse.ok || (infoBody.code !== 0 && infoBody.code !== '0')) {
+      if (!infoResponse.ok || !isApiSuccess(infoBody)) {
         console.error('❌ Login realizado, mas não consegui consultar o perfil:', infoResponse.status, infoBody);
         await ctx.reply('⚠️ A autenticação retornou token, mas a API não confirmou o perfil agora. Tente novamente em alguns instantes ou envie o código de novo.', { parse_mode: 'HTML' });
         return;
@@ -758,7 +790,7 @@ async function sendRanking(ctx) {
   const results = await Promise.allSettled(
     players.map(async ([telegramId, player]) => {
       const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
-      if (!info.response.ok || info.body?.code !== 0) return null;
+      if (!info.response.ok || !isApiSuccess(info.body)) return null;
       player.name = info.body.data?.name || player.name || 'Jogador';
 
       const stats = await fetchPlayerStats(player.jwt);
@@ -846,7 +878,7 @@ async function sendStats(ctx) {
       return;
     }
 
-    if (!infoResponse.ok || infoBody.code !== 0) {
+    if (!infoResponse.ok || !isApiSuccess(infoBody)) {
       console.error('❌ Falha ao validar sessão:', infoResponse.status, infoBody);
       await ctx.reply('⚠️ A API respondeu com erro ao validar sua sessão. Tente novamente em alguns instantes.');
       return;
@@ -930,7 +962,7 @@ bot.on('photo', async (ctx, next) => {
   try {
     const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
     const currentName = info.body?.data?.name || player.name || 'Jogador';
-    if (info.response.ok && info.body?.code === 0) {
+    if (info.response.ok && isApiSuccess(info.body)) {
       player.name = currentName;
       await saveSessions();
     }
