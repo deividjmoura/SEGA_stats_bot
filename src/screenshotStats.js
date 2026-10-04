@@ -57,6 +57,83 @@ async function preprocessImage(inputPath, outputPath) {
     .toFile(outputPath);
 }
 
+function heartSelectionScore(buffer) {
+  let bright = 0;
+  let cyan = 0;
+  const total = buffer.length / 3;
+
+  for (let i = 0; i < buffer.length; i += 3) {
+    const r = buffer[i];
+    const g = buffer[i + 1];
+    const b = buffer[i + 2];
+    if (r > 160 && g > 160 && b > 160) bright += 1;
+    if (g > 100 && b > 120 && r < 130) cyan += 1;
+  }
+
+  return (bright / total) + (cyan / total) * 0.35;
+}
+
+async function detectSelectedRowByHeart(imagePath) {
+  const metadata = await sharp(imagePath).metadata();
+  const imageWidth = metadata.width || 1600;
+  const imageHeight = metadata.height || 738;
+  const rowCenters = [0.2683, 0.3984, 0.5271, 0.6558, 0.7859];
+  const sides = [
+    { side: 'left', x: 0.101 },
+    { side: 'right', x: 0.895 }
+  ];
+  const candidates = [];
+
+  for (const side of sides) {
+    for (let rowIndex = 0; rowIndex < rowCenters.length; rowIndex += 1) {
+      const centerY = Math.round(imageHeight * rowCenters[rowIndex]);
+      const roiWidth = Math.max(20, Math.round(imageWidth * 0.028));
+      const roiHeight = Math.max(20, Math.round(imageHeight * 0.06));
+      const left = Math.max(0, Math.min(
+        imageWidth - roiWidth,
+        Math.round(imageWidth * side.x - roiWidth / 2)
+      ));
+      const top = Math.max(0, Math.min(
+        imageHeight - roiHeight,
+        centerY - Math.round(roiHeight / 2)
+      ));
+
+      const { data } = await sharp(imagePath)
+        .extract({ left, top, width: roiWidth, height: roiHeight })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      candidates.push({
+        side: side.side,
+        rowIndex,
+        score: heartSelectionScore(data)
+      });
+    }
+  }
+
+  const standout = [];
+  for (const side of sides) {
+    const rows = candidates.filter(item => item.side === side.side);
+    const sorted = rows.slice().sort((a, b) => b.score - a.score);
+    const best = sorted[0];
+    const rest = sorted.slice(1).map(item => item.score).sort((a, b) => a - b);
+    const median = rest[Math.floor(rest.length / 2)] || 0;
+    const gap = best.score - median;
+
+    // O coração selecionado fica visivelmente mais claro/preenchido.
+    if (best.score >= 0.045 && (gap >= 0.018 || best.score >= median * 1.65)) {
+      standout.push({
+        ...best,
+        gap,
+        confidence: Math.min(1, Math.max(0, gap / Math.max(best.score, 0.001)))
+      });
+    }
+  }
+
+  standout.sort((a, b) => b.confidence - a.confidence || b.gap - a.gap);
+  return standout[0] || null;
+}
+
 function parseTsvWords(tsv) {
   return String(tsv || '')
     .split(/\r?\n/)
@@ -178,27 +255,51 @@ function findPlayerOcrLine(tsv, expectedNick) {
 }
 
 async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
-  const line = findPlayerOcrLine(tsv, expectedNick);
-  if (!line) return null;
-
   const metadata = await sharp(imagePath).metadata();
-  const imageWidth = metadata.width || line.right;
-  const imageHeight = metadata.height || line.bottom;
+  const imageWidth = metadata.width || 1600;
+  const imageHeight = metadata.height || 738;
+  const selected = await detectSelectedRowByHeart(imagePath);
 
-  // A linha do jogador é a região mais confiável para o K/D/A.
-  // Abrimos um pouco acima/abaixo para capturar nome, K/D/A e o restante da linha.
-  const verticalPadding = Math.max(24, Math.round(line.height * 1.35));
+  let line = null;
+  if (selected) {
+    const rowCenters = [0.2683, 0.3984, 0.5271, 0.6558, 0.7859];
+    const centerY = Math.round(imageHeight * rowCenters[selected.rowIndex]);
+    const rowHeight = Math.max(40, Math.round(imageHeight * 0.128));
+    line = {
+      left: 0,
+      top: Math.max(0, centerY - Math.round(rowHeight / 2)),
+      right: imageWidth,
+      bottom: Math.min(imageHeight, centerY + Math.round(rowHeight / 2)),
+      height: rowHeight,
+      text: '',
+      confidence: selected.confidence * 100,
+      similarity: 1,
+      selectedByHeart: true,
+      selectedSide: selected.side,
+      selectedRowIndex: selected.rowIndex
+    };
+  } else {
+    line = findPlayerOcrLine(tsv, expectedNick);
+    if (!line) return null;
+  }
+
+  const verticalPadding = selected
+    ? Math.round(imageHeight * 0.018)
+    : Math.max(24, Math.round(line.height * 1.35));
   const left = 0;
   const top = Math.max(0, line.top - verticalPadding);
   const width = imageWidth;
-  const height = Math.min(imageHeight - top, Math.max(line.height * 3.2, 100));
-
-  const cropPath = imagePath.replace(/\.png$/i, '.player-row.png');
+  const height = Math.min(
+    imageHeight - top,
+    selected ? Math.round(imageHeight * 0.155) : Math.max(line.height * 3.2, 100)
+  );
+  const cropPath = imagePath.replace(/.(?:png|jpg|jpeg)$/i, '.player-row.png');
 
   try {
     await sharp(imagePath)
       .extract({ left, top, width, height })
-      .resize({ width: Math.max(width, 2600), withoutEnlargement: false })
+      .resize({ width: Math.max(width, 3000), withoutEnlargement: false })
+      .grayscale()
       .normalize()
       .sharpen()
       .png()
@@ -219,6 +320,9 @@ async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
       lineText: line.text,
       confidence: line.confidence,
       similarity: line.similarity,
+      selectedByHeart: Boolean(line.selectedByHeart),
+      selectedSide: line.selectedSide || null,
+      selectedRowIndex: Number.isInteger(line.selectedRowIndex) ? line.selectedRowIndex : null,
       bounds: { left, top, width, height }
     };
   } finally {
@@ -230,7 +334,6 @@ async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
     await fs.unlink(cropPath).catch(() => {});
   }
 }
-
 async function improveBattleId(worker, imagePath, initialText, tsv) {
   const initial = String(initialText || '').match(/\b\d{14,18}\b/g);
   if (initial?.length) return initial.sort((a, b) => b.length - a.length)[0];
@@ -356,7 +459,7 @@ export async function processScreenshot(ctx, player) {
   // segunda leitura focada nessa faixa. Isso evita misturar o K/D/A de outro
   // jogador com o nick correto.
   const highlightedRow = await withOcrLock(() =>
-    readHighlightedPlayerRow(worker, processedPath, result.data?.tsv, player.name)
+    readHighlightedPlayerRow(worker, imagePath, result.data?.tsv, player.name)
   );
 
   if (highlightedRow?.text) {
@@ -367,6 +470,11 @@ export async function processScreenshot(ctx, player) {
       : null;
     parsed.playerRowConfidence = Number.isFinite(highlightedRow.confidence)
       ? Number(highlightedRow.confidence.toFixed(1))
+      : null;
+    parsed.playerRowSelectedByHeart = Boolean(highlightedRow.selectedByHeart);
+    parsed.playerRowSelectedSide = highlightedRow.selectedSide || null;
+    parsed.playerRowIndex = Number.isInteger(highlightedRow.selectedRowIndex)
+      ? highlightedRow.selectedRowIndex
       : null;
 
     if (highlightedRow.kda) {
