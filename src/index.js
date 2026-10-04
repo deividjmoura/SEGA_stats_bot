@@ -174,7 +174,7 @@ async function requirePrivateChat(ctx) {
   await ctx.reply(
     '🔐 <b>Cadastro é feito no privado.</b>\n\n' +
     'Para proteger seu Role ID, Zone ID e o código de verificação, abra o chat privado do SEGA Stats e use <code>/cadastrar</code> por lá.\n\n' +
-    (username ? '👉 <a href="' + link + '">Abrir SEGA Stats</a>' : '👉 Abra o chat privado do bot pelo perfil acima.'),
+    (username ? '👉 <a href="' + link + '?start=cadastro">Abrir cadastro no SEGA Stats</a>' : '👉 Abra o chat privado do bot pelo perfil acima.'),
     { parse_mode: 'HTML', disable_web_page_preview: true }
   );
   return false;
@@ -431,7 +431,17 @@ async function sendMenu(ctx) {
   });
 }
 
-bot.start(async (ctx) => await sendMenu(ctx));
+bot.start(async (ctx) => {
+  const payload = String(ctx.startPayload || '').toLowerCase();
+
+  // Link usado no grupo: abre o privado do bot e já inicia o cadastro.
+  if (payload === 'cadastro' || payload === 'cadastrar' || payload === 'register') {
+    await askForRoleId(ctx);
+    return;
+  }
+
+  await sendMenu(ctx);
+});
 bot.command('menu', async (ctx) => await sendMenu(ctx));
 
 bot.command('cadastrar', async (ctx) => await askForRoleId(ctx));
