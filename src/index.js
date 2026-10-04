@@ -1014,9 +1014,17 @@ async function sendClan(ctx) {
 }
 
 async function sendRanking(ctx) {
-  const rows = await getAllPlayerScreenshotSummaries();
+  const now = Date.now();
+  const rows = rankingCache && now - rankingCache.createdAt < RANKING_CACHE_MS
+    ? rankingCache.rows
+    : await getAllPlayerScreenshotSummaries();
+
+  if (!rankingCache || now - rankingCache.createdAt >= RANKING_CACHE_MS) {
+    rankingCache = { createdAt: now, rows };
+  }
+
   const ranking = rows
-    .filter(row => row.summary.verifiedMatches > 0)
+    .filter(row => row.summary.verifiedMatches >= 5)
     .map(row => {
       const registered = authenticatedPlayers.get(Number(row.telegramId));
       const name = registered?.name || row.name || ('Jogador ' + row.telegramId);
@@ -1036,7 +1044,7 @@ async function sendRanking(ctx) {
   if (!ranking.length) {
     await replyAs(ctx, 'general', 
       '🏆 <b>RANKING SEGA</b>\n\n' +
-      'Ainda não há partidas verificadas suficientes nos prints para montar o ranking.\n\n' +
+      'Ainda não há jogadores com pelo menos 5 partidas verificadas para montar o ranking com uma amostra mínima.\n\n' +
       '📸 Envie telas finais das partidas pelo botão <b>Enviar print</b>. Assim que houver partidas válidas, o ranking aparece aqui.',
       { parse_mode: 'HTML', ...mainKeyboard() }
     );
@@ -1051,7 +1059,7 @@ async function sendRanking(ctx) {
       (player.averageScore > 0 ? '  •  ⭐ ' + player.averageScore.toFixed(1) : '');
   });
 
-  await replyAs(ctx, 'general', 
+  await replyAs(ctx, 'ranking', 
     '🏆 <b>RANKING SEGA</b>\n\n' +
     lines.join('\n\n') +
     '\n\n<i>Ranking calculado exclusivamente com partidas verificadas a partir dos prints salvos.</i>',
@@ -1090,7 +1098,7 @@ async function sendStats(ctx) {
   const kda = summary.kills + '/' + summary.deaths + '/' + summary.assists;
   const name = player?.name ? ' • ' + escapeHtml(player.name) : '';
 
-  await replyAs(ctx, 'general', 
+  await replyAs(ctx, 'stats', 
     '📊 <b>SUAS ESTATÍSTICAS' + name + '</b>\n\n' +
     '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
     '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
@@ -1160,7 +1168,7 @@ bot.command('prints', async (ctx) => {
     '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\n' +
     '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
     (reverified ? '🔄 Reverificadas agora: <b>' + reverified + '</b>\n' : '') +
-    '⏳ Pendentes: <b>' + summary.pendingMatches + '</b>\n'
+    '⏳ Pendentes: <b>' + summary.pendingMatches + '</b>\n' +
     '🚫 Rejeitadas: <b>' + summary.rejectedMatches + '</b>\n' +
     '♻️ Duplicados: <b>' + summary.duplicates + '</b>\n' +
     '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
