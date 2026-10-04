@@ -145,6 +145,14 @@ export function parseScreenshotStats(text, expectedNick = null) {
     rawNumbers: numbers.slice(0, 30)
   };
 
+  // Alguns placares finais do MLBB usam uma arte/bandeira que o OCR não
+  // reconhece como "VICTORY/DEFEAT". Se já temos o padrão forte de uma tela
+  // final — Battle ID longo + K/D/A — não descarte a imagem como "unknown".
+  // A verificação da partida continua sendo feita pela API usando o Battle ID.
+  if (battleId && kda) {
+    parsed.kind = 'match_result';
+  }
+
   if (/\b(victory|vitória)\b/i.test(source)) parsed.result = 'win';
   else if (/\b(defeat|derrota)\b/i.test(source)) parsed.result = 'loss';
 
