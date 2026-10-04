@@ -295,6 +295,69 @@ function intentOf(text) {
   return 'unknown';
 }
 
+const buildKnowledge = {
+  argus: {
+    name: 'Argus',
+    role: 'Lutador',
+    lane: 'EXP',
+    items: ['Swift Boots', 'Corrosion Scythe', 'Demon Hunter Sword', 'Golden Staff', "Haas's Claws", 'Malefic Roar'],
+    emblem: 'Emblema de Atirador',
+    spell: 'Flicker',
+    note: 'Linha de ataque contínuo/efeitos de ataque. Os dois primeiros picos são Corrosion Scythe + Demon Hunter Sword; adapte os dois últimos slots à armadura, sustain ou burst mágico do adversário.',
+    sourceLabel: 'build curada e builds da comunidade',
+    patch: '2.2.16'
+  },
+  harley: {
+    name: 'Harley',
+    role: 'Assassino/Mago',
+    lane: 'Jungle/Mid',
+    items: ['Arcane Boots', 'Genius Wand', 'Starlium Scythe', 'Holy Crystal', 'Divine Glaive', 'Winter Crown'],
+    emblem: 'Emblema de Mago',
+    spell: 'Retribution',
+    note: 'Foco em burst mágico e pickoff. Ajuste a penetração e a defesa conforme a composição inimiga.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  },
+  gusion: {
+    name: 'Gusion',
+    role: 'Assassino',
+    lane: 'Jungle',
+    items: ['Arcane Boots', 'Genius Wand', 'Holy Crystal', 'Divine Glaive', 'Blood Wings', 'Winter Crown'],
+    emblem: 'Emblema de Assassino',
+    spell: 'Retribution',
+    note: 'Build de burst mágico. A prioridade é penetração + poder mágico para finalizar o alvo rapidamente.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  },
+  silvanna: {
+    name: 'Silvanna',
+    role: 'Lutadora',
+    lane: 'EXP',
+    items: ['Tough Boots', 'Genius Wand', 'Concentrated Energy', 'Glowing Wand', 'Antique Cuirass', 'Immortality'],
+    emblem: 'Emblema de Mago',
+    spell: 'Flicker',
+    note: 'Linha de pickoff/bruiser. A defesa final deve responder ao tipo de dano e controle do inimigo.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  },
+  fanny: {
+    name: 'Fanny',
+    role: 'Assassina',
+    lane: 'Jungle',
+    items: ['Tough Boots', 'Blade of the Heptaseas', 'Malefic Roar', 'Hunter Strike', 'Blade of Despair', 'Immortality'],
+    emblem: 'Emblema de Assassino',
+    spell: 'Retribution',
+    note: 'Linha de pickoff para snowball. Immortality pode virar item situacional quando o risco de shutdown aumenta.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  }
+};
+
+function buildForHero(hero) {
+  const key = compact(hero?.en || hero?.pt || '');
+  return buildKnowledge[key] || null;
+}
+
 const liveProfileCache = new Map();
 
 async function getLiveHeroProfile(heroName) {
@@ -437,7 +500,26 @@ export async function answerMlbbQuestion(text) {
   }
 
   if (intent === 'build') {
-    return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\n\nA base de matchup está pronta, mas a build completa precisa considerar função, rota e situação.\n\nEnquanto isso, pergunte: <code>qual item faço contra ' + hero.pt + '?</code>';
+    const build = buildForHero(hero);
+
+    if (!build) {
+      const liveProfile = await getLiveHeroProfile(hero.pt);
+      return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\n\n' +
+        (liveProfile
+          ? '🎯 Função: <b>' + liveProfile.role + '</b> • Rota: <b>' + liveProfile.lane + '</b>\n\n'
+          : '') +
+        'Ainda não tenho uma build curada específica para esse herói. Prefiro não inventar seis itens.\n\n' +
+        'Posso consultar os counters atualizados e, conforme a base crescer, adicionar a build recomendada.';
+    }
+
+    return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\n\n' +
+      '🎯 <b>' + build.role + '</b> • ' + build.lane + '\n' +
+      '🛒 <b>Ordem sugerida:</b>\n' +
+      build.items.map((item, index) => (index + 1) + '. ' + item).join('\n') + '\n\n' +
+      '🧿 Emblema: <b>' + build.emblem + '</b>\n' +
+      '✨ Feitiço: <b>' + build.spell + '</b>\n\n' +
+      '💡 ' + build.note + '\n\n' +
+      '📚 Referência: <b>' + build.sourceLabel + '</b> no patch ' + build.patch + '. É uma base, não uma regra fixa; a partida deve decidir os itens situacionais.';
   }
 
   return '🎮 <b>' + title + '</b> foi reconhecido.\n\nTente perguntar:\n• quem countera ' + hero.pt + '?\n• qual item faço contra ' + hero.pt + '?\n• como jogar contra ' + hero.pt + '?';
