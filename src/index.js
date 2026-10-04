@@ -1210,17 +1210,17 @@ bot.hears('📜 Lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CR�
 
 bot.catch((error) => console.error('❌ Erro no bot:', error));
 
-await restoreSessions();
-await restoreRegistrations();
-await cleanupScreenshots();
-console.log('💾 Diretório de dados: ' + DATA_DIR);
-
 if (process.env.RAILWAY_ENVIRONMENT && PERSISTENCE_REQUIRED && !persistenceIsAvailable()) {
   console.error('🚨 ARQUIVOS DE DADOS NÃO ESTÃO EM VOLUME PERSISTENTE.');
   console.error('🚨 Monte um Railway Volume em /app/data antes de iniciar o bot.');
   await notifyPersistenceProblem();
   process.exit(1);
 }
+
+await restoreSessions();
+await restoreRegistrations();
+await cleanupScreenshots();
+console.log('💾 Diretório de dados: ' + DATA_DIR);
 console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
 console.log('📝 Arquivo de cadastros pendentes: ' + REGISTRATION_FILE);
 if (!HAS_PERSISTENT_VOLUME && process.env.RAILWAY_ENVIRONMENT) {
