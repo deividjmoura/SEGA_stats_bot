@@ -31,7 +31,7 @@ async function saveMatches(matches) {
 async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const worker = await createWorker('eng');
+      const worker = await createWorker(['eng', 'por']);
       return worker;
     })().catch(error => {
       workerPromise = null;
@@ -73,8 +73,8 @@ function parseWinRate(text) {
 
 function detectKind(text) {
   const source = normalizeOcrText(text).toLowerCase();
-  const finalWords = ['victory', 'defeat', 'mvp', 'battlefield', 'result', 'defeat', 'victory'];
-  const profileWords = ['win rate', 'matches', 'games', 'heroes', 'history', 'season'];
+  const finalWords = ['victory', 'defeat', 'mvp', 'battlefield', 'result', 'vitória', 'derrota', 'resultado'];
+  const profileWords = ['win rate', 'winrate', 'matches', 'games', 'heroes', 'history', 'season', 'taxa de vitória', 'partidas', 'histórico'];
   const finalScore = finalWords.filter(word => source.includes(word)).length;
   const profileScore = profileWords.filter(word => source.includes(word)).length;
   if (finalScore > profileScore) return 'match_result';
@@ -95,8 +95,10 @@ function parseScreenshotStats(text) {
     rawNumbers: numbers.slice(0, 30)
   };
 
-  if (/\b(victory|defeat)\b/i.test(source)) {
-    parsed.result = /\bvictory\b/i.test(source) ? 'win' : 'loss';
+  if (/\b(victory|vitória)\b/i.test(source)) {
+    parsed.result = 'win';
+  } else if (/\b(defeat|derrota)\b/i.test(source)) {
+    parsed.result = 'loss';
   }
 
   const scoreMatch = source.match(/(?:score|rating|grade|pontua[cç][aã]o)\s*[:=]?\s*(\d{1,3}(?:[.,]\d{1,2})?)/i);
