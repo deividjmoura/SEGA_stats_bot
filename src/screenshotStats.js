@@ -189,6 +189,7 @@ export function summarizePlayerScreenshots(records) {
     verifiedMatches: validMatches.length,
     pendingMatches: list.filter(item => item.verification === 'pending_api_confirmation').length,
     rejectedMatches: list.filter(item => item.verification === 'rejected_name_mismatch').length,
+    duplicates: list.filter(item => item.verification === 'duplicate').length,
     verifiedProfiles: list.filter(item => item.verification === 'verified_profile').length,
     matchResults: wins + losses,
     wins,
