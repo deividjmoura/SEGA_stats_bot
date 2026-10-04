@@ -223,13 +223,9 @@ function isGroupChat(ctx) {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 }
 
-function getBotUsername(ctx) {
-  return ctx.botInfo?.username || bot.botInfo?.username || null;
-}
-
 async function requirePrivateChat(ctx) {
   if (ctx.chat?.type === 'private') return true;
-  const username = getBotUsername(ctx);
+  const username = ctx.botInfo?.username || bot.botInfo?.username || null;
   const link = username ? 'https://t.me/' + username : 'o chat privado deste bot';
   await replyAs(ctx, 'general', 
     '🔐 <b>Cadastro é feito no privado.</b>\n\n' +
