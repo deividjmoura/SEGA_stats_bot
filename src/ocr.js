@@ -52,11 +52,33 @@ export function parseNumbers(text) {
 
 export function parseKda(text, expectedNick = null) {
   const source = normalizeOcrText(text);
-  const matches = [...source.matchAll(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/g)];
-  if (!matches.length) return null;
+  const rawLines = String(text || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const parseLine = (rawLine) => {
+    const line = rawLine
+      .replace(/[Oo]/g, '0')
+      .replace(/[Il]/g, '1');
+
+    let match = line.match(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/);
+    if (!match) {
+      match = line.match(/\b(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\b/);
+    }
+    if (!match) return null;
+
+    const values = [Number(match[1]), Number(match[2]), Number(match[3])];
+    if (values.some(value => value > 99)) return null;
+
+    return {
+      kills: values[0],
+      deaths: values[1],
+      assists: values[2]
+    };
+  };
 
   if (expectedNick) {
-    const rawLines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const target = normalizeNick(expectedNick);
     const nickLineIndexes = rawLines
       .map((line, index) => ({ line, index }))
@@ -66,27 +88,11 @@ export function parseKda(text, expectedNick = null) {
     const nearbyMatches = [];
     for (const nickIndex of nickLineIndexes) {
       for (let lineIndex = 0; lineIndex < rawLines.length; lineIndex += 1) {
-        const line = rawLines[lineIndex]
-          .replace(/[Oo]/g, '0')
-          .replace(/[Il]/g, '1');
-
-        // Formato normal: 12/3/7, 12:3:7, etc.
-        let match = line.match(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/);
-
-        // Fallback para OCR que perde os separadores: "12 3 7".
-        if (!match) {
-          match = line.match(/\b(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})\b/);
-        }
-
-        if (!match) continue;
-        const values = [Number(match[1]), Number(match[2]), Number(match[3])];
-        if (values.some(value => value > 99)) continue;
-
+        const parsed = parseLine(rawLines[lineIndex]);
+        if (!parsed) continue;
         nearbyMatches.push({
           distance: Math.abs(lineIndex - nickIndex),
-          kills: values[0],
-          deaths: values[1],
-          assists: values[2]
+          ...parsed
         });
       }
     }
@@ -101,6 +107,16 @@ export function parseKda(text, expectedNick = null) {
       };
     }
   }
+
+  const lineMatches = rawLines
+    .map(parseLine)
+    .filter(Boolean);
+
+  if (lineMatches.length) return lineMatches[0];
+
+  // Fallback global para OCR que devolve o placar numa única linha.
+  const matches = [...source.matchAll(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/g)];
+  if (!matches.length) return null;
 
   return {
     kills: Number(matches[0][1]),
