@@ -1132,11 +1132,38 @@ bot.command('prints', async (ctx) => {
   );
 });
 
-bot.on('photo', async (ctx, next) => {
+function isBotReply(ctx) {
+  const reply = ctx.message?.reply_to_message;
+  return Boolean(reply && ctx.botInfo?.id && reply.from?.id === ctx.botInfo.id);
+}
+
+function hasPrintTrigger(ctx) {
+  if (ctx.chat?.type === 'private') return true;
+  if (!isGroupChat(ctx)) return false;
+  const caption = String(ctx.message?.caption || '');
+  return /#print\b/i.test(caption) || isBotReply(ctx);
+}
+
+function isImageDocument(ctx) {
+  return String(ctx.message?.document?.mime_type || '').startsWith('image/');
+}
+
+function shouldProcessScreenshot(ctx) {
+  if (ctx.message?.photo?.length) return hasPrintTrigger(ctx);
+  if (isImageDocument(ctx)) return hasPrintTrigger(ctx);
+  return false;
+}
+
+async function handleScreenshot(ctx) {
   const player = authenticatedPlayers.get(ctx.from.id);
 
+  // Em grupos, prints só entram quando o usuário explicitamente marca #print
+  // ou responde a uma mensagem do bot. Memes e fotos comuns ficam silenciosos.
+  if (isGroupChat(ctx) && !hasPrintTrigger(ctx)) return;
+
   if (!player?.jwt) {
-    await replyAs(ctx, 'general', 
+    if (isGroupChat(ctx)) return;
+    await replyAs(ctx, 'print',
       '📸 <b>PRINT DE PARTIDA</b>\n\n' +
       'Primeiro vincule seu jogador com /cadastrar. Depois pode mandar os prints aqui que eu vou guardar e extrair os dados.',
       { parse_mode: 'HTML' }
@@ -1144,11 +1171,20 @@ bot.on('photo', async (ctx, next) => {
     return;
   }
 
+  const lastOcr = ocrCooldownByUser.get(Number(ctx.from.id)) || 0;
+  if (Date.now() - lastOcr < OCR_COOLDOWN_MS) {
+    const remaining = Math.ceil((OCR_COOLDOWN_MS - (Date.now() - lastOcr)) / 1000);
+    await replyAs(ctx, 'print',
+      '⏳ <b>Leitor em cooldown.</b>\n\nAguarde mais ' + remaining + 's antes de enviar outro print.',
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+  ocrCooldownByUser.set(Number(ctx.from.id), Date.now());
+
   await replyAs(ctx, 'print', '📸 <b>Print recebido.</b>\n\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
 
   try {
-    // Para contabilizar um novo print precisamos confirmar o nick atual agora.
-    // Nunca usamos silenciosamente um nick antigo salvo na sessão.
     const info = await apiJson('/user/info?lang=pt', { headers: authHeaders(player.jwt) });
     const liveName = info.response.ok && isApiSuccess(info.body)
       ? profileName(info.body?.data)
@@ -1161,102 +1197,142 @@ bot.on('photo', async (ctx, next) => {
     }
 
     const record = await processScreenshot(ctx, player);
+
+    if (record.ignored) {
+      await replyAs(ctx, 'print',
+        '🗑️ <b>Print descartado.</b>\n\nNão consegui identificar com segurança uma tela de Mobile Legends. A imagem não foi salva.',
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
     const parsed = record.parsed || {};
 
     if (record.duplicate) {
       await updateScreenshotVerification(ctx.from.id, record.id, 'duplicate');
-      await replyAs(ctx, 'general', 
-        '♻️ <b>PRINT DUPLICADO</b>\n\n' +
-        'Esse print ou Battle ID já foi registrado para sua conta. Não vou contar a mesma partida duas vezes.',
+      await replyAs(ctx, 'print',
+        '♻️ <b>PRINT DUPLICADO</b>\n\nEsse print ou Battle ID já foi registrado e confirmado. Não vou contar a mesma partida duas vezes.',
         { parse_mode: 'HTML', ...mainKeyboard() }
       );
       return;
     }
-
-    let verification;
 
     if (!liveName) {
-      verification = 'pending_name_confirmation';
-    } else {
-      const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines);
+      await updateScreenshotVerification(ctx.from.id, record.id, 'pending_name_confirmation');
+      await replyAs(ctx, 'print',
+        '⏳ <b>PRINT AINDA NÃO CONTABILIZADO</b>\n\nNão consegui confirmar seu nick atual na conta agora. Deixei o print pendente para nova verificação.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
 
-      if (!nameOk) {
-        verification = 'rejected_name_mismatch';
-      } else if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
-        verification = 'verified_profile';
-      } else if (parsed.kind === 'battles') {
-        verification = 'verified_battles_snapshot';
-      } else if (parsed.kind === 'match_result') {
-        // As estatísticas agora vêm dos prints; não dependemos mais dos
-        // endpoints antigos de histórico/partidas da API.
-        verification = 'verified_match';
-      } else {
-        verification = 'name_match';
+    const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines);
+    if (!nameOk) {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'rejected_name_mismatch');
+      await replyAs(ctx, 'print',
+        '🚫 <b>PRINT NÃO CONTABILIZADO</b>\n\nO nick encontrado na imagem não corresponde ao nick atual confirmado da sua conta: <b>' +
+        escapeHtml(liveName) + '</b>.\n\nEsse print foi guardado apenas para auditoria, mas não entra nas suas estatísticas nem no ranking.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'verified_profile');
+      await replyAs(ctx, 'print',
+        '📊 <b>Print de perfil detectado!</b>\n\nEsse tipo de tela foi salvo como snapshot de conferência e não conta como partida individual.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    if (parsed.kind === 'battles') {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'verified_battles_snapshot');
+      await replyAs(ctx, 'print',
+        '📋 <b>Tela de Batalhas detectada!</b>\n\nO histórico foi guardado como snapshot de conferência. Para registrar uma partida, prefira a tela final.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    if (parsed.kind !== 'match_result') {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'name_match');
+      await replyAs(ctx, 'print',
+        '🗂️ <b>Print armazenado.</b>\n\nAinda não consegui classificar essa tela como uma partida com segurança.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    if (!parsed.battleId) {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'pending_api_confirmation', {
+        verificationReason: 'battle_id_not_detected'
+      });
+      await replyAs(ctx, 'print',
+        '⏳ <b>PARTIDA PENDENTE</b>\n\nIdentifiquei uma tela de resultado, mas não encontrei o Battle ID. Sem ele não vou usar o K/D/A do OCR para o ranking.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    const verification = await battleBelongsToPlayer(
+      player.jwt,
+      player.roleId,
+      player.zoneId,
+      parsed.battleId
+    );
+
+    if (!verification.verified) {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'pending_api_confirmation', {
+        verificationReason: verification.reason
+      });
+      await replyAs(ctx, 'print',
+        '⏳ <b>PARTIDA PENDENTE DE CONFIRMAÇÃO</b>\n\nEncontrei o Battle ID, mas a API ainda não confirmou essa partida para sua conta. Não vou contabilizar o K/D/A lido pelo OCR até a verificação ser concluída.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    const verifiedParsed = normalizeVerifiedMatch(verification.match, verification.matchId, parsed);
+    const verifiedRecord = await updateScreenshotVerification(
+      ctx.from.id,
+      record.id,
+      'verified_match',
+      {
+        parsed: verifiedParsed,
+        verificationReason: verification.reason,
+        verifiedAt: new Date().toISOString(),
+        verifiedSid: verification.sid
       }
-    }
+    );
 
-    await updateScreenshotVerification(ctx.from.id, record.id, verification);
-
-    let detail;
-    if (verification === 'rejected_name_mismatch') {
-      await replyAs(ctx, 'general', 
-        '🚫 <b>PRINT NÃO CONTABILIZADO</b>\n\n' +
-        'O nick encontrado na imagem não corresponde ao nick atual confirmado da sua conta: <b>' +
-        escapeHtml(liveName || player.name || 'desconhecido') + '</b>.\n\n' +
-        'Esse print foi guardado apenas para auditoria, mas <b>não entra nas suas estatísticas nem no ranking</b>.\n\n' +
-        '📸 Envie uma tela da sua conta atual, com o nick visível.',
-        { parse_mode: 'HTML', ...mainKeyboard() }
-      );
-      return;
-    }
-
-    if (verification === 'pending_name_confirmation') {
-      await replyAs(ctx, 'general', 
-        '⏳ <b>PRINT AINDA NÃO CONTABILIZADO</b>\n\n' +
-        'Não consegui confirmar seu <b>nick atual</b> na conta agora. Para evitar contabilizar uma imagem de outro jogador ou de um nick antigo, deixei esse print pendente.\n\n' +
-        'Tente novamente em alguns instantes. Quando o nick atual puder ser confirmado, envie o print novamente.',
-        { parse_mode: 'HTML', ...mainKeyboard() }
-      );
-      return;
-    }
-
-    if (verification === 'duplicate') {
-      detail = '♻️ <b>Esse print já foi registrado.</b>\nNão vou contar a mesma partida duas vezes.';
-    } else if (parsed.kind === 'match_result') {
-      detail =
-        '⚔️ <b>Partida detectada!</b>\n' +
-        (parsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\n' : parsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\n' : '') +
-        (parsed.kda ? '📊 K/D/A: <b>' + parsed.kda.kills + '/' + parsed.kda.deaths + '/' + parsed.kda.assists + '</b>\n' : '') +
-        (parsed.score != null ? '⭐ Pontuação: <b>' + parsed.score + '</b>\n' : '');
-    } else if (parsed.kind === 'profile') {
-      detail =
-        '📊 <b>Print de perfil detectado!</b>\n' +
-        (parsed.winRate != null ? '📈 Win rate lido: <b>' + parsed.winRate + '%</b>\n' : '') +
-        'Esse tipo de print serve como <b>snapshot geral</b>; ele não conta como uma partida individual.';
-    } else if (parsed.kind === 'battles') {
-      detail =
-        '📋 <b>Tela de Batalhas detectada!</b>\n' +
-        (parsed.battleId ? '🆔 Battle ID encontrado: <code>' + parsed.battleId + '</code>\n' : '') +
-        'O histórico foi guardado como <b>snapshot de conferência</b>. Para registrar uma partida individual com mais segurança, prefira enviar a tela final da partida.';
-    } else {
-      detail =
-        '🗂️ <b>Print armazenado.</b>\n' +
-        'Ainda não consegui classificar essa tela com segurança. Os dados brutos foram guardados para melhorarmos o leitor.';
-    }
-
-    await replyAs(ctx, 'general', 
-      '✅ <b>DADO REGISTRADO NO SEGA</b>\n\n' +
-      detail +
-      '\n\n🧠 O OCR salvou também o texto lido da imagem para podermos melhorar o parser sem perder o print.',
+    const finalParsed = verifiedRecord?.parsed || verifiedParsed;
+    await replyAs(ctx, 'print',
+      '✅ <b>PARTIDA VERIFICADA</b>\n\n' +
+      (finalParsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\n' : finalParsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\n' : '') +
+      '📊 K/D/A: <b>' + finalParsed.kda.kills + '/' + finalParsed.kda.deaths + '/' + finalParsed.kda.assists + '</b>\n' +
+      (finalParsed.hero ? '🦸 Herói: <b>' + escapeHtml(finalParsed.hero) + '</b>\n' : '') +
+      (finalParsed.score != null ? '⭐ Pontuação: <b>' + Number(finalParsed.score).toFixed(1) + '</b>\n' : '') +
+      '\n🛡️ Os números da API foram usados como fonte de verdade; o OCR serviu apenas para localizar e validar a tela.',
       { parse_mode: 'HTML', ...mainKeyboard() }
     );
   } catch (error) {
     console.error('❌ Erro ao processar screenshot:', error);
-    await replyAs(ctx, 'general', 
-      '⚠️ Recebi o print, mas o leitor não conseguiu processá-lo agora. A imagem pode não ter sido salva; tente novamente com a tela inteira e boa resolução.',
+    await replyAs(ctx, 'print',
+      '⚠️ Recebi o print, mas o leitor não conseguiu processá-lo agora. Tente novamente com a tela inteira e boa resolução.',
       { parse_mode: 'HTML' }
     );
   }
+}
+
+bot.on('photo', async (ctx, next) => {
+  if (!shouldProcessScreenshot(ctx)) return next();
+  await handleScreenshot(ctx);
+});
+
+bot.on('document', async (ctx, next) => {
+  if (!shouldProcessScreenshot(ctx)) return next();
+  await handleScreenshot(ctx);
 });
 
 async function isKnowledgeAdmin(ctx) {
