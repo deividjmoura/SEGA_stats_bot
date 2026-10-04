@@ -1,8 +1,14 @@
+import { readJson, writeJson, quarantineJson } from './storage/jsonStore.js';
+
 const WAIT_MS = 5 * 60 * 1000;
 const COOLDOWN_MS = 30 * 60 * 1000;
+const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const STATE_FILE = process.env.GROUP_BANTER_FILE || DATA_DIR + '/group-banters.json';
 
 const pendingByChat = new Map();
 const lastBanterByChat = new Map();
+let persistenceReady = false;
+let persistencePromise = Promise.resolve();
 
 const phrases = [
   "Chamou pra jogar e o grupo ficou em silêncio. Acho que ativaram o modo espectador. 👀",
@@ -165,10 +171,61 @@ function isCallForPlayers(text) {
   ].some(pattern => pattern.test(source));
 }
 
+function snapshotState() {
+  const pending = {};
+  for (const [chatId, state] of pendingByChat) {
+    pending[String(chatId)] = {
+      messageId: state.messageId,
+      userId: state.userId,
+      displayName: state.displayName,
+      dueAt: state.dueAt
+    };
+  }
+  const cooldowns = {};
+  for (const [chatId, timestamp] of lastBanterByChat) {
+    if (Number.isFinite(timestamp) && timestamp > Date.now() - COOLDOWN_MS) {
+      cooldowns[String(chatId)] = timestamp;
+    }
+  }
+  return { version: 1, pending, cooldowns, updatedAt: new Date().toISOString() };
+}
+
+function persistState() {
+  persistencePromise = persistencePromise
+    .catch(() => {})
+    .then(() => writeJson(STATE_FILE, snapshotState()))
+    .catch(error => console.error('⚠️ Não consegui salvar o estado das zueiras do grupo:', error));
+  return persistencePromise;
+}
+
 function clearPending(chatId) {
   const pending = pendingByChat.get(chatId);
   if (pending?.timer) clearTimeout(pending.timer);
   pendingByChat.delete(chatId);
+  if (persistenceReady) void persistState();
+}
+
+function schedulePendingTimer(chatId, state, ctx) {
+  const delay = Math.max(0, state.dueAt - Date.now());
+  state.timer = setTimeout(async () => {
+    const current = pendingByChat.get(chatId);
+    if (!current || current.messageId !== state.messageId || current.userId !== state.userId) return;
+    pendingByChat.delete(chatId);
+    lastBanterByChat.set(chatId, Date.now());
+    await persistState();
+
+    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+    try {
+      await ctx.telegram.sendMessage(
+        chatId,
+        '👀 <b>' + String(state.displayName || 'guerreiro').replace(/[&<>]/g, '') + '...</b>\n\n' + phrase,
+        { parse_mode: 'HTML', reply_parameters: { message_id: state.messageId } }
+      );
+      console.log('🎭 Zueira de ausência disparada no grupo ' + chatId);
+    } catch (error) {
+      console.error('⚠️ Não consegui mandar a zoeira do grupo:', error.message);
+    }
+  }, delay);
 }
 
 async function scheduleBanter(ctx, resolvePlayerName) {
@@ -198,29 +255,56 @@ async function scheduleBanter(ctx, resolvePlayerName) {
     ctx.from.username ||
     'guerreiro';
 
-  const timer = setTimeout(async () => {
-    const current = pendingByChat.get(chatId);
-    if (!current || current.messageId !== messageId || current.userId !== userId) return;
+  const state = {
+    timer: null,
+    messageId,
+    userId,
+    displayName,
+    dueAt: Date.now() + WAIT_MS
+  };
+  pendingByChat.set(chatId, state);
+  schedulePendingTimer(chatId, state, ctx);
+  await persistState();
+  console.log('🎭 Zueira de ausência agendada no grupo ' + chatId + ' para ' + new Date(state.dueAt).toISOString());
+}
 
-    pendingByChat.delete(chatId);
-    lastBanterByChat.set(chatId, Date.now());
+export async function restoreGroupBanters() {
+  try {
+    const stored = await readJson(STATE_FILE, { version: 1, pending: {}, cooldowns: {} });
+    const now = Date.now();
 
-    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
-    try {
-      await ctx.telegram.sendMessage(
-        chatId,
-        '👀 <b>' + displayName.replace(/[&<>]/g, '') + '</b>...\n\n' + phrase,
-        {
-          parse_mode: 'HTML',
-          reply_parameters: { message_id: messageId }
-        }
-      );
-    } catch (error) {
-      console.error('⚠️ Não consegui mandar a zoeira do grupo:', error.message);
+    for (const [chatId, timestamp] of Object.entries(stored?.cooldowns || {})) {
+      const value = Number(timestamp);
+      if (Number.isFinite(value) && now - value < COOLDOWN_MS) {
+        lastBanterByChat.set(Number(chatId), value);
+      }
     }
-  }, WAIT_MS);
 
-  pendingByChat.set(chatId, { timer, messageId, userId });
+    let restored = 0;
+    for (const [chatId, saved] of Object.entries(stored?.pending || {})) {
+      const dueAt = Number(saved?.dueAt);
+      if (!Number.isFinite(dueAt) || dueAt <= now) continue;
+      pendingByChat.set(Number(chatId), {
+        timer: null,
+        messageId: saved.messageId,
+        userId: saved.userId,
+        displayName: saved.displayName || 'guerreiro',
+        dueAt
+      });
+      restored++;
+    }
+
+    persistenceReady = true;
+    console.log('🎭 Zueiras restauradas: ' + restored);
+    return restored;
+  } catch (error) {
+    persistenceReady = true;
+    if (error.code !== 'ENOENT') {
+      console.error('❌ Erro ao restaurar zueiras do grupo:', error);
+      await quarantineJson(STATE_FILE).catch(() => {});
+    }
+    return 0;
+  }
 }
 
 export function markBanterHandled(ctx) {
@@ -241,6 +325,13 @@ export function markBanterHandled(ctx) {
 export function groupBanterMiddleware(resolvePlayerName) {
   return async (ctx, next) => {
     try {
+      if (isGroup(ctx) && ctx.chat?.id && ctx.from && !ctx.from.is_bot) {
+        const restored = pendingByChat.get(ctx.chat.id);
+        if (restored && !restored.timer) {
+          schedulePendingTimer(ctx.chat.id, restored, ctx);
+          await persistState();
+        }
+      }
       await scheduleBanter(ctx, resolvePlayerName);
     } catch (error) {
       console.error('⚠️ Erro no monitor de zoeira do grupo:', error);
