@@ -199,6 +199,78 @@ function suggestHero(text) {
   return candidates[0]?.name || null;
 }
 
+const LIVE_HEROES_URL = 'https://arda.ozyurt.tr/mlbb/data/heroes.min.json';
+const LIVE_MATRIX_URL = 'https://arda.ozyurt.tr/mlbb/data/matrix.json';
+let liveDataCache = null;
+let liveDataFetchedAt = 0;
+let liveDataPromise = null;
+
+async function loadLiveMatchups() {
+  const now = Date.now();
+  if (liveDataCache && now - liveDataFetchedAt < 10 * 60 * 1000) return liveDataCache;
+  if (liveDataPromise) return liveDataPromise;
+
+  liveDataPromise = (async () => {
+    try {
+      const [heroesResponse, matrixResponse] = await Promise.all([
+        fetch(LIVE_HEROES_URL),
+        fetch(LIVE_MATRIX_URL)
+      ]);
+
+      if (!heroesResponse.ok || !matrixResponse.ok) {
+        throw new Error('fonte de matchup indisponível');
+      }
+
+      const heroes = await heroesResponse.json();
+      const matrix = await matrixResponse.json();
+
+      if (!Array.isArray(heroes) || !matrix?.counters) {
+        throw new Error('formato de matchup inválido');
+      }
+
+      liveDataCache = { heroes, matrix };
+      liveDataFetchedAt = Date.now();
+      return liveDataCache;
+    } catch (error) {
+      console.warn('⚠️ Base live de counters indisponível:', error?.message || error);
+      return liveDataCache;
+    } finally {
+      liveDataPromise = null;
+    }
+  })();
+
+  return liveDataPromise;
+}
+
+function liveHeroByName(name, heroes) {
+  const target = compact(name);
+  return heroes.find(hero => compact(hero.n) === target);
+}
+
+async function getLiveCounters(heroName) {
+  const live = await loadLiveMatchups();
+  if (!live) return null;
+
+  const target = liveHeroByName(heroName, live.heroes);
+  if (!target) return null;
+
+  const counters = live.matrix.counters;
+  const rows = [];
+
+  for (const [attackerId, matchups] of Object.entries(counters)) {
+    const edge = Number(matchups?.[String(target.i)] ?? matchups?.[target.i]);
+    if (!Number.isFinite(edge) || edge <= 0) continue;
+
+    const attacker = live.heroes.find(hero => String(hero.i) === String(attackerId));
+    if (!attacker) continue;
+
+    rows.push({ name: attacker.n, edge });
+  }
+
+  rows.sort((a, b) => b.edge - a.edge);
+  return rows.slice(0, 5).map(row => row.name);
+}
+
 function canonicalHeroName(name) {
   const target = compact(name);
   for (const hero of Object.values(knowledge.heroes)) {
@@ -241,7 +313,7 @@ export function knowledgeSummary() {
   };
 }
 
-export function answerMlbbQuestion(text) {
+export async function answerMlbbQuestion(text) {
   const hero = findHero(text);
   const intent = intentOf(text);
 
@@ -260,15 +332,19 @@ export function answerMlbbQuestion(text) {
   const title = hero.pt + ' (' + hero.en + ')';
 
   if (intent === 'counter') {
-    if (!hero.detailed || !hero.counters?.length) {
+    // A fonte live cobre o roster completo. A base local continua como fallback
+    // para quando a fonte externa estiver indisponível.
+    const liveCounters = await getLiveCounters(hero.pt);
+    const counters = liveCounters?.length ? liveCounters : hero.counters;
+
+    if (!counters?.length) {
       return '🎮 <b>' + title + '</b> foi identificado corretamente.\n\n' +
-        '⚠️ Ainda não tenho o matchup de counters desse herói na base local.\n' +
-        'Não vou inventar uma lista e correr o risco de te passar informação errada.\n\n' +
-        '📚 Esse herói já está no roster do SEGA e será tratado como herói válido.';
+        '⚠️ Não consegui carregar os dados de matchup agora. Tente novamente em alguns segundos.';
     }
+
     return '⚔️ <b>COUNTERS DE ' + title.toUpperCase() + '</b>\n\n' +
-      hero.counters.map(name => '• ' + canonicalHeroName(name)).join('\n') +
-      '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Snapshot de matchup pesquisado para o SEGA Stats.';
+      counters.map(name => '• ' + canonicalHeroName(name)).join('\n') +
+      '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Dados de matchup atualizados para o SEGA Stats.';
   }
 
   if (intent === 'items') {
