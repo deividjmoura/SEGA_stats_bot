@@ -43,7 +43,7 @@ function authHeaders(jwt) {
 function normalizeNick(value) {
   return String(value || '')
     .normalize('NFKD')
-    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '');
 }
@@ -51,31 +51,92 @@ function normalizeNick(value) {
 function nickMatches(expected, text) {
   const target = normalizeNick(expected);
   if (!target || target.length < 3) return false;
+
+  // Nicks muito curtos não devem validar por simples substring.
+  // Para 3-4 caracteres exigimos um token inteiro no OCR.
+  const compact = String(text || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ');
+  const words = compact.split(/\s+/).filter(Boolean);
+
+  if (target.length <= 4) {
+    return words.includes(target);
+  }
+
   const source = normalizeNick(text);
   if (source.includes(target)) return true;
-  const compact = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
-  const words = compact.split(/\\s+/).filter(Boolean);
-  return words.some(word => word.length >= 3 && (target.includes(word) || word.includes(target)));
+  return words.some(word => word.length >= 4 && (target.includes(word) || word.includes(target)));
 }
 
-async function battleBelongsToPlayer(jwt, battleId) {
+function sameId(a, b) {
+  return String(a ?? '').trim() === String(b ?? '').trim();
+}
+
+async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
   if (!battleId) return { verified: false, reason: 'battle_id_not_detected' };
+
   try {
     const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
     const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
-    if (!season.response.ok || season.body?.code !== 0) {
+    if (!season.response.ok || season.body?.code !== 0 || !sids.length) {
       return { verified: false, reason: 'history_api_unavailable' };
     }
 
-    for (const sid of sids.slice(0, 6)) {
-      const response = await apiJson(
-        '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt',
-        { headers: authHeaders(jwt) }
-      );
-      if (!response.response.ok || response.body?.code !== 0) continue;
-      const rows = Array.isArray(response.body?.data?.result) ? response.body.data.result : [];
-      if (rows.some(row => String(row.bid) === String(battleId))) {
-        return { verified: true, reason: 'battle_id_confirmed', sid };
+    // Os IDs longos devem ser tratados como strings. JavaScript perde precisão
+    // em números inteiros muito grandes, então usamos bid_s sempre que existir.
+    for (const sid of sids.slice(0, 8)) {
+      let cursor = '';
+      for (let page = 0; page < 8; page += 1) {
+        const query =
+          '/user/matches?sid=' + encodeURIComponent(sid) +
+          '&limit=50' +
+          (cursor ? '&last_cursor=' + encodeURIComponent(cursor) : '') +
+          '&lang=pt';
+
+        const response = await apiJson(query, { headers: authHeaders(jwt) });
+        if (!response.response.ok || response.body?.code !== 0) break;
+
+        const rows = Array.isArray(response.body?.data?.result) ? response.body.data.result : [];
+        const match = rows.find(row => sameId(row.bid_s ?? row.bid, battleId));
+
+        if (match) {
+          const matchId = String(match.bid_s ?? match.bid ?? battleId);
+          const details = await apiJson(
+            '/user/matches/' + encodeURIComponent(matchId) +
+            '?sid=' + encodeURIComponent(sid) + '&lang=pt',
+            { headers: authHeaders(jwt) }
+          );
+
+          if (!details.response.ok || details.body?.code !== 0) {
+            return { verified: false, reason: 'match_details_unavailable', sid, matchId };
+          }
+
+          const participants = Array.isArray(details.body?.data?.result)
+            ? details.body.data.result
+            : [];
+
+          const owner = participants.find(row =>
+            sameId(row.rid, roleId) && sameId(row.zid, zoneId)
+          );
+
+          if (!owner) {
+            return { verified: false, reason: 'account_not_in_match', sid, matchId };
+          }
+
+          return {
+            verified: true,
+            reason: 'battle_and_account_confirmed',
+            sid,
+            matchId,
+            match: owner
+          };
+        }
+
+        const pageInfo = response.body?.data?.pageInfo || {};
+        if (!pageInfo.hasNext || !pageInfo.nextCursor) break;
+        cursor = String(pageInfo.nextCursor);
       }
     }
 
@@ -84,6 +145,39 @@ async function battleBelongsToPlayer(jwt, battleId) {
     console.error('❌ Falha ao validar Battle ID:', error);
     return { verified: false, reason: 'history_api_error' };
   }
+}
+
+function isGroupChat(ctx) {
+  return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+}
+
+let cachedBotUsername = null;
+async function getBotUsername() {
+  if (cachedBotUsername) return cachedBotUsername;
+  try {
+    const me = await ctxBotGetMe();
+    cachedBotUsername = me.username || null;
+  } catch {
+    cachedBotUsername = null;
+  }
+  return cachedBotUsername;
+}
+
+async function ctxBotGetMe() {
+  return bot.telegram.getMe();
+}
+
+async function requirePrivateChat(ctx) {
+  if (!isGroupChat(ctx)) return true;
+  const username = await getBotUsername();
+  const link = username ? 'https://t.me/' + username : 'o chat privado deste bot';
+  await ctx.reply(
+    '🔐 <b>Cadastro é feito no privado.</b>\n\n' +
+    'Para proteger seu Role ID, Zone ID e o código de verificação, abra o chat privado do SEGA Stats e use <code>/cadastrar</code> por lá.\n\n' +
+    (username ? '👉 <a href="' + link + '">Abrir SEGA Stats</a>' : '👉 Abra o chat privado do bot pelo perfil acima.'),
+    { parse_mode: 'HTML', disable_web_page_preview: true }
+  );
+  return false;
 }
 
 function encrypt(text) {
@@ -672,14 +766,16 @@ bot.on('photo', async (ctx, next) => {
     if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
       verification = nameOk ? 'verified_profile' : 'rejected_name_mismatch';
     } else if (parsed.kind === 'match_result' && parsed.battleId && nameOk) {
-      const battleCheck = await battleBelongsToPlayer(player.jwt, parsed.battleId);
+      const battleCheck = await battleBelongsToPlayer(player.jwt, player.roleId, player.zoneId, parsed.battleId);
       verification = battleCheck.verified ? 'verified_match' : 'pending_api_confirmation';
     }
 
     await updateScreenshotVerification(ctx.from.id, record.id, verification);
 
     let detail;
-    if (parsed.kind === 'match_result') {
+    if (verification === 'duplicate') {
+      detail = '♻️ <b>Esse print já foi registrado.</b>\nNão vou contar a mesma partida duas vezes.';
+    } else if (parsed.kind === 'match_result') {
       detail =
         '⚔️ <b>Partida detectada!</b>\n' +
         (parsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\n' : parsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\n' : '') +
