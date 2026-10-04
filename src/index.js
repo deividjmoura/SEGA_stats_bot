@@ -3,7 +3,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
-import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots } from './screenshotStats.js';
+import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -38,6 +38,52 @@ async function apiJson(path, options = {}) {
 
 function authHeaders(jwt) {
   return { Authorization: 'Bearer ' + jwt };
+}
+
+function normalizeNick(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function nickMatches(expected, text) {
+  const target = normalizeNick(expected);
+  if (!target || target.length < 3) return false;
+  const source = normalizeNick(text);
+  if (source.includes(target)) return true;
+  const compact = String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const words = compact.split(/\\s+/).filter(Boolean);
+  return words.some(word => word.length >= 3 && (target.includes(word) || word.includes(target)));
+}
+
+async function battleBelongsToPlayer(jwt, battleId) {
+  if (!battleId) return { verified: false, reason: 'battle_id_not_detected' };
+  try {
+    const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
+    const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
+    if (!season.response.ok || season.body?.code !== 0) {
+      return { verified: false, reason: 'history_api_unavailable' };
+    }
+
+    for (const sid of sids.slice(0, 6)) {
+      const response = await apiJson(
+        '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt',
+        { headers: authHeaders(jwt) }
+      );
+      if (!response.response.ok || response.body?.code !== 0) continue;
+      const rows = Array.isArray(response.body?.data?.result) ? response.body.data.result : [];
+      if (rows.some(row => String(row.bid) === String(battleId))) {
+        return { verified: true, reason: 'battle_id_confirmed', sid };
+      }
+    }
+
+    return { verified: false, reason: 'battle_id_not_found' };
+  } catch (error) {
+    console.error('❌ Falha ao validar Battle ID:', error);
+    return { verified: false, reason: 'history_api_error' };
+  }
 }
 
 function encrypt(text) {
@@ -395,7 +441,7 @@ bot.on('text', async (ctx, next) => {
         return;
       }
 
-      authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId });
+      authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId, name: infoBody.data?.name || 'Jogador' });
       await saveSessions();
       registration.delete(ctx.from.id);
 
@@ -601,8 +647,26 @@ bot.on('photo', async (ctx, next) => {
   await ctx.reply('📸 <b>Print recebido.</b>\n\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
 
   try {
-    const record = await processScreenshot(ctx, player);
+    const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
+    const currentName = info.body?.data?.name || player.name || 'Jogador';
+    if (info.response.ok && info.body?.code === 0) {
+      player.name = currentName;
+      await saveSessions();
+    }
+
+    const record = await processScreenshot(ctx, player, { name: currentName });
     const parsed = record.parsed || {};
+    const nameOk = nickMatches(currentName, record.ocrText);
+    let verification = nameOk ? 'name_match' : 'rejected_name_mismatch';
+
+    if (parsed.kind === 'profile' && String(record.ocrText || '').includes(String(player.roleId))) {
+      verification = nameOk ? 'verified_profile' : 'rejected_name_mismatch';
+    } else if (parsed.kind === 'match_result' && parsed.battleId && nameOk) {
+      const battleCheck = await battleBelongsToPlayer(player.jwt, parsed.battleId);
+      verification = battleCheck.verified ? 'verified_match' : 'pending_api_confirmation';
+    }
+
+    await updateScreenshotVerification(ctx.from.id, record.id, verification);
 
     let detail;
     if (parsed.kind === 'match_result') {
