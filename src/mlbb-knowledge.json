@@ -1,7 +1,7 @@
 {
-  "version": 2,
-  "updatedAt": "2026-10-03",
-  "sourcePolicy": "Os dados de matchup são um snapshot pesquisado. O bot deve evitar afirmar que um counter é absoluto e deve informar que o meta pode mudar por patch/rank.",
+  "version": 3,
+  "updatedAt": "2026-10-04",
+  "sourcePolicy": "Base local para aliases, dicas e fallback; dados de heróis, builds, counters, lanes, estatísticas, itens, emblemas e feitiços devem ser enriquecidos em tempo real pela Rone Arena / Academy API. O bot deve evitar afirmar que um counter ou build é absoluto e deve informar que o meta muda por patch, rank e composição. Fontes comunitárias e discussões servem como contexto, enquanto o site oficial da Moonton é a referência para patches e alterações oficiais.",
   "heroes": {
     "harley": {
       "pt": "Harley",
@@ -560,5 +560,10 @@
         "couraça antiga"
       ]
     }
+  },
+  "sources": {
+    "official": "Mobile Legends: Bang Bang — patch notes, hero guides and official hero information",
+    "live": "Rone Arena / Academy API — live hero catalog, builds, counters, stats, lanes, teammates, items, emblems and spells",
+    "community": "MLBB.io and community discussions/forums — supplementary matchup/build context, never treated as absolute truth"
   }
 }
