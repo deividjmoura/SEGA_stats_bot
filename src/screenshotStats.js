@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
-import { readJson, writeJson, updateJson } from './storage/jsonStore.js';
+import { readJson, updateJson } from './storage/jsonStore.js';
 import { normalizeOcrText, parseScreenshotStats } from './ocr.js';
 
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
@@ -22,9 +22,6 @@ async function loadMatches() {
   return rows && typeof rows === 'object' && !Array.isArray(rows) ? rows : {};
 }
 
-async function saveMatches(matches) {
-  await writeJson(MATCHES_FILE, matches);
-}
 
 function withOcrLock(task) {
   const next = ocrQueue
