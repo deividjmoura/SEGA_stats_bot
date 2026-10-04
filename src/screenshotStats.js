@@ -86,7 +86,7 @@ function parseTsvWords(tsv) {
 function normalizeNickForOcr(value) {
   return String(value || '')
     .normalize('NFKD')
-    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '');
 }
@@ -484,7 +484,7 @@ export async function recordVerifiedBattle(telegramId, player, parsed) {
     if (!Array.isArray(matches[key])) matches[key] = [];
 
     const duplicate = matches[key].find(item =>
-      item.verification === 'verified_match' &&
+      ['verified_match', 'verified_ocr'].includes(item.verification) &&
       item.parsed?.battleId &&
       String(item.parsed.battleId) === battleId
     );
@@ -524,7 +524,7 @@ export async function getPlayerScreenshots(telegramId) {
 
 export function summarizePlayerScreenshots(records) {
   const list = Array.isArray(records) ? records : [];
-  const validMatches = list.filter(item => item.verification === 'verified_match');
+  const validMatches = list.filter(item => ['verified_match', 'verified_ocr'].includes(item.verification));
   const wins = validMatches.filter(item => item.parsed?.result === 'win').length;
   const losses = validMatches.filter(item => item.parsed?.result === 'loss').length;
   const kdas = validMatches.map(item => item.parsed?.kda).filter(Boolean);

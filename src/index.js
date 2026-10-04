@@ -1000,7 +1000,13 @@ async function handleScreenshot(ctx) {
       return;
     }
 
-    const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines);
+    const rowScore = Number(record.parsed?.playerRowIdentityScore || 0);
+    const rowNameOk = Boolean(
+      record.parsed?.playerRowFound &&
+      record.parsed?.kda &&
+      rowScore >= 0.58
+    );
+    const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines) || rowNameOk;
 
     // Para uma tela final de partida, a API é a fonte de verdade da identidade.
     // O OCR do nick pode falhar por resolução, fonte, símbolos ou compressão do Telegram.
@@ -1123,6 +1129,9 @@ async function handleScreenshot(ctx) {
         verificationReason: verification.reason,
         ocrFallback: {
           nameMatch: Boolean(nameOk),
+          rowNameMatch: Boolean(rowNameOk),
+          rowIdentityScore: rowScore,
+          rowDetected: Boolean(parsed.playerRowFound),
           hasBattleId: Boolean(parsed.battleId),
           hasKda: Boolean(parsed.kda),
           result: parsed.result || null
