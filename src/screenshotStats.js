@@ -184,7 +184,7 @@ export async function processScreenshot(ctx, player) {
     // Só uma partida já contabilizável pode bloquear uma nova tentativa.
     // Registros rejeitados ou pendentes não são duplicados: o usuário pode reenviar.
     const duplicate = matches[telegramId].find(item => {
-      if (item.verification !== 'verified_match') return false;
+      if (!['verified_match', 'verified_ocr'].includes(item.verification)) return false;
       return (
         (item.imageHash && item.imageHash === imageHash) ||
         (parsed.battleId && item.parsed?.battleId && String(item.parsed.battleId) === String(parsed.battleId))
