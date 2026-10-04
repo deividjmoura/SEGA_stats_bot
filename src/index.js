@@ -1000,7 +1000,21 @@ async function handleScreenshot(ctx) {
     }
 
     const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines);
-    if (!nameOk) {
+
+    // Para uma tela final de partida, a API é a fonte de verdade da identidade.
+    // O OCR do nick pode falhar por resolução, fonte, símbolos ou compressão do Telegram.
+    // Só rejeitamos pelo nick quando não existe uma confirmação independente da partida.
+    if (parsed.kind === 'profile' && !nameOk) {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'rejected_name_mismatch');
+      await replyAs(ctx, 'print',
+        '🚫 <b>PRINT NÃO CONTABILIZADO</b>\n\nO nick encontrado na imagem não corresponde ao nick atual confirmado da sua conta: <b>' +
+        escapeHtml(liveName) + '</b>.\n\nEsse print foi guardado apenas para auditoria, mas não entra nas suas estatísticas nem no ranking.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    if (parsed.kind === 'battles' && !nameOk) {
       await updateScreenshotVerification(ctx.from.id, record.id, 'rejected_name_mismatch');
       await replyAs(ctx, 'print',
         '🚫 <b>PRINT NÃO CONTABILIZADO</b>\n\nO nick encontrado na imagem não corresponde ao nick atual confirmado da sua conta: <b>' +
