@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { readJson, writeJson } from './storage/jsonStore.js';
+import { readJson, updateJson } from './storage/jsonStore.js';
 
 export const QUESTIONS_FILE = process.env.QUESTIONS_FILE ||
   ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/questions.json');
@@ -10,14 +10,15 @@ async function readRows() {
 }
 
 export async function logQuestion(entry) {
-  const rows = await readRows();
-  rows.push({
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    createdAt: new Date().toISOString(),
-    ...entry
+  await updateJson(QUESTIONS_FILE, [], rows => {
+    const list = Array.isArray(rows) ? rows : [];
+    list.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      createdAt: new Date().toISOString(),
+      ...entry
+    });
+    return list.slice(-2000);
   });
-  const trimmed = rows.slice(-2000);
-  await writeJson(QUESTIONS_FILE, trimmed);
 }
 
 export async function getQuestionReport(limit = 15) {
