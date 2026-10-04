@@ -66,3 +66,10 @@ export async function updateJson(filePath, fallback, updater) {
   queues.set(filePath, next);
   return next;
 }
+
+
+export async function quarantineJson(filePath) {
+  const quarantinedPath = filePath + '.corrupt-' + Date.now();
+  await fs.rename(filePath, quarantinedPath);
+  return quarantinedPath;
+}
