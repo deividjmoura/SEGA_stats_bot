@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
 import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
+import { groupBanterMiddleware } from './groupBanters.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -240,7 +241,8 @@ bot.telegram.setMyCommands([
   { command: 'cancelar', description: 'Cancelar cadastro' },
   { command: 'lore', description: 'Crônicas e heróis' },
   { command: 'menu', description: 'Abrir menu principal' },
-  { command: 'prints', description: 'Ver dados coletados por screenshots' }
+  { command: 'prints', description: 'Ver dados coletados por screenshots' },
+  { command: 'tutorial', description: 'Ver tutorial de uso' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 
 const startMessage = `🎮 <b>SEGA STATS</b>
@@ -265,17 +267,76 @@ Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua bat
 
 <b>SEGA</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
 
-const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
+const helpMessage = `📚 <b>GUIA DO SEGA STATS</b>
 
-🎮 <code>/start</code> — abrir o menu principal
-📝 <code>/cadastrar</code> — cadastrar seu jogador
-🏆 <code>/ranking</code> — ranking do clã
-📊 <code>/stats</code> — suas estatísticas
-❓ <code>/ajuda</code> — mostrar esta ajuda
-👥 <code>/clan</code> — painel do clã SEGA
-📜 <code>/lore</code> — crônicas e heróis
+🎮 <b>1. Primeiro cadastro</b>
+Use <code>/cadastrar</code> no <b>chat privado</b> do bot.
+Você vai informar:
+• 🆔 Role ID
+• 🌐 Zone ID
+• 🔐 código recebido no correio interno do Mobile Legends
+
+⚠️ Nunca mande esses dados no grupo.
+
+📸 <b>2. Enviar relatório/print de partida</b>
+Depois de cadastrado, basta mandar a <b>foto</b> no chat do bot ou no grupo SEGA.
+
+🥇 O melhor print para registrar uma partida é a <b>tela final</b>, com:
+• resultado (Victory/Defeat)
+• seu nick
+• K/D/A
+• pontuação
+• Battle ID
+
+O bot usa o Battle ID + sua conta autenticada para tentar confirmar que a partida realmente pertence a você. Print repetido não é contado duas vezes.
+
+👤 <b>3. Enviar foto do perfil</b>
+Pode mandar a tela do seu <b>perfil</b>.
+Ela serve como snapshot de conferência e deve mostrar:
+• seu nick
+• Role ID
+• estatísticas gerais
+
+📋 <b>4. Enviar a tela “Batalhas”</b>
+Também pode mandar a tela de <b>Batalhas/Histórico</b>.
+Ela é útil para conferência e para melhorar a leitura do histórico. Dependendo da tela e do OCR, ela pode ser guardada como snapshot e não necessariamente contar cada linha como partida individual.
+
+📊 <b>5. Consultar seus dados</b>
+<code>/stats</code> — suas estatísticas
+<code>/prints</code> — resumo dos prints recebidos e partidas verificadas
+
+🏆 <b>6. Ranking do clã</b>
+<code>/ranking</code> — ranking dos jogadores vinculados.
+
+👥 <b>7. Grupo SEGA</b>
+No grupo você pode:
+• usar <code>/ranking</code>, <code>/stats</code> e <code>/ajuda</code>
+• mandar seus prints diretamente
+• usar o botão de ajuda para abrir o tutorial completo no privado
+
+🔐 <b>Privacidade</b>
+O cadastro fica no privado para não expor Role ID, Zone ID ou código de verificação no grupo.
+
+📜 <code>/lore</code> — crônicas do SEGA
 ❌ <code>/cancelar</code> — cancelar cadastro
-📸 <code>/prints</code> — ver o que o bot já coletou por screenshots`;
+🏠 <code>/menu</code> — abrir o menu principal`;
+
+const groupGuideMessage = `📖 <b>GUIA RÁPIDO • SEGA STATS</b>
+
+📝 <b>1. Cadastre sua conta</b>
+O cadastro é feito no <b>privado</b>. Não mande Role ID, Zone ID ou código de verificação aqui.
+
+📸 <b>2. Depois do cadastro, mande as fotos aqui</b>
+• 🥇 <b>Resultado final da partida:</b> melhor opção para registrar a partida.
+• 👤 <b>Perfil:</b> usado como conferência da conta e snapshot geral.
+• 📋 <b>Batalhas/Histórico:</b> útil para conferência e evolução do leitor.
+
+📊 <b>3. Consulte</b>
+<code>/stats</code> → suas stats
+<code>/ranking</code> → ranking do SEGA
+<code>/ajuda</code> → este tutorial
+
+👇 Para ver o guia completo e iniciar o cadastro com segurança, use os botões abaixo.`;
 
 
 function parseMatchStats(matches) {
@@ -387,6 +448,29 @@ function renderStats(data) {
     '\n<i>SEGA: cada partida escreve uma linha da história.</i>';
 }
 
+async function sendHelp(ctx) {
+  if (isGroupChat(ctx)) {
+    const username = await getBotUsername();
+    const helpLink = username ? 'https://t.me/' + username + '?start=ajuda' : null;
+    const registerLink = username ? 'https://t.me/' + username + '?start=cadastro' : null;
+
+    await ctx.reply(groupGuideMessage, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...Markup.inlineKeyboard([
+        ...(helpLink ? [[Markup.button.url('📖 Ajuda completa no privado', helpLink)]] : []),
+        ...(registerLink ? [[Markup.button.url('📝 Abrir cadastro no privado', registerLink)]] : [])
+      ])
+    });
+    return;
+  }
+
+  await ctx.reply(helpMessage, {
+    parse_mode: 'HTML',
+    ...mainKeyboard()
+  });
+}
+
 function mainKeyboard() {
   return Markup.keyboard([
     ['📝 Cadastrar jogador', '📊 Minhas stats'],
@@ -434,9 +518,13 @@ async function sendMenu(ctx) {
 bot.start(async (ctx) => {
   const payload = String(ctx.startPayload || '').toLowerCase();
 
-  // Link usado no grupo: abre o privado do bot e já inicia o cadastro.
   if (payload === 'cadastro' || payload === 'cadastrar' || payload === 'register') {
     await askForRoleId(ctx);
+    return;
+  }
+
+  if (payload === 'ajuda' || payload === 'help' || payload === 'tutorial') {
+    await sendHelp(ctx);
     return;
   }
 
@@ -450,6 +538,8 @@ bot.command('cancelar', async (ctx) => {
   registration.delete(ctx.from.id);
   await ctx.reply('❌ Cadastro cancelado. Nenhuma alteração foi feita.');
 });
+
+bot.use(groupBanterMiddleware());
 
 bot.on('text', async (ctx, next) => {
   const state = registration.get(ctx.from.id);
@@ -846,9 +936,8 @@ bot.on('photo', async (ctx, next) => {
   }
 });
 
-bot.command('ajuda', async (ctx) => {
-  await ctx.reply(helpMessage, { parse_mode: 'HTML' });
-});
+bot.command('ajuda', sendHelp);
+bot.command('tutorial', sendHelp);
 
 bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendRanking(ctx); });
 bot.action('clan', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
@@ -862,14 +951,14 @@ bot.action('stats', async (ctx) => {
   await sendStats(ctx);
 });
 
-bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }); });
+bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await sendHelp(ctx); });
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
-bot.hears('📸 Enviar print', async (ctx) => await ctx.reply('📸 <b>ENVIE O PRINT</b>\n\nMande aqui a captura da tela do Mobile Legends. Pode ser o resultado final da partida ou o painel geral de estatísticas.', { parse_mode: 'HTML' }));
+bot.hears('📸 Enviar print', async (ctx) => await ctx.reply('📸 <b>ENVIE O PRINT</b>\n\nPode mandar qualquer uma destas telas:\n\n🥇 <b>Resultado final</b> — melhor para registrar a partida; se tiver Battle ID, K/D/A e seu nick, melhor ainda.\n👤 <b>Perfil</b> — serve para conferir seu nick/Role ID e guardar um snapshot geral.\n📋 <b>Batalhas/Histórico</b> — serve para conferência e para melhorar a leitura do histórico.\n\nDepois de mandar a foto, o bot faz OCR, tenta identificar a tela e aplica as validações antes de contar uma partida.', { parse_mode: 'HTML' }));
 bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await ctx.reply('📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await ctx.reply('📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('👥 Clã SEGA', sendClan);
-bot.hears('❓ Ajuda', async (ctx) => await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.hears('❓ Ajuda', sendHelp);
 bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 bot.catch((error) => console.error('❌ Erro no bot:', error));
