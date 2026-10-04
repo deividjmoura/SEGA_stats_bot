@@ -30,8 +30,7 @@ function canonicalHeroName(name) {
 
 function intentOf(text) {
   const source = compact(text);
-  if (/(quem|qual|quais).*(counter|couter|countera|counteram|ganha|vence|bom contra)/.test(source) ||
-      /(counter|couter).*(quem|qual|heroi)/.test(source)) return 'counter';
+  if (/(counter|couter|countera|counteram|counterado|counterada|ganha|vence|bom contra|forte contra)/.test(source)) return 'counter';
   if (/(item|itens|equipamento|equipamentos).*(contra|counter)/.test(source) ||
       /(contra|counter).*(item|itens|equipamento|equipamentos)/.test(source)) return 'items';
   if (/(como jogar|como luto|como enfrentar|como jogar contra|dica|dicas).*(contra|vs|versus)/.test(source)) return 'tips';
