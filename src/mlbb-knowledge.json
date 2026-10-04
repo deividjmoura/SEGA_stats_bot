@@ -1,7 +1,7 @@
 {
   "version": 3,
   "updatedAt": "2026-10-04",
-  "sourcePolicy": "Base local para aliases, dicas e fallback; dados de heróis, builds, counters, lanes, estatísticas, itens, emblemas e feitiços devem ser enriquecidos em tempo real pela Rone Arena / Academy API. O bot deve evitar afirmar que um counter ou build é absoluto e deve informar que o meta muda por patch, rank e composição. Fontes comunitárias e discussões servem como contexto, enquanto o site oficial da Moonton é a referência para patches e alterações oficiais.",
+  "sourcePolicy": "A base cobre todo o roster atual. Counters e builds devem preferir dados live; dados locais são fallback e contexto, não garantias absolutas.",
   "heroes": {
     "harley": {
       "pt": "Harley",
@@ -488,7 +488,6 @@
       "en": "Minotaur",
       "aliases": [
         "minotaur",
-        "minotauro",
         "minotauro"
       ],
       "role": "Tank/Suporte",
@@ -506,6 +505,1701 @@
       "tips": [
         "Evite agrupar o time para facilitar o ultimate do Minotaur.",
         "Forçe o Minotaur a gastar recursos antes da luta decisiva."
+      ]
+    },
+    "aamon": {
+      "pt": "Aamon",
+      "en": "Aamon",
+      "aliases": [
+        "aamon"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "akai": {
+      "pt": "Akai",
+      "en": "Akai",
+      "aliases": [
+        "akai"
+      ],
+      "role": "Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "aldous": {
+      "pt": "Aldous",
+      "en": "Aldous",
+      "aliases": [
+        "aldous"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "alice": {
+      "pt": "Alice",
+      "en": "Alice",
+      "aliases": [
+        "alice"
+      ],
+      "role": "Tank/Mage",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "alpha": {
+      "pt": "Alpha",
+      "en": "Alpha",
+      "aliases": [
+        "alpha"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "alucard": {
+      "pt": "Alucard",
+      "en": "Alucard",
+      "aliases": [
+        "alucard"
+      ],
+      "role": "Fighter/Assassin",
+      "lane": "Jungle/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "angela": {
+      "pt": "Angela",
+      "en": "Angela",
+      "aliases": [
+        "angela"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "argus": {
+      "pt": "Argus",
+      "en": "Argus",
+      "aliases": [
+        "argus"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "arlott": {
+      "pt": "Arlott",
+      "en": "Arlott",
+      "aliases": [
+        "arlott"
+      ],
+      "role": "Fighter/Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "atlas": {
+      "pt": "Atlas",
+      "en": "Atlas",
+      "aliases": [
+        "atlas"
+      ],
+      "role": "Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "aulus": {
+      "pt": "Aulus",
+      "en": "Aulus",
+      "aliases": [
+        "aulus"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "aurora": {
+      "pt": "Aurora",
+      "en": "Aurora",
+      "aliases": [
+        "aurora"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "badang": {
+      "pt": "Badang",
+      "en": "Badang",
+      "aliases": [
+        "badang"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "balmond": {
+      "pt": "Balmond",
+      "en": "Balmond",
+      "aliases": [
+        "balmond"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "bane": {
+      "pt": "Bane",
+      "en": "Bane",
+      "aliases": [
+        "bane"
+      ],
+      "role": "Fighter/Mage",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "baxia": {
+      "pt": "Baxia",
+      "en": "Baxia",
+      "aliases": [
+        "baxia"
+      ],
+      "role": "Tank",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "beatrix": {
+      "pt": "Beatrix",
+      "en": "Beatrix",
+      "aliases": [
+        "beatrix"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "belerick": {
+      "pt": "Belerick",
+      "en": "Belerick",
+      "aliases": [
+        "belerick"
+      ],
+      "role": "Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "benedetta": {
+      "pt": "Benedetta",
+      "en": "Benedetta",
+      "aliases": [
+        "benedetta"
+      ],
+      "role": "Assassin/Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "brody": {
+      "pt": "Brody",
+      "en": "Brody",
+      "aliases": [
+        "brody"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "bruno": {
+      "pt": "Bruno",
+      "en": "Bruno",
+      "aliases": [
+        "bruno"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "carmilla": {
+      "pt": "Carmilla",
+      "en": "Carmilla",
+      "aliases": [
+        "carmilla"
+      ],
+      "role": "Support/Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "cecilion": {
+      "pt": "Cecilion",
+      "en": "Cecilion",
+      "aliases": [
+        "cecilion"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "chang e": {
+      "pt": "Chang'e",
+      "en": "Chang'e",
+      "aliases": [
+        "chang'e"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "chip": {
+      "pt": "Chip",
+      "en": "Chip",
+      "aliases": [
+        "chip"
+      ],
+      "role": "Support/Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "chou": {
+      "pt": "Chou",
+      "en": "Chou",
+      "aliases": [
+        "chou"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "cici": {
+      "pt": "Cici",
+      "en": "Cici",
+      "aliases": [
+        "cici"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "clint": {
+      "pt": "Clint",
+      "en": "Clint",
+      "aliases": [
+        "clint"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "cyclops": {
+      "pt": "Cyclops",
+      "en": "Cyclops",
+      "aliases": [
+        "cyclops"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "diggie": {
+      "pt": "Diggie",
+      "en": "Diggie",
+      "aliases": [
+        "diggie"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "dyrroth": {
+      "pt": "Dyrroth",
+      "en": "Dyrroth",
+      "aliases": [
+        "dyrroth"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "edith": {
+      "pt": "Edith",
+      "en": "Edith",
+      "aliases": [
+        "edith"
+      ],
+      "role": "Tank/Marksman",
+      "lane": "EXP/Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "esmeralda": {
+      "pt": "Esmeralda",
+      "en": "Esmeralda",
+      "aliases": [
+        "esmeralda"
+      ],
+      "role": "Tank/Mage",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "estes": {
+      "pt": "Estes",
+      "en": "Estes",
+      "aliases": [
+        "estes"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "eudora": {
+      "pt": "Eudora",
+      "en": "Eudora",
+      "aliases": [
+        "eudora"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "faramis": {
+      "pt": "Faramis",
+      "en": "Faramis",
+      "aliases": [
+        "faramis"
+      ],
+      "role": "Support/Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "floryn": {
+      "pt": "Floryn",
+      "en": "Floryn",
+      "aliases": [
+        "floryn"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "franco": {
+      "pt": "Franco",
+      "en": "Franco",
+      "aliases": [
+        "franco"
+      ],
+      "role": "Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "fredrinn": {
+      "pt": "Fredrinn",
+      "en": "Fredrinn",
+      "aliases": [
+        "fredrinn"
+      ],
+      "role": "Fighter/Tank",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "freya": {
+      "pt": "Freya",
+      "en": "Freya",
+      "aliases": [
+        "freya"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "gatotkaca": {
+      "pt": "Gatotkaca",
+      "en": "Gatotkaca",
+      "aliases": [
+        "gatotkaca"
+      ],
+      "role": "Tank/Fighter",
+      "lane": "Roam/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "gloo": {
+      "pt": "Gloo",
+      "en": "Gloo",
+      "aliases": [
+        "gloo"
+      ],
+      "role": "Tank",
+      "lane": "Roam/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "gord": {
+      "pt": "Gord",
+      "en": "Gord",
+      "aliases": [
+        "gord"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "grock": {
+      "pt": "Grock",
+      "en": "Grock",
+      "aliases": [
+        "grock"
+      ],
+      "role": "Tank/Fighter",
+      "lane": "Roam/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "guinevere": {
+      "pt": "Guinevere",
+      "en": "Guinevere",
+      "aliases": [
+        "guinevere"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "hanzo": {
+      "pt": "Hanzo",
+      "en": "Hanzo",
+      "aliases": [
+        "hanzo"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "harith": {
+      "pt": "Harith",
+      "en": "Harith",
+      "aliases": [
+        "harith"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "helcurt": {
+      "pt": "Helcurt",
+      "en": "Helcurt",
+      "aliases": [
+        "helcurt"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "hilda": {
+      "pt": "Hilda",
+      "en": "Hilda",
+      "aliases": [
+        "hilda"
+      ],
+      "role": "Fighter/Tank",
+      "lane": "EXP/Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "hirara": {
+      "pt": "Hirara",
+      "en": "Hirara",
+      "aliases": [
+        "hirara"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "hylos": {
+      "pt": "Hylos",
+      "en": "Hylos",
+      "aliases": [
+        "hylos"
+      ],
+      "role": "Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "irithel": {
+      "pt": "Irithel",
+      "en": "Irithel",
+      "aliases": [
+        "irithel"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "ixia": {
+      "pt": "Ixia",
+      "en": "Ixia",
+      "aliases": [
+        "ixia"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "jawhead": {
+      "pt": "Jawhead",
+      "en": "Jawhead",
+      "aliases": [
+        "jawhead"
+      ],
+      "role": "Fighter",
+      "lane": "Roam/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "johnson": {
+      "pt": "Johnson",
+      "en": "Johnson",
+      "aliases": [
+        "johnson"
+      ],
+      "role": "Tank/Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "julian": {
+      "pt": "Julian",
+      "en": "Julian",
+      "aliases": [
+        "julian"
+      ],
+      "role": "Assassin/Fighter",
+      "lane": "Jungle/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "kadita": {
+      "pt": "Kadita",
+      "en": "Kadita",
+      "aliases": [
+        "kadita"
+      ],
+      "role": "Mage/Assassin",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "kagura": {
+      "pt": "Kagura",
+      "en": "Kagura",
+      "aliases": [
+        "kagura"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "kaja": {
+      "pt": "Kaja",
+      "en": "Kaja",
+      "aliases": [
+        "kaja"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "kalea": {
+      "pt": "Kalea",
+      "en": "Kalea",
+      "aliases": [
+        "kalea"
+      ],
+      "role": "Support/Fighter",
+      "lane": "Roam/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "karina": {
+      "pt": "Karina",
+      "en": "Karina",
+      "aliases": [
+        "karina"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "karrie": {
+      "pt": "Karrie",
+      "en": "Karrie",
+      "aliases": [
+        "karrie"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "khaleed": {
+      "pt": "Khaleed",
+      "en": "Khaleed",
+      "aliases": [
+        "khaleed"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "kimmy": {
+      "pt": "Kimmy",
+      "en": "Kimmy",
+      "aliases": [
+        "kimmy"
+      ],
+      "role": "Marksman/Mage",
+      "lane": "Gold/Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "lancelot": {
+      "pt": "Lancelot",
+      "en": "Lancelot",
+      "aliases": [
+        "lancelot"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "lapu lapu": {
+      "pt": "Lapu-Lapu",
+      "en": "Lapu-Lapu",
+      "aliases": [
+        "lapu-lapu"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "leomord": {
+      "pt": "Leomord",
+      "en": "Leomord",
+      "aliases": [
+        "leomord"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "lesley": {
+      "pt": "Lesley",
+      "en": "Lesley",
+      "aliases": [
+        "lesley"
+      ],
+      "role": "Marksman/Assassin",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "lukas": {
+      "pt": "Lukas",
+      "en": "Lukas",
+      "aliases": [
+        "lukas"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "lunox": {
+      "pt": "Lunox",
+      "en": "Lunox",
+      "aliases": [
+        "lunox"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "luo yi": {
+      "pt": "Luo Yi",
+      "en": "Luo Yi",
+      "aliases": [
+        "luo yi"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "lylia": {
+      "pt": "Lylia",
+      "en": "Lylia",
+      "aliases": [
+        "lylia"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "marcel": {
+      "pt": "Marcel",
+      "en": "Marcel",
+      "aliases": [
+        "marcel"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "martis": {
+      "pt": "Martis",
+      "en": "Martis",
+      "aliases": [
+        "martis"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "masha": {
+      "pt": "Masha",
+      "en": "Masha",
+      "aliases": [
+        "masha"
+      ],
+      "role": "Fighter/Tank",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "mathilda": {
+      "pt": "Mathilda",
+      "en": "Mathilda",
+      "aliases": [
+        "mathilda"
+      ],
+      "role": "Support/Assassin",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "melissa": {
+      "pt": "Melissa",
+      "en": "Melissa",
+      "aliases": [
+        "melissa"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "minsitthar": {
+      "pt": "Minsitthar",
+      "en": "Minsitthar",
+      "aliases": [
+        "minsitthar"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "moskov": {
+      "pt": "Moskov",
+      "en": "Moskov",
+      "aliases": [
+        "moskov"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "nana": {
+      "pt": "Nana",
+      "en": "Nana",
+      "aliases": [
+        "nana"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "natan": {
+      "pt": "Natan",
+      "en": "Natan",
+      "aliases": [
+        "natan"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "nolan": {
+      "pt": "Nolan",
+      "en": "Nolan",
+      "aliases": [
+        "nolan"
+      ],
+      "role": "Assassin",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "novaria": {
+      "pt": "Novaria",
+      "en": "Novaria",
+      "aliases": [
+        "novaria"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "obsidia": {
+      "pt": "Obsidia",
+      "en": "Obsidia",
+      "aliases": [
+        "obsidia"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "odette": {
+      "pt": "Odette",
+      "en": "Odette",
+      "aliases": [
+        "odette"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "paquito": {
+      "pt": "Paquito",
+      "en": "Paquito",
+      "aliases": [
+        "paquito"
+      ],
+      "role": "Fighter/Assassin",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "pharsa": {
+      "pt": "Pharsa",
+      "en": "Pharsa",
+      "aliases": [
+        "pharsa"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "phoveus": {
+      "pt": "Phoveus",
+      "en": "Phoveus",
+      "aliases": [
+        "phoveus"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "popol e kupa": {
+      "pt": "Popol e Kupa",
+      "en": "Popol e Kupa",
+      "aliases": [
+        "popol e kupa"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "rafaela": {
+      "pt": "Rafaela",
+      "en": "Rafaela",
+      "aliases": [
+        "rafaela"
+      ],
+      "role": "Support",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "ruby": {
+      "pt": "Ruby",
+      "en": "Ruby",
+      "aliases": [
+        "ruby"
+      ],
+      "role": "Fighter",
+      "lane": "EXP/Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "selena": {
+      "pt": "Selena",
+      "en": "Selena",
+      "aliases": [
+        "selena"
+      ],
+      "role": "Assassin/Mage",
+      "lane": "Jungle/Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "sora": {
+      "pt": "Sora",
+      "en": "Sora",
+      "aliases": [
+        "sora"
+      ],
+      "role": "Fighter/Assassin",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "suyou": {
+      "pt": "Suyou",
+      "en": "Suyou",
+      "aliases": [
+        "suyou"
+      ],
+      "role": "Assassin/Fighter",
+      "lane": "Jungle/EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "terizla": {
+      "pt": "Terizla",
+      "en": "Terizla",
+      "aliases": [
+        "terizla"
+      ],
+      "role": "Fighter/Tank",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "thamuz": {
+      "pt": "Thamuz",
+      "en": "Thamuz",
+      "aliases": [
+        "thamuz"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "tigreal": {
+      "pt": "Tigreal",
+      "en": "Tigreal",
+      "aliases": [
+        "tigreal"
+      ],
+      "role": "Tank",
+      "lane": "Roam",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "uranus": {
+      "pt": "Uranus",
+      "en": "Uranus",
+      "aliases": [
+        "uranus"
+      ],
+      "role": "Tank",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize visão, proteção dos aliados e controle dos objetivos.",
+        "Não desperdice seu controle principal antes da luta começar."
+      ]
+    },
+    "vale": {
+      "pt": "Vale",
+      "en": "Vale",
+      "aliases": [
+        "vale"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "valentina": {
+      "pt": "Valentina",
+      "en": "Valentina",
+      "aliases": [
+        "valentina"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "valir": {
+      "pt": "Valir",
+      "en": "Valir",
+      "aliases": [
+        "valir"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "vexana": {
+      "pt": "Vexana",
+      "en": "Vexana",
+      "aliases": [
+        "vexana"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "wanwan": {
+      "pt": "Wanwan",
+      "en": "Wanwan",
+      "aliases": [
+        "wanwan"
+      ],
+      "role": "Marksman",
+      "lane": "Gold",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "x borg": {
+      "pt": "X.Borg",
+      "en": "X.Borg",
+      "aliases": [
+        "x.borg"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "xavier": {
+      "pt": "Xavier",
+      "en": "Xavier",
+      "aliases": [
+        "xavier"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "yi sun shin": {
+      "pt": "Yi Sun-shin",
+      "en": "Yi Sun-shin",
+      "aliases": [
+        "yi sun-shin"
+      ],
+      "role": "Assassin/Marksman",
+      "lane": "Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Priorize farm seguro e posicionamento; entre na luta depois que os principais controles forem usados.",
+        "Use a vantagem de alcance e mantenha distância dos assassinos."
+      ]
+    },
+    "yin": {
+      "pt": "Yin",
+      "en": "Yin",
+      "aliases": [
+        "yin"
+      ],
+      "role": "Fighter/Assassin",
+      "lane": "EXP/Jungle",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
+      ]
+    },
+    "yu zhong": {
+      "pt": "Yu Zhong",
+      "en": "Yu Zhong",
+      "aliases": [
+        "yu zhong"
+      ],
+      "role": "Fighter",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Administre a rota e procure janelas para trocar ou rotacionar.",
+        "Adapte defesa, dano e tempo de entrada conforme a composição adversária."
+      ]
+    },
+    "yve": {
+      "pt": "Yve",
+      "en": "Yve",
+      "aliases": [
+        "yve"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "zetian": {
+      "pt": "Zetian",
+      "en": "Zetian",
+      "aliases": [
+        "zetian"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "zhask": {
+      "pt": "Zhask",
+      "en": "Zhask",
+      "aliases": [
+        "zhask"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "zhuxin": {
+      "pt": "Zhuxin",
+      "en": "Zhuxin",
+      "aliases": [
+        "zhuxin"
+      ],
+      "role": "Mage",
+      "lane": "Mid",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Limpe a rota rapidamente e procure rotações com visão.",
+        "Guarde suas principais habilidades para o momento em que o adversário comprometer a posição."
+      ]
+    },
+    "zilong": {
+      "pt": "Zilong",
+      "en": "Zilong",
+      "aliases": [
+        "zilong"
+      ],
+      "role": "Fighter/Assassin",
+      "lane": "EXP",
+      "counters": [],
+      "items": [],
+      "tips": [
+        "Procure alvos frágeis e evite iniciar a luta antes do controle inimigo ser gasto.",
+        "Controle objetivos e use a vantagem de mobilidade para criar pressão no mapa."
       ]
     }
   },
