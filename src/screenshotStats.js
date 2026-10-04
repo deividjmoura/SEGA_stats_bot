@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
-import { readJson, writeJson } from './storage/jsonStore.js';
+import { readJson, writeJson, updateJson } from './storage/jsonStore.js';
 import { normalizeOcrText, parseScreenshotStats } from './ocr.js';
 
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
@@ -173,41 +173,43 @@ export async function processScreenshot(ctx, player) {
     };
   }
 
-  const matches = await loadMatches();
-  const telegramId = String(ctx.from.id);
-  if (!Array.isArray(matches[telegramId])) matches[telegramId] = [];
+  let createdRecord = null;
+  await updateJson(MATCHES_FILE, {}, matches => {
+    const telegramId = String(ctx.from.id);
+    if (!Array.isArray(matches[telegramId])) matches[telegramId] = [];
 
-  const duplicate = matches[telegramId].find(item => {
-    const final = !['pending', 'pending_api_confirmation', 'pending_name_confirmation'].includes(item.verification);
-    if (!final) return false;
-    return (
-      (item.imageHash && item.imageHash === imageHash) ||
-      (parsed.battleId && item.parsed?.battleId && String(item.parsed.battleId) === String(parsed.battleId))
-    );
+    const duplicate = matches[telegramId].find(item => {
+      const final = !['pending', 'pending_api_confirmation', 'pending_name_confirmation'].includes(item.verification);
+      if (!final) return false;
+      return (
+        (item.imageHash && item.imageHash === imageHash) ||
+        (parsed.battleId && item.parsed?.battleId && String(item.parsed.battleId) === String(parsed.battleId))
+      );
+    });
+
+    createdRecord = {
+      id,
+      telegramId: ctx.from.id,
+      roleId: player.roleId,
+      zoneId: player.zoneId,
+      playerName: player.name || null,
+      createdAt: new Date().toISOString(),
+      imageFile: path.relative(DATA_DIR, imagePath),
+      imageHash,
+      kind: parsed.kind,
+      parsed,
+      verification: duplicate ? 'duplicate' : 'pending',
+      duplicateOf: duplicate?.id || null,
+      duplicate: Boolean(duplicate),
+      ocrText: ocrText.slice(0, 2500),
+      ocrLines
+    };
+
+    matches[telegramId].push(createdRecord);
+    return matches;
   });
 
-  const record = {
-    id,
-    telegramId: ctx.from.id,
-    roleId: player.roleId,
-    zoneId: player.zoneId,
-    playerName: player.name || null,
-    createdAt: new Date().toISOString(),
-    imageFile: path.relative(DATA_DIR, imagePath),
-    imageHash,
-    kind: parsed.kind,
-    parsed,
-    verification: duplicate ? 'duplicate' : 'pending',
-    duplicateOf: duplicate?.id || null,
-    duplicate: Boolean(duplicate),
-    ocrText: ocrText.slice(0, 5000),
-    ocrLines
-  };
-
-  matches[telegramId].push(record);
-  await saveMatches(matches);
-
-  return record;
+  return createdRecord;
 }
 
 export async function getPlayerScreenshots(telegramId) {
@@ -252,11 +254,14 @@ export async function getAllPlayerScreenshotSummaries() {
 }
 
 export async function updateScreenshotVerification(telegramId, recordId, verification, patch = {}) {
-  const matches = await loadMatches();
-  const list = Array.isArray(matches[String(telegramId)]) ? matches[String(telegramId)] : [];
-  const record = list.find(item => item.id === recordId);
-  if (!record) return null;
-  Object.assign(record, patch, { verification });
-  await saveMatches(matches);
-  return record;
+  let updatedRecord = null;
+  await updateJson(MATCHES_FILE, {}, matches => {
+    const list = Array.isArray(matches[String(telegramId)]) ? matches[String(telegramId)] : [];
+    const record = list.find(item => item.id === recordId);
+    if (!record) return matches;
+    Object.assign(record, patch, { verification });
+    updatedRecord = { ...record };
+    return matches;
+  });
+  return updatedRecord;
 }
