@@ -155,7 +155,7 @@ async function detectSelectedRowByHeart(imagePath) {
   // No print de referência, a linha sem coração tem textura/bordas muito
   // menores que qualquer linha que contém o botão. Exigimos uma diferença
   // clara para não escolher uma linha por ruído.
-  if (best.presence.score >= 1.5 || (gap < 0.8 && ratio < 1.35)) {
+  if (best.presence.score >= 8 || (gap < 0.8 && ratio < 1.35)) {
     return null;
   }
 
