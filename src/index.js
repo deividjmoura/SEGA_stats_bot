@@ -51,7 +51,10 @@ const PERSISTENCE_REQUIRED = process.env.REQUIRE_PERSISTENT_STORAGE !== 'false';
 const CLAN_CHAT_ID = process.env.CLAN_CHAT_ID || null;
 
 function persistenceIsAvailable() {
-  return Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    return Boolean(process.env.RAILWAY_VOLUME_MOUNT_PATH);
+  }
+  return Boolean(process.env.DATA_DIR);
 }
 
 async function notifyPersistenceProblem() {
