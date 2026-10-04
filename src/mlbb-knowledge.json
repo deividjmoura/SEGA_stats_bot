@@ -1,0 +1,564 @@
+{
+  "version": 2,
+  "updatedAt": "2026-10-03",
+  "sourcePolicy": "Os dados de matchup são um snapshot pesquisado. O bot deve evitar afirmar que um counter é absoluto e deve informar que o meta pode mudar por patch/rank.",
+  "heroes": {
+    "harley": {
+      "pt": "Harley",
+      "en": "Harley",
+      "aliases": [
+        "harley",
+        "arle y",
+        "arlei",
+        "harley mage"
+      ],
+      "role": "Assassino/Mago",
+      "lane": "Jungle/Mid",
+      "counters": [
+        "Lolita",
+        "Sun",
+        "Popol e Kupa",
+        "Gloo",
+        "Hilda"
+      ],
+      "items": [
+        "Escudo de Athena",
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Tente forçar o combo de burst e lute durante o cooldown.",
+        "Evite trocar no alcance máximo sem cobertura."
+      ]
+    },
+    "silvanna": {
+      "pt": "Silvanna",
+      "en": "Silvanna",
+      "aliases": [
+        "silvanna",
+        "silvana"
+      ],
+      "role": "Lutadora",
+      "lane": "EXP",
+      "counters": [
+        "Barats",
+        "Khufra",
+        "Masha",
+        "Edith",
+        "Karina"
+      ],
+      "items": [
+        "Escudo de Athena",
+        "Armadura Radiante",
+        "Botas Resistentes",
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Use defesa mágica quando o dano dela estiver pesando.",
+        "Respeite a ultimate e não entregue uma luta longa no terreno dela."
+      ]
+    },
+    "gusion": {
+      "pt": "Gusion",
+      "en": "Gusion",
+      "aliases": [
+        "gusion",
+        "guzion",
+        "gusiao",
+        "gusião"
+      ],
+      "role": "Assassino/Mago",
+      "lane": "Jungle/Mid",
+      "counters": [
+        "Lolita",
+        "Roger",
+        "Khufra",
+        "Alucard",
+        "Popol e Kupa"
+      ],
+      "items": [
+        "Escudo de Athena",
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Tente absorver o burst e lutar depois do combo.",
+        "Não entregue uma eliminação fácil para o reset do assassino."
+      ]
+    },
+    "hayabusa": {
+      "pt": "Hayabusa",
+      "en": "Hayabusa",
+      "aliases": [
+        "hayabusa",
+        "hayabusa ninja"
+      ],
+      "role": "Assassino",
+      "lane": "Jungle",
+      "counters": [
+        "Saber",
+        "Fredrinn",
+        "Khufra",
+        "Popol e Kupa",
+        "Yin"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Guarde controle para a entrada dele.",
+        "Evite ficar isolado quando o ultimate estiver disponível."
+      ]
+    },
+    "granger": {
+      "pt": "Granger",
+      "en": "Granger",
+      "aliases": [
+        "granger"
+      ],
+      "role": "Atirador",
+      "lane": "Jungle/Gold",
+      "counters": [
+        "Hilda",
+        "Fanny",
+        "Jawhead",
+        "Claude",
+        "Mathilda"
+      ],
+      "items": [
+        "Couraça Antiga",
+        "Armadura de Lâmina"
+      ],
+      "tips": [
+        "Reduza o espaço para ele e não deixe o poke ditar a luta.",
+        "Pressione antes que ele consiga jogar de longe com segurança."
+      ]
+    },
+    "layla": {
+      "pt": "Layla",
+      "en": "Layla",
+      "aliases": [
+        "layla",
+        "laíla",
+        "laila"
+      ],
+      "role": "Atiradora",
+      "lane": "Gold",
+      "counters": [
+        "Sun",
+        "Atlas",
+        "Johnson",
+        "Hanzo",
+        "Tigreal"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Não dê tempo para ela escalar de graça.",
+        "Entre pelo flanco e reduza a vantagem de alcance."
+      ]
+    },
+    "ling": {
+      "pt": "Ling",
+      "en": "Ling",
+      "aliases": [
+        "ling"
+      ],
+      "role": "Assassino",
+      "lane": "Jungle",
+      "counters": [
+        "Natalia",
+        "Saber",
+        "Lukas",
+        "Karina",
+        "Bruno"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Controle as entradas e não fique sozinho sem visão.",
+        "Force-o a sair das paredes antes de comprometer recursos."
+      ]
+    },
+    "joy": {
+      "pt": "Joy",
+      "en": "Joy",
+      "aliases": [
+        "joy"
+      ],
+      "role": "Assassina",
+      "lane": "Jungle",
+      "counters": [
+        "Moskov",
+        "Cyclops",
+        "Melissa",
+        "Brody",
+        "Bruno"
+      ],
+      "items": [
+        "Escudo de Athena",
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Controle o ritmo da entrada e evite perseguir sem necessidade.",
+        "Dano e controle à distância ajudam a quebrar o avanço."
+      ]
+    },
+    "miya": {
+      "pt": "Miya",
+      "en": "Miya",
+      "aliases": [
+        "miya",
+        "mía"
+      ],
+      "role": "Atiradora",
+      "lane": "Gold",
+      "counters": [
+        "Beatrix",
+        "Belerick",
+        "Karina",
+        "Gatotkaca",
+        "Estes"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Não deixe Miya chegar confortável ao late game.",
+        "Controle a posição e evite trocar quando estiver com pouca vida."
+      ]
+    },
+    "hanabi": {
+      "pt": "Hanabi",
+      "en": "Hanabi",
+      "aliases": [
+        "hanabi"
+      ],
+      "role": "Atiradora",
+      "lane": "Gold",
+      "counters": [
+        "Lolita",
+        "Beatrix",
+        "Joy",
+        "Karina",
+        "Wanwan"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Evite lutas agrupadas quando os ricochetes dela estiverem fortes.",
+        "Pressione antes dos picos de item."
+      ]
+    },
+    "fanny": {
+      "pt": "Fanny",
+      "en": "Fanny",
+      "aliases": [
+        "fanny",
+        "fani"
+      ],
+      "role": "Assassina",
+      "lane": "Jungle",
+      "counters": [
+        "Franco",
+        "Zilong",
+        "Moskov",
+        "Chou",
+        "Badang"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Controle a mobilidade dela com CC e pressão de mapa.",
+        "Não entregue alvos fáceis longe do time."
+      ]
+    },
+    "barats": {
+      "pt": "Barats",
+      "en": "Barats",
+      "aliases": [
+        "barats",
+        "barat"
+      ],
+      "role": "Tanque/Lutador",
+      "lane": "EXP/Jungle",
+      "counters": [
+        "X.Borg",
+        "Gord",
+        "Yve",
+        "Alice",
+        "Valir"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga",
+        "Botas Resistentes"
+      ],
+      "tips": [
+        "Espalhe o time e guarde o avanço para o primeiro controle.",
+        "Dano à distância e sustain são úteis contra ele."
+      ]
+    },
+    "khufra": {
+      "pt": "Khufra",
+      "en": "Khufra",
+      "aliases": [
+        "khufra",
+        "kufra"
+      ],
+      "role": "Tanque",
+      "lane": "Roam",
+      "counters": [
+        "Zhuxin",
+        "Alice",
+        "Minotaur",
+        "Marcel",
+        "Aulus"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga",
+        "Botas Resistentes"
+      ],
+      "tips": [
+        "Não entregue entradas previsíveis.",
+        "Dano à distância e controle ajudam a quebrar a iniciação."
+      ]
+    },
+    "roger": {
+      "pt": "Roger",
+      "en": "Roger",
+      "aliases": [
+        "roger",
+        "rojer"
+      ],
+      "role": "Lutador/Atirador",
+      "lane": "Jungle",
+      "counters": [
+        "Yve",
+        "Bruno",
+        "Leomord",
+        "Khufra",
+        "Barats"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Evite deixar Roger entrar livremente em alvos frágeis.",
+        "Controle a transformação e a aproximação."
+      ]
+    },
+    "lolita": {
+      "pt": "Lolita",
+      "en": "Lolita",
+      "aliases": [
+        "lolita"
+      ],
+      "role": "Tanque",
+      "lane": "Roam",
+      "counters": [
+        "Esmeralda",
+        "Yve",
+        "Aurora",
+        "Zhuxin",
+        "Melissa"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Respeite o escudo e procure ângulos que não dependam de projéteis.",
+        "Dano contínuo e alcance podem pressionar."
+      ]
+    },
+    "sun": {
+      "pt": "Sun",
+      "en": "Sun",
+      "aliases": [
+        "sun",
+        "rei macaco",
+        "monkey king"
+      ],
+      "role": "Lutador",
+      "lane": "EXP",
+      "counters": [
+        "Natan",
+        "Joy",
+        "Aldous",
+        "Ruby",
+        "Alucard"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Identifique o clone antes de gastar recursos importantes.",
+        "Controle a rota e não permita que ele fique livre em estruturas."
+      ]
+    },
+    "claude": {
+      "pt": "Claude",
+      "en": "Claude",
+      "aliases": [
+        "claude",
+        "claud"
+      ],
+      "role": "Atirador",
+      "lane": "Gold",
+      "counters": [
+        "Lesley",
+        "Aamon",
+        "Edith",
+        "Baxia",
+        "Cyclops"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Interrompa o posicionamento antes do ultimate.",
+        "Pressão e controle dificultam a entrada dele."
+      ]
+    },
+    "saber": {
+      "pt": "Saber",
+      "en": "Saber",
+      "aliases": [
+        "saber",
+        "sab er"
+      ],
+      "role": "Assassino",
+      "lane": "Jungle/Roam",
+      "counters": [
+        "Leomord",
+        "Sun",
+        "Argus",
+        "Balmond",
+        "Diggie"
+      ],
+      "items": [
+        "Armadura de Lâmina",
+        "Couraça Antiga"
+      ],
+      "tips": [
+        "Não entregue um alvo isolado para o ultimate.",
+        "Resistência e proteção do time reduzem o impacto do pickoff."
+      ]
+    },
+    "natalia": {
+      "pt": "Natalia",
+      "en": "Natalia",
+      "aliases": [
+        "natalia",
+        "natália",
+        "naty"
+      ],
+      "role": "Assassina",
+      "lane": "Jungle/Roam",
+      "counters": [
+        "Cyclops",
+        "Mathilda",
+        "Karina",
+        "Saber",
+        "Rafaela"
+      ],
+      "items": [
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Use visão e controle de área para reduzir os ângulos de emboscada.",
+        "Proteja os carregadores e evite andar sozinho sem informação."
+      ]
+    },
+    "minotaur": {
+      "pt": "Minotaur",
+      "en": "Minotaur",
+      "aliases": [
+        "minotaur",
+        "minotauro",
+        "minotauro"
+      ],
+      "role": "Tank/Suporte",
+      "lane": "Roam",
+      "counters": [
+        "Alice",
+        "Zhuxin",
+        "Beatrix",
+        "Yve",
+        "Kimmy"
+      ],
+      "items": [
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Evite agrupar o time para facilitar o ultimate do Minotaur.",
+        "Forçe o Minotaur a gastar recursos antes da luta decisiva."
+      ]
+    }
+  },
+  "items": {
+    "escudo de athena": {
+      "pt": "Escudo de Athena",
+      "en": "Athena's Shield",
+      "aliases": [
+        "athena",
+        "athenas shield",
+        "escudo de athena"
+      ]
+    },
+    "armadura radiante": {
+      "pt": "Armadura Radiante",
+      "en": "Radiant Armor",
+      "aliases": [
+        "radiant armor",
+        "armadura radiante"
+      ]
+    },
+    "botas resistentes": {
+      "pt": "Botas Resistentes",
+      "en": "Tough Boots",
+      "aliases": [
+        "tough boots",
+        "botas resistentes"
+      ]
+    },
+    "gelo dominante": {
+      "pt": "Gelo Dominante",
+      "en": "Dominance Ice",
+      "aliases": [
+        "dominance ice",
+        "gelo dominante",
+        "dominance"
+      ]
+    },
+    "armadura de lâmina": {
+      "pt": "Armadura de Lâmina",
+      "en": "Blade Armor",
+      "aliases": [
+        "blade armor",
+        "armadura de lâmina"
+      ]
+    },
+    "couraça antiga": {
+      "pt": "Couraça Antiga",
+      "en": "Antique Cuirass",
+      "aliases": [
+        "antique cuirass",
+        "couraça antiga"
+      ]
+    }
+  }
+}
