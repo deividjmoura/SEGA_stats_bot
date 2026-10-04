@@ -189,8 +189,10 @@ function findPlayerOcrLine(tsv, expectedNick) {
 }
 
 async function ocrScoreboardRow(worker, imagePath, bounds, expectedNick) {
-  const cropPath = imagePath.replace(/\\.(?:png|jpg|jpeg)$/i, '') +
-    `.row-${bounds.side}-${bounds.rowIndex}.png`;
+  const basePath = imagePath.replace(/\\.(?:png|jpg|jpeg)$/i, '') +
+    `.row-${bounds.side}-${bounds.rowIndex}`;
+  const cropPath = basePath + '.png';
+  const invertedPath = basePath + '.inv.png';
 
   try {
     const margin = 8;
@@ -204,15 +206,15 @@ async function ocrScoreboardRow(worker, imagePath, bounds, expectedNick) {
     const width = Math.max(20, right - left);
     const height = Math.max(20, bottom - top);
 
-    await sharp(imagePath)
+    const common = sharp(imagePath)
       .extract({ left, top, width, height })
       .resize({ width: Math.max(2200, width * 3), withoutEnlargement: false })
       .grayscale()
       .normalize()
       .sharpen()
-      .extend({ top: 10, bottom: 10, left: 10, right: 10, background: '#ffffff' })
-      .png()
-      .toFile(cropPath);
+      .extend({ top: 10, bottom: 10, left: 10, right: 10, background: '#ffffff' });
+
+    await common.clone().png().toFile(cropPath);
 
     await worker.setParameters({
       tessedit_pageseg_mode: '7',
@@ -221,21 +223,46 @@ async function ocrScoreboardRow(worker, imagePath, bounds, expectedNick) {
       user_defined_dpi: '300'
     });
 
-    const result = await worker.recognize(cropPath, {}, { text: true });
-    const text = normalizeOcrText(result.data?.text || '');
-    const identityScore = scoreRowIdentity(text, expectedNick);
-    const kda = parseScreenshotStats(text, expectedNick).kda || parseScreenshotStats(text, null).kda;
+    const first = await worker.recognize(cropPath, {}, { text: true });
+    const firstText = normalizeOcrText(first.data?.text || '');
+    const firstScore = scoreRowIdentity(firstText, expectedNick);
+
+    let bestText = firstText;
+    let bestScore = firstScore;
+
+    // Segunda leitura invertida: no placar do MLBB o nick costuma ser texto
+    // claro sobre fundo escuro. O Tesseract tende a funcionar melhor quando
+    // recebe texto escuro sobre fundo claro.
+    if (firstScore < 0.9) {
+      await common.clone()
+        .negate()
+        .threshold(150)
+        .png()
+        .toFile(invertedPath);
+
+      const second = await worker.recognize(invertedPath, {}, { text: true });
+      const secondText = normalizeOcrText(second.data?.text || '');
+      const secondScore = scoreRowIdentity(secondText, expectedNick);
+      if (secondScore > bestScore) {
+        bestText = secondText;
+        bestScore = secondScore;
+      }
+    }
+
+    const kda = parseScreenshotStats(bestText, expectedNick).kda ||
+      parseScreenshotStats(bestText, null).kda;
 
     return {
       side: bounds.side,
       rowIndex: bounds.rowIndex,
-      text: text.slice(0, 700),
-      identityScore: Number(identityScore.toFixed(3)),
+      text: bestText.slice(0, 700),
+      identityScore: Number(bestScore.toFixed(3)),
       kda,
       bounds: { left, top, width, height }
     };
   } finally {
     await fs.unlink(cropPath).catch(() => {});
+    await fs.unlink(invertedPath).catch(() => {});
   }
 }
 
