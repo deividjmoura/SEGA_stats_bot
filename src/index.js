@@ -23,10 +23,56 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
-bot.use(groupBanterMiddleware(resolvePlayerName));
 
 const registration = new Map();
 const authenticatedPlayers = new Map();
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getReplyMention(ctx) {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return null;
+
+  const player = authenticatedPlayers.get(Number(telegramId));
+  const name =
+    player?.name ||
+    ctx.from?.first_name ||
+    ctx.from?.username ||
+    'Jogador';
+
+  return '<a href="tg://user?id=' + telegramId + '">' + escapeHtml(name) + '</a>';
+}
+
+// Toda resposta do bot menciona quem acionou a interação.
+// Após o cadastro, o texto da menção usa o nick do Mobile Legends.
+// Antes do cadastro, usa o nome do Telegram como fallback.
+bot.use(async (ctx, next) => {
+  const originalReply = ctx.reply.bind(ctx);
+
+  ctx.reply = (text, extra = {}) => {
+    const mention = getReplyMention(ctx);
+    const options = { ...extra };
+
+    if (mention && typeof text === 'string') {
+      text = mention + ' · ' + text;
+      // A menção usa tg://user, então precisamos de HTML quando
+      // a chamada original ainda não definiu outro modo de formatação.
+      if (!options.parse_mode) options.parse_mode = 'HTML';
+    }
+
+    return originalReply(text, options);
+  };
+
+  return next();
+});
+
+bot.use(groupBanterMiddleware(resolvePlayerName));
 
 async function saveRegistrations() {
   await fs.mkdir(dirname(REGISTRATION_FILE), { recursive: true });
