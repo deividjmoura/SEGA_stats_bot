@@ -111,6 +111,7 @@ async function saveSessions() {
       jwt: encrypt(player.jwt),
       roleId: player.roleId,
       zoneId: player.zoneId,
+      name: player.name || null,
       savedAt: new Date().toISOString()
     };
   }
@@ -125,7 +126,8 @@ async function restoreSessions() {
       authenticatedPlayers.set(Number(telegramId), {
         jwt: decrypt(player.jwt),
         roleId: player.roleId,
-        zoneId: player.zoneId
+        zoneId: player.zoneId,
+        name: player.name || null
       });
     }
     console.log(`🔐 Sessões restauradas: ${authenticatedPlayers.size}`);
@@ -623,7 +625,9 @@ bot.command('prints', async (ctx) => {
   await ctx.reply(
     '📸 <b>DADOS COLETADOS</b>\n\n' +
     '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\n' +
-    '⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n' +
+    '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
+    '⏳ Pendentes: <b>' + summary.pendingMatches + '</b>\n' +
+    '🚫 Rejeitadas: <b>' + summary.rejectedMatches + '</b>\n' +
     '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
     '💀 Derrotas: <b>' + summary.losses + '</b>\n' +
     '⚔️ K/D/A somado: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>\n\n' +
