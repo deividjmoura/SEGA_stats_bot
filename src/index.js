@@ -18,10 +18,16 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
-bot.use(groupBanterMiddleware());
+bot.use(groupBanterMiddleware(resolvePlayerName));
 
 const registration = new Map();
 const authenticatedPlayers = new Map();
+
+async function resolvePlayerName(telegramId) {
+  const player = authenticatedPlayers.get(Number(telegramId));
+  if (!player?.jwt) return null;
+  return player.name || null;
+}
 
 async function apiFetch(path, options = {}) {
   const controller = new AbortController();
