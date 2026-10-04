@@ -18,6 +18,10 @@ const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registr
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
 const API_TIMEOUT_MS = 12000;
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
+const OCR_COOLDOWN_MS = 30 * 1000;
+const RANKING_CACHE_MS = 5 * 60 * 1000;
+const ocrCooldownByUser = new Map();
+let rankingCache = null;
 const sessionEncryptionSecret = process.env.SESSION_ENCRYPTION_KEY;
 const SESSION_KEY = crypto.createHash('sha256')
   .update(sessionEncryptionSecret || '')
@@ -303,7 +307,35 @@ async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
 
     // Os IDs longos devem ser tratados como strings. JavaScript perde precisão
     // em números inteiros muito grandes, então usamos bid_s sempre que existir.
-    for (const sid of sids.slice(0, 8)) {
+    // Primeiro tentamos o endpoint direto do Battle ID nas temporadas mais recentes.
+    for (const sid of sids.slice(0, 3)) {
+      const direct = await apiJson(
+        '/user/matches/' + encodeURIComponent(String(battleId)) +
+        '?sid=' + encodeURIComponent(sid) + '&lang=pt',
+        { headers: authHeaders(jwt) }
+      );
+
+      if (direct.response.ok && isApiSuccess(direct.body)) {
+        const participants = Array.isArray(direct.body?.data?.result)
+          ? direct.body.data.result
+          : [];
+        const owner = participants.find(row =>
+          sameId(row.rid, roleId) && sameId(row.zid, zoneId)
+        );
+        if (owner) {
+          return {
+            verified: true,
+            reason: 'battle_and_account_confirmed',
+            sid,
+            matchId: String(battleId),
+            match: owner
+          };
+        }
+      }
+    }
+
+    // Fallback limitado às temporadas recentes para evitar dezenas de chamadas sequenciais.
+    for (const sid of sids.slice(0, 3)) {
       let cursor = '';
       for (let page = 0; page < 8; page += 1) {
         const query =
@@ -362,6 +394,26 @@ async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
     console.error('❌ Falha ao validar Battle ID:', error);
     return { verified: false, reason: 'history_api_error' };
   }
+}
+
+function normalizeVerifiedMatch(owner, battleId, ocrParsed) {
+  const result = Number(owner?.res);
+  const scoreRaw = Number(owner?.s);
+  const hero = owner?.hid_e?.n || owner?.hid_e?.name || null;
+  return {
+    ...ocrParsed,
+    battleId: String(battleId),
+    source: 'rone_api',
+    result: result === 1 ? 'win' : result === 0 ? 'loss' : ocrParsed.result,
+    kda: {
+      kills: Number(owner?.k || 0),
+      deaths: Number(owner?.d || 0),
+      assists: Number(owner?.a || 0)
+    },
+    score: Number.isFinite(scoreRaw) ? (scoreRaw > 20 ? scoreRaw / 100 : scoreRaw) : ocrParsed.score,
+    mvp: Number(owner?.mvp) === 1,
+    hero
+  };
 }
 
 function isGroupChat(ctx) {
