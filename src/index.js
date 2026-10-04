@@ -690,8 +690,10 @@ bot.on('text', async (ctx, next) => {
       );
     } catch (error) {
       console.error('❌ Erro ao solicitar código:', error);
-      await deleteRegistration(ctx.from.id);
-      await ctx.reply('⚠️ Não consegui conectar ao serviço de autenticação agora. Tente novamente.');
+      // Mantém o cadastro em zone_id: se a falha for de rede/timeout,
+      // o jogador pode tentar novamente sem redigitar o Role ID.
+      await setRegistration(ctx.from.id, { step: 'zone_id', roleId });
+      await ctx.reply('⚠️ Não consegui conectar ao serviço de autenticação agora. Tente novamente. Seu cadastro foi mantido; envie o Zone ID novamente.');
     }
     return;
   }
