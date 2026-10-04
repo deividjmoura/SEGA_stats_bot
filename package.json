@@ -11,7 +11,7 @@
     "test": "node --test"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
