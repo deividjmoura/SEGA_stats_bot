@@ -130,6 +130,9 @@ export async function processScreenshot(ctx, player) {
 
   await downloadTelegramPhoto(ctx, largest.file_id, imagePath);
 
+  const imageBuffer = await fs.readFile(imagePath);
+  const imageHash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
+
   const worker = await getWorker();
   const result = await worker.recognize(imagePath);
   const ocrText = normalizeOcrText(result.data?.text || '');
@@ -139,6 +142,11 @@ export async function processScreenshot(ctx, player) {
   const telegramId = String(ctx.from.id);
   if (!Array.isArray(matches[telegramId])) matches[telegramId] = [];
 
+  const duplicate = matches[telegramId].find(item =>
+    (item.imageHash && item.imageHash === imageHash) ||
+    (parsed.battleId && item.parsed?.battleId && String(item.parsed.battleId) === String(parsed.battleId))
+  );
+
   const record = {
     id,
     telegramId: ctx.from.id,
@@ -146,9 +154,12 @@ export async function processScreenshot(ctx, player) {
     zoneId: player.zoneId,
     createdAt: new Date().toISOString(),
     imageFile: path.relative(DATA_DIR, imagePath),
+    imageHash,
     kind: parsed.kind,
     parsed,
-    verification: 'pending',
+    verification: duplicate ? 'duplicate' : 'pending',
+    duplicateOf: duplicate?.id || null,
+    duplicate: Boolean(duplicate),
     ocrText: ocrText.slice(0, 5000)
   };
 
