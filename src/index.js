@@ -23,12 +23,11 @@ const RANKING_CACHE_MS = 5 * 60 * 1000;
 const ocrCooldownByUser = new Map();
 let rankingCache = null;
 const sessionEncryptionSecret = process.env.SESSION_ENCRYPTION_KEY;
-const SESSION_KEY = crypto.createHash('sha256')
-  .update(sessionEncryptionSecret || '')
-  .digest();
 if (!sessionEncryptionSecret) {
-  console.warn('⚠️ SESSION_ENCRYPTION_KEY não configurada. Configure uma chave própria; não use BOT_TOKEN como chave de sessão.');
+  console.error('❌ SESSION_ENCRYPTION_KEY não configurada. Defina uma chave própria para criptografar as sessões; BOT_TOKEN não é aceito como chave.');
+  process.exit(1);
 }
+const SESSION_KEY = crypto.createHash('sha256').update(sessionEncryptionSecret).digest();
 
 if (!token) {
   console.error('❌ BOT_TOKEN não configurado. Crie um arquivo .env com o token do BotFather.');
@@ -948,7 +947,10 @@ bot.on('text', async (ctx, next) => {
 
       if (!ok) {
         const apiMsg = apiErrorMessage(body);
-        console.error('❌ Falha na autenticação:', response.status, JSON.stringify(body));
+        console.error('❌ Falha na autenticação:', response.status, {
+          code: body?.code,
+          msg: apiErrorMessage(body)
+        });
         let reply =
           '❌ <b>Não foi possível validar o código.</b>\n\n' +
           'Verifique se você digitou o código corretamente e se ele ainda está dentro do prazo de validade (5 minutos).\n\n' +
@@ -1493,8 +1495,11 @@ if (!HAS_PERSISTENT_VOLUME && process.env.RAILWAY_ENVIRONMENT) {
   console.warn('⚠️ Railway sem volume persistente detectado. Cadastros, prints e estatísticas serão perdidos em um redeploy. Anexe um Volume e monte em /app/data ou /data.');
 }
 
-bot.launch().then(() => {
+bot.launch(() => {
   console.log('🎮 SEGA Stats Bot online!');
+}).catch((error) => {
+  console.error('❌ Falha ao iniciar o bot:', error);
+  process.exitCode = 1;
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
