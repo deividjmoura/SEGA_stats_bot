@@ -1,5 +1,141 @@
 import knowledge from '../data/mlbb-knowledge.json' with { type: 'json' };
 
+const KNOWN_HEROES = [
+  "Aamon",
+  "Akai",
+  "Aldous",
+  "Alice",
+  "Alpha",
+  "Alucard",
+  "Angela",
+  "Argus",
+  "Arlott",
+  "Atlas",
+  "Aulus",
+  "Aurora",
+  "Badang",
+  "Balmond",
+  "Bane",
+  "Barats",
+  "Baxia",
+  "Beatrix",
+  "Belerick",
+  "Benedetta",
+  "Brody",
+  "Bruno",
+  "Carmilla",
+  "Cecilion",
+  "Chang'e",
+  "Chip",
+  "Chou",
+  "Cici",
+  "Claude",
+  "Clint",
+  "Cyclops",
+  "Diggie",
+  "Dyrroth",
+  "Edith",
+  "Esmeralda",
+  "Estes",
+  "Eudora",
+  "Fanny",
+  "Faramis",
+  "Floryn",
+  "Franco",
+  "Fredrinn",
+  "Freya",
+  "Gatotkaca",
+  "Gloo",
+  "Gord",
+  "Granger",
+  "Grock",
+  "Guinevere",
+  "Gusion",
+  "Hanabi",
+  "Hanzo",
+  "Harith",
+  "Harley",
+  "Hayabusa",
+  "Helcurt",
+  "Hilda",
+  "Hirara",
+  "Hylos",
+  "Irithel",
+  "Ixia",
+  "Jawhead",
+  "Johnson",
+  "Joy",
+  "Julian",
+  "Kadita",
+  "Kagura",
+  "Kaja",
+  "Kalea",
+  "Karina",
+  "Karrie",
+  "Khaleed",
+  "Khufra",
+  "Kimmy",
+  "Lancelot",
+  "Lapu-Lapu",
+  "Layla",
+  "Leomord",
+  "Lesley",
+  "Ling",
+  "Lolita",
+  "Lukas",
+  "Lunox",
+  "Luo Yi",
+  "Lylia",
+  "Marcel",
+  "Martis",
+  "Masha",
+  "Mathilda",
+  "Melissa",
+  "Minotaur",
+  "Minsitthar",
+  "Miya",
+  "Moskov",
+  "Nana",
+  "Natalia",
+  "Natan",
+  "Nolan",
+  "Novaria",
+  "Obsidia",
+  "Odette",
+  "Paquito",
+  "Pharsa",
+  "Phoveus",
+  "Popol e Kupa",
+  "Rafaela",
+  "Roger",
+  "Ruby",
+  "Saber",
+  "Selena",
+  "Silvanna",
+  "Sora",
+  "Sun",
+  "Suyou",
+  "Terizla",
+  "Thamuz",
+  "Tigreal",
+  "Uranus",
+  "Vale",
+  "Valentina",
+  "Valir",
+  "Vexana",
+  "Wanwan",
+  "X.Borg",
+  "Xavier",
+  "Yi Sun-shin",
+  "Yin",
+  "Yu Zhong",
+  "Yve",
+  "Zetian",
+  "Zhask",
+  "Zhuxin",
+  "Zilong"
+];
+
 const compact = (value) => String(value || '')
   .normalize('NFKD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -9,14 +145,58 @@ const compact = (value) => String(value || '')
 
 function findHero(text) {
   const source = compact(text);
+
+  // Primeiro procura na base detalhada (counters, itens, dicas etc.).
   for (const [key, hero] of Object.entries(knowledge.heroes)) {
     const names = [key, hero.pt, hero.en, ...(hero.aliases || [])];
     if (names.some(name => {
       const n = compact(name);
       return n && (source === n || source.includes(' ' + n + ' ') || source.startsWith(n + ' ') || source.endsWith(' ' + n));
-    })) return { key, ...hero };
+    })) return { key, ...hero, detailed: true };
   }
+
+  // Depois reconhece todo o roster atual. Isso impede que heróis fora da
+  // base detalhada caiam como "herói não identificado".
+  const exact = KNOWN_HEROES.find(name => {
+    const n = compact(name);
+    return n && (source === n || source.includes(' ' + n + ' ') || source.startsWith(n + ' ') || source.endsWith(' ' + n));
+  });
+  if (exact) return { key: compact(exact), pt: exact, en: exact, counters: [], items: [], tips: [], detailed: false };
+
   return null;
+}
+
+function levenshtein(a, b) {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) => i);
+  for (let j = 1; j <= b.length; j += 1) {
+    let prev = rows[0];
+    rows[0] = j;
+    for (let i = 1; i <= a.length; i += 1) {
+      const saved = rows[i];
+      rows[i] = Math.min(
+        rows[i] + 1,
+        rows[i - 1] + 1,
+        prev + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      prev = saved;
+    }
+  }
+  return rows[a.length];
+}
+
+function suggestHero(text) {
+  const source = compact(text);
+  const candidates = [];
+  for (const name of KNOWN_HEROES) {
+    const n = compact(name);
+    if (!n) continue;
+    const distance = levenshtein(source, n);
+    const threshold = n.length <= 5 ? 1 : n.length <= 8 ? 2 : 3;
+    if (distance <= threshold) candidates.push({ name, distance });
+  }
+
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.name || null;
 }
 
 function canonicalHeroName(name) {
@@ -52,17 +232,40 @@ export function listKnowledgeExamples() {
 }
 
 export function knowledgeSummary() {
-  return { heroes: Object.keys(knowledge.heroes).length, items: Object.keys(knowledge.items).length, version: knowledge.version, updatedAt: knowledge.updatedAt };
+  return {
+    heroes: KNOWN_HEROES.length,
+    detailedHeroes: Object.keys(knowledge.heroes).length,
+    items: Object.keys(knowledge.items).length,
+    version: knowledge.version,
+    updatedAt: knowledge.updatedAt
+  };
 }
 
 export function answerMlbbQuestion(text) {
   const hero = findHero(text);
   const intent = intentOf(text);
-  if (!hero) return intent !== 'unknown' ? '🎮 <b>Não identifiquei o herói.</b>\n\nTente escrever o nome em português ou inglês. Ex.: <code>@SEGA Stats quem countera Harley?</code>' : null;
+
+  if (!hero) {
+    if (intent === 'counter' || intent === 'items' || intent === 'tips' || intent === 'hero' || intent === 'build') {
+      const suggestion = suggestHero(text.replace(/.*(?:countera|counter|contra|sobre|do|da|de)\\s+/i, ''));
+      return '🎮 <b>Não identifiquei esse herói.</b>\n\n' +
+        (suggestion
+          ? '🤔 Você quis dizer <b>' + suggestion + '</b>?\n\nEnvie a pergunta novamente usando esse nome.'
+          : 'Tente escrever o nome completo em português ou inglês.') +
+        '\n\nEx.: <code>@SEGA Stats quem countera Harley?</code>';
+    }
+    return null;
+  }
 
   const title = hero.pt + ' (' + hero.en + ')';
 
   if (intent === 'counter') {
+    if (!hero.detailed || !hero.counters?.length) {
+      return '🎮 <b>' + title + '</b> foi identificado corretamente.\n\n' +
+        '⚠️ Ainda não tenho o matchup de counters desse herói na base local.\n' +
+        'Não vou inventar uma lista e correr o risco de te passar informação errada.\n\n' +
+        '📚 Esse herói já está no roster do SEGA e será tratado como herói válido.';
+    }
     return '⚔️ <b>COUNTERS DE ' + title.toUpperCase() + '</b>\n\n' +
       hero.counters.map(name => '• ' + canonicalHeroName(name)).join('\n') +
       '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Snapshot de matchup pesquisado para o SEGA Stats.';
