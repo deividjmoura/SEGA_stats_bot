@@ -205,7 +205,7 @@ function clearPending(chatId) {
   if (persistenceReady) void persistState();
 }
 
-function schedulePendingTimer(chatId, state, ctx) {
+function schedulePendingTimer(chatId, state, telegram) {
   const delay = Math.max(0, state.dueAt - Date.now());
   state.timer = setTimeout(async () => {
     const current = pendingByChat.get(chatId);
@@ -216,7 +216,7 @@ function schedulePendingTimer(chatId, state, ctx) {
 
     const phrase = phrases[Math.floor(Math.random() * phrases.length)];
     try {
-      await ctx.telegram.sendMessage(
+      await telegram.sendMessage(
         chatId,
         '👀 <b>' + String(state.displayName || 'guerreiro').replace(/[&<>]/g, '') + '...</b>\n\n' + phrase,
         { parse_mode: 'HTML', reply_parameters: { message_id: state.messageId } }
@@ -263,12 +263,12 @@ async function scheduleBanter(ctx, resolvePlayerName) {
     dueAt: Date.now() + WAIT_MS
   };
   pendingByChat.set(chatId, state);
-  schedulePendingTimer(chatId, state, ctx);
+  schedulePendingTimer(chatId, state, ctx.telegram);
   await persistState();
   console.log('🎭 Zueira de ausência agendada no grupo ' + chatId + ' para ' + new Date(state.dueAt).toISOString());
 }
 
-export async function restoreGroupBanters() {
+export async function restoreGroupBanters(telegram) {
   try {
     const stored = await readJson(STATE_FILE, { version: 1, pending: {}, cooldowns: {} });
     const now = Date.now();
@@ -284,13 +284,15 @@ export async function restoreGroupBanters() {
     for (const [chatId, saved] of Object.entries(stored?.pending || {})) {
       const dueAt = Number(saved?.dueAt);
       if (!Number.isFinite(dueAt) || dueAt <= now) continue;
-      pendingByChat.set(Number(chatId), {
+      const state = {
         timer: null,
         messageId: saved.messageId,
         userId: saved.userId,
         displayName: saved.displayName || 'guerreiro',
         dueAt
-      });
+      };
+      pendingByChat.set(Number(chatId), state);
+      if (telegram) schedulePendingTimer(Number(chatId), state, telegram);
       restored++;
     }
 
@@ -325,13 +327,6 @@ export function markBanterHandled(ctx) {
 export function groupBanterMiddleware(resolvePlayerName) {
   return async (ctx, next) => {
     try {
-      if (isGroup(ctx) && ctx.chat?.id && ctx.from && !ctx.from.is_bot) {
-        const restored = pendingByChat.get(ctx.chat.id);
-        if (restored && !restored.timer) {
-          schedulePendingTimer(ctx.chat.id, restored, ctx);
-          await persistState();
-        }
-      }
       await scheduleBanter(ctx, resolvePlayerName);
     } catch (error) {
       console.error('⚠️ Erro no monitor de zoeira do grupo:', error);
