@@ -1063,19 +1063,75 @@ async function handleScreenshot(ctx) {
       return;
     }
 
-    const verification = await battleBelongsToPlayer(
-      player.jwt,
-      player.roleId,
-      player.zoneId,
-      parsed.battleId
-    );
+    let verification;
+    try {
+      verification = await battleBelongsToPlayer(
+        player.jwt,
+        player.roleId,
+        player.zoneId,
+        parsed.battleId
+      );
+    } catch (error) {
+      console.warn('⚠️ API de histórico indisponível; usando fallback OCR:', error?.message || error);
+      verification = { verified: false, reason: 'history_api_error' };
+    }
 
+    // Se a API estiver fora do ar, a tela final ainda pode ser contabilizada
+    // quando o OCR conseguiu provar os três sinais fortes: nick da conta,
+    // Battle ID e K/D/A. O OCR vira a fonte dos números; a API deixa de ser
+    // um bloqueio operacional.
     if (!verification.verified) {
+      const ocrStrongIdentity =
+        Boolean(nameOk) &&
+        Boolean(parsed.battleId) &&
+        Boolean(parsed.kda) &&
+        ['win', 'loss'].includes(parsed.result);
+
+      if (ocrStrongIdentity) {
+        const ocrVerifiedParsed = {
+          ...parsed,
+          source: 'ocr_fallback',
+          verificationMode: 'ocr_identity_battle_id',
+          verificationReason: verification.reason || 'history_api_unavailable'
+        };
+
+        const ocrRecord = await updateScreenshotVerification(
+          ctx.from.id,
+          record.id,
+          'verified_ocr',
+          {
+            parsed: ocrVerifiedParsed,
+            verificationReason: verification.reason || 'history_api_unavailable',
+            verifiedAt: new Date().toISOString()
+          }
+        );
+
+        const finalOcr = ocrRecord?.parsed || ocrVerifiedParsed;
+        await replyAs(ctx, 'print',
+          '✅ <b>PARTIDA VALIDADA PELO OCR</b>\n\n' +
+          '🔢 Battle ID: <code>' + escapeHtml(finalOcr.battleId) + '</code>\n' +
+          (finalOcr.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\n' : '💀 Resultado: <b>DERROTA</b>\n') +
+          '📊 K/D/A: <b>' + finalOcr.kda.kills + '/' + finalOcr.kda.deaths + '/' + finalOcr.kda.assists + '</b>\n' +
+          '\n⚠️ A API de histórico não respondeu (<code>' + escapeHtml(verification.reason || 'indisponível') + '</code>). ' +
+          'Usei a confirmação visual do seu nick + Battle ID + resultado para não perder a partida.',
+          { parse_mode: 'HTML', ...mainKeyboard() }
+        );
+        return;
+      }
+
       await updateScreenshotVerification(ctx.from.id, record.id, 'pending_api_confirmation', {
-        verificationReason: verification.reason
+        verificationReason: verification.reason,
+        ocrFallback: {
+          nameMatch: Boolean(nameOk),
+          hasBattleId: Boolean(parsed.battleId),
+          hasKda: Boolean(parsed.kda),
+          result: parsed.result || null
+        }
       });
       await replyAs(ctx, 'print',
-        '⏳ <b>PARTIDA PENDENTE DE CONFIRMAÇÃO</b>\n\nEncontrei o Battle ID, mas a API ainda não confirmou essa partida para sua conta. Não vou contabilizar o K/D/A lido pelo OCR até a verificação ser concluída.',
+        '⏳ <b>PARTIDA NÃO CONTABILIZADA AINDA</b>\n\n' +
+        'A API não respondeu e o OCR não encontrou sinais suficientes para validar a partida com segurança. ' +
+        'Envie novamente um print da tela final inteira, com seu nick, Battle ID e K/D/A visíveis.',
         { parse_mode: 'HTML', ...mainKeyboard() }
       );
       return;
