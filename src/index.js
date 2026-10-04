@@ -1,8 +1,6 @@
 import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
-import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
-import { dirname } from 'node:path';
 import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
@@ -224,42 +222,6 @@ async function resolvePlayerName(telegramId) {
   const player = authenticatedPlayers.get(Number(telegramId));
   if (!player?.jwt) return null;
   return (await refreshPlayerName(telegramId)) || player.name || null;
-}
-
-async function apiFetch(path, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-  try {
-    return await fetch(RONE_API + path, {
-      ...options,
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'SEGA-Stats-Bot/1.0',
-        ...(options.headers || {})
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function apiJson(path, options = {}) {
-  const response = await apiFetch(path, options);
-  const body = await response.json().catch(() => ({}));
-  return { response, body };
-}
-
-function isApiSuccess(body) {
-  return body?.code === 0 || body?.code === '0';
-}
-
-function apiErrorMessage(body) {
-  return body?.msg || body?.message || body?.detail || '';
-}
-
-function authHeaders(jwt) {
-  return { Authorization: 'Bearer ' + jwt };
 }
 
 function isGroupChat(ctx) {
