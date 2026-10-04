@@ -64,13 +64,137 @@ function parseTsvWords(tsv) {
     .map(line => line.split('\t'))
     .filter(parts => parts.length >= 12)
     .map(parts => ({
+      block: Number(parts[2]),
+      paragraph: Number(parts[3]),
+      line: Number(parts[4]),
       left: Number(parts[6]),
       top: Number(parts[7]),
       width: Number(parts[8]),
       height: Number(parts[9]),
+      confidence: Number(parts[10]),
       text: String(parts[11] || '').trim()
     }))
-    .filter(word => Number.isFinite(word.left) && Number.isFinite(word.top) && word.width > 0 && word.height > 0 && word.text);
+    .filter(word =>
+      Number.isFinite(word.left) &&
+      Number.isFinite(word.top) &&
+      word.width > 0 &&
+      word.height > 0 &&
+      word.text
+    );
+}
+
+function normalizeNickForOcr(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function findPlayerOcrLine(tsv, expectedNick) {
+  const target = normalizeNickForOcr(expectedNick);
+  if (!target || target.length < 3) return null;
+
+  const words = parseTsvWords(tsv);
+  const groups = new Map();
+
+  for (const word of words) {
+    const key = [word.block, word.paragraph, word.line].join(':');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(word);
+  }
+
+  const candidates = [...groups.values()]
+    .map(group => {
+      group.sort((a, b) => a.left - b.left);
+      const text = group.map(word => word.text).join(' ');
+      const compact = normalizeNickForOcr(text);
+      const targetIndex = compact.indexOf(target);
+      return {
+        words: group,
+        text,
+        compact,
+        targetIndex,
+        confidence: group.reduce((sum, word) => sum + (Number.isFinite(word.confidence) ? word.confidence : 0), 0) / group.length
+      };
+    })
+    .filter(group => group.targetIndex >= 0);
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => {
+    const aExact = a.compact === target ? 1 : 0;
+    const bExact = b.compact === target ? 1 : 0;
+    return bExact - aExact || b.confidence - a.confidence;
+  });
+
+  const best = candidates[0];
+  const left = Math.min(...best.words.map(word => word.left));
+  const top = Math.min(...best.words.map(word => word.top));
+  const right = Math.max(...best.words.map(word => word.left + word.width));
+  const bottom = Math.max(...best.words.map(word => word.top + word.height));
+
+  return {
+    ...best,
+    left,
+    top,
+    right,
+    bottom,
+    height: Math.max(1, bottom - top)
+  };
+}
+
+async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
+  const line = findPlayerOcrLine(tsv, expectedNick);
+  if (!line) return null;
+
+  const metadata = await sharp(imagePath).metadata();
+  const imageWidth = metadata.width || line.right;
+  const imageHeight = metadata.height || line.bottom;
+
+  // A linha do jogador é a região mais confiável para o K/D/A.
+  // Abrimos um pouco acima/abaixo para capturar nome, K/D/A e o restante da linha.
+  const verticalPadding = Math.max(24, Math.round(line.height * 1.35));
+  const left = 0;
+  const top = Math.max(0, line.top - verticalPadding);
+  const width = imageWidth;
+  const height = Math.min(imageHeight - top, Math.max(line.height * 3.2, 100));
+
+  const cropPath = imagePath.replace(/\.png$/i, '.player-row.png');
+
+  try {
+    await sharp(imagePath)
+      .extract({ left, top, width, height })
+      .resize({ width: Math.max(width, 2600), withoutEnlargement: false })
+      .normalize()
+      .sharpen()
+      .png()
+      .toFile(cropPath);
+
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6',
+      preserve_interword_spaces: '1',
+      tessedit_char_whitelist: ''
+    });
+
+    const result = await worker.recognize(cropPath, {}, { text: true, tsv: true });
+    const text = String(result.data?.text || '').trim();
+
+    return {
+      text,
+      kda: parseScreenshotStats(text, expectedNick).kda,
+      lineText: line.text,
+      confidence: line.confidence,
+      bounds: { left, top, width, height }
+    };
+  } finally {
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6',
+      preserve_interword_spaces: '0',
+      tessedit_char_whitelist: ''
+    }).catch(() => {});
+    await fs.unlink(cropPath).catch(() => {});
+  }
 }
 
 async function improveBattleId(worker, imagePath, initialText, tsv) {
@@ -191,6 +315,29 @@ export async function processScreenshot(ctx, player) {
     .slice(0, 120);
 
   const parsed = parseScreenshotStats(rawOcrText, player.name);
+
+  // O placar final do MLBB organiza cada jogador em uma linha horizontal.
+  // O TSV do Tesseract traz posição/linha de cada palavra; usamos o nick
+  // cadastrado para localizar exatamente a linha selecionada e fazemos uma
+  // segunda leitura focada nessa faixa. Isso evita misturar o K/D/A de outro
+  // jogador com o nick correto.
+  const highlightedRow = await withOcrLock(() =>
+    readHighlightedPlayerRow(worker, processedPath, result.data?.tsv, player.name)
+  );
+
+  if (highlightedRow?.text) {
+    parsed.playerRowOcr = highlightedRow.text.slice(0, 1200);
+    parsed.playerRowFound = true;
+    parsed.playerRowConfidence = Number.isFinite(highlightedRow.confidence)
+      ? Number(highlightedRow.confidence.toFixed(1))
+      : null;
+
+    if (highlightedRow.kda) {
+      parsed.kda = highlightedRow.kda;
+      parsed.kdaSource = 'highlighted_player_row';
+    }
+  }
+
   if (!parsed.battleId) {
     parsed.battleId = await withOcrLock(() =>
       improveBattleId(worker, processedPath, rawOcrText, result.data?.tsv)
