@@ -1003,8 +1003,9 @@ async function handleScreenshot(ctx) {
     const rowScore = Number(record.parsed?.playerRowIdentityScore || 0);
     const rowNameOk = Boolean(
       record.parsed?.playerRowFound &&
+      record.parsed?.playerRowAccepted !== false &&
       record.parsed?.kda &&
-      rowScore >= 0.58
+      rowScore >= 0.68
     );
     const nameOk = nickMatches(liveName, record.ocrText, record.ocrLines) || rowNameOk;
 
@@ -1137,10 +1138,26 @@ async function handleScreenshot(ctx) {
           result: parsed.result || null
         }
       });
+      const candidateInfo = Array.isArray(record.parsed?.playerRowCandidates)
+        ? record.parsed.playerRowCandidates
+          .slice(0, 5)
+          .map(item => {
+            const side = item.side || '?';
+            const row = Number.isInteger(item.rowIndex) ? item.rowIndex + 1 : '?';
+            return side + '/' + row + '=' + Number(item.identityScore || 0).toFixed(2);
+          })
+          .join(' • ')
+        : 'sem candidatos';
+
       await replyAs(ctx, 'print',
         '⏳ <b>PARTIDA NÃO CONTABILIZADA AINDA</b>\n\n' +
-        'A API não respondeu e o OCR não encontrou sinais suficientes para validar a partida com segurança. ' +
-        'Envie novamente um print da tela final inteira, com seu nick, Battle ID e K/D/A visíveis.',
+        'A API não respondeu e o OCR não encontrou sinais suficientes para validar a partida com segurança.\n\n' +
+        '🔎 <b>Diagnóstico:</b> nick=' + (nameOk ? 'OK' : 'não') +
+        ' • Battle ID=' + (parsed.battleId ? 'OK' : 'não') +
+        ' • KDA=' + (parsed.kda ? 'OK' : 'não') +
+        ' • resultado=' + (parsed.result || 'não') + '\n' +
+        '📍 Linhas: <code>' + escapeHtml(candidateInfo) + '</code>\n\n' +
+        'Envie novamente o print da tela final inteira, com seu nick, Battle ID e K/D/A visíveis.',
         { parse_mode: 'HTML', ...mainKeyboard() }
       );
       return;
