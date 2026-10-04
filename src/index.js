@@ -49,10 +49,51 @@ function getReplyMention(ctx) {
   return '<a href="tg://user?id=' + telegramId + '">' + escapeHtml(name) + '</a>';
 }
 
+const memberTagCache = new Map();
+
+function normalizeMemberTag(name) {
+  // O Telegram limita tags de membros a 16 caracteres e não aceita emojis.
+  // Mantemos o nick do MLBB, removendo apenas emojis e limitando o tamanho.
+  const cleaned = String(name || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .trim();
+
+  return Array.from(cleaned).slice(0, 16).join('');
+}
+
+async function syncMemberTag(ctx, player) {
+  if (!isGroupChat(ctx) || !player?.name || !ctx.from?.id || !ctx.chat?.id) return;
+
+  const tag = normalizeMemberTag(player.name);
+  if (!tag) return;
+
+  const cacheKey = String(ctx.chat.id) + ':' + String(ctx.from.id);
+  if (memberTagCache.get(cacheKey) === tag) return;
+
+  try {
+    await ctx.telegram.callApi('setChatMemberTag', {
+      chat_id: ctx.chat.id,
+      user_id: ctx.from.id,
+      tag
+    });
+    memberTagCache.set(cacheKey, tag);
+  } catch (error) {
+    // Falha de permissão/configuração não deve impedir o bot de responder.
+    console.warn(
+      '⚠️ Não consegui atualizar a tag do membro ' +
+      ctx.from.id + ' no grupo ' + ctx.chat.id + ':',
+      error?.description || error?.message || error
+    );
+  }
+}
+
 // Toda resposta do bot menciona quem acionou a interação.
 // Após o cadastro, o texto da menção usa o nick do Mobile Legends.
 // Antes do cadastro, usa o nome do Telegram como fallback.
 bot.use(async (ctx, next) => {
+  const player = authenticatedPlayers.get(Number(ctx.from?.id));
+  if (player) await syncMemberTag(ctx, player);
+
   const originalReply = ctx.reply.bind(ctx);
 
   ctx.reply = (text, extra = {}) => {
