@@ -184,6 +184,8 @@ SESSION_ENCRYPTION_KEY=uma_chave_secreta_propria_e_estavel
 ```
 
 > **Importante:** `SESSION_ENCRYPTION_KEY` é obrigatória. Gere uma chave aleatória forte e mantenha-a estável no Railway. Ela não deve ser derivada do `BOT_TOKEN`.
+>
+> Para migrar sessões antigas que foram criptografadas com o `BOT_TOKEN`, defina temporariamente `SESSION_LEGACY_KEY` com o valor antigo. Após a primeira inicialização bem-sucedida, as sessões são regravadas com `SESSION_ENCRYPTION_KEY` e a variável legada pode ser removida.
 
 ### 4. Executar
 
