@@ -593,7 +593,19 @@ bot.on('text', async (ctx, next) => {
 
   // Este handler trata somente as respostas do fluxo de cadastro.
   // Comandos como /stats e /ranking precisam seguir para os handlers abaixo.
-  if (!state || ctx.message.text.startsWith('/')) {
+  if (!state) {
+    if (!isGroupChat(ctx) && /^\d{4,8}$/.test(ctx.message.text.trim())) {
+      await ctx.reply(
+        '⚠️ <b>Não encontrei um cadastro pendente para esse código.</b>\n\n' +
+        'O bot pode ter sido reiniciado antes de você enviar o código. Use /cadastrar novamente para iniciar uma nova verificação.',
+        { parse_mode: 'HTML' }
+      );
+    }
+    await next();
+    return;
+  }
+
+  if (ctx.message.text.startsWith('/')) {
     await next();
     return;
   }
@@ -646,7 +658,7 @@ bot.on('text', async (ctx, next) => {
       );
     } catch (error) {
       console.error('❌ Erro ao solicitar código:', error);
-      registration.delete(ctx.from.id);
+      await deleteRegistration(ctx.from.id);
       await ctx.reply('⚠️ Não consegui conectar ao serviço de autenticação agora. Tente novamente.');
     }
     return;
