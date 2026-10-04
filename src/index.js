@@ -7,6 +7,7 @@ import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummarie
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
+import { readJson, writeJson } from './storage/jsonStore.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -16,6 +17,7 @@ const SESSION_FILE = process.env.SESSION_FILE || (DATA_DIR + '/sessions.json');
 const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registrations.json');
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
 const API_TIMEOUT_MS = 12000;
+const REGISTRATION_TTL_MS = 15 * 60 * 1000;
 const sessionEncryptionSecret = process.env.SESSION_ENCRYPTION_KEY;
 const SESSION_KEY = crypto.createHash('sha256')
   .update(sessionEncryptionSecret || '')
@@ -175,16 +177,13 @@ bot.use(async (ctx, next) => {
 bot.use(groupBanterMiddleware(resolvePlayerName));
 
 async function saveRegistrations() {
-  await fs.mkdir(dirname(REGISTRATION_FILE), { recursive: true });
   const stored = {};
-  for (const [telegramId, state] of registration) {
-    stored[telegramId] = state;
-  }
-  await fs.writeFile(REGISTRATION_FILE, JSON.stringify(stored, null, 2), 'utf8');
+  for (const [telegramId, state] of registration) stored[telegramId] = state;
+  await writeJson(REGISTRATION_FILE, stored);
 }
 
 async function setRegistration(telegramId, state) {
-  registration.set(Number(telegramId), state);
+  registration.set(Number(telegramId), { ...state, updatedAt: new Date().toISOString() });
   await saveRegistrations();
 }
 
@@ -195,12 +194,13 @@ async function deleteRegistration(telegramId) {
 
 async function restoreRegistrations() {
   try {
-    const raw = await fs.readFile(REGISTRATION_FILE, 'utf8');
-    const stored = JSON.parse(raw);
-    for (const [telegramId, state] of Object.entries(stored)) {
-      if (state && ['role_id', 'zone_id', 'verification_code'].includes(state.step)) {
-        registration.set(Number(telegramId), state);
-      }
+    const stored = await readJson(REGISTRATION_FILE, {});
+    const now = Date.now();
+    for (const [telegramId, state] of Object.entries(stored || {})) {
+      if (!state || !['role_id', 'zone_id', 'verification_code'].includes(state.step)) continue;
+      const updatedAt = Date.parse(state.updatedAt || state.createdAt || '');
+      if (!Number.isFinite(updatedAt) || now - updatedAt > REGISTRATION_TTL_MS) continue;
+      registration.set(Number(telegramId), state);
     }
     console.log('📝 Cadastros pendentes restaurados: ' + registration.size);
   } catch (error) {
@@ -403,7 +403,6 @@ function decrypt(payload) {
 }
 
 async function saveSessions() {
-  await fs.mkdir(dirname(SESSION_FILE), { recursive: true });
   const stored = {};
   for (const [telegramId, player] of authenticatedPlayers) {
     stored[telegramId] = {
@@ -415,24 +414,29 @@ async function saveSessions() {
       savedAt: new Date().toISOString()
     };
   }
-  await fs.writeFile(SESSION_FILE, JSON.stringify(stored, null, 2), 'utf8');
+  await writeJson(SESSION_FILE, stored);
 }
 
 async function restoreSessions() {
   try {
-    const raw = await fs.readFile(SESSION_FILE, 'utf8');
-    const stored = JSON.parse(raw);
-    for (const [telegramId, player] of Object.entries(stored)) {
-      authenticatedPlayers.set(Number(telegramId), {
-        jwt: decrypt(player.jwt),
-        roleId: player.roleId,
-        zoneId: player.zoneId,
-        name: player.name || null,
-        // Sessões antigas serão atualizadas pela API na primeira interação.
-        nameVerified: Boolean(player.nameVerified)
-      });
+    const stored = await readJson(SESSION_FILE, {});
+    for (const [telegramId, player] of Object.entries(stored || {})) {
+      try {
+        if (!player?.jwt) throw new Error('sessão sem token criptografado');
+        const jwt = decrypt(player.jwt);
+        if (!jwt) throw new Error('token vazio após descriptografia');
+        authenticatedPlayers.set(Number(telegramId), {
+          jwt,
+          roleId: player.roleId,
+          zoneId: player.zoneId,
+          name: player.name || null,
+          nameVerified: Boolean(player.nameVerified)
+        });
+      } catch (error) {
+        console.warn('⚠️ Sessão ignorada durante restore (' + telegramId + '):', error?.message || error);
+      }
     }
-    console.log(`🔐 Sessões restauradas: ${authenticatedPlayers.size}`);
+    console.log('🔐 Sessões restauradas: ' + authenticatedPlayers.size);
   } catch (error) {
     if (error.code !== 'ENOENT') console.error('❌ Erro ao restaurar sessões:', error);
   }
