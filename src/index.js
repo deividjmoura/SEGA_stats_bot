@@ -1107,6 +1107,43 @@ async function sendStats(ctx) {
 bot.command('stats', sendStats);
 
 
+async function reverifyPendingPrints(telegramId, player, limit = 5) {
+  if (!player?.jwt) return 0;
+  const records = await getPlayerScreenshots(telegramId);
+  const pending = records
+    .filter(record =>
+      record.verification === 'pending_api_confirmation' &&
+      record.kind === 'match_result' &&
+      record.parsed?.battleId
+    )
+    .slice(0, limit);
+
+  let verified = 0;
+  for (const record of pending) {
+    try {
+      const result = await battleBelongsToPlayer(
+        player.jwt,
+        player.roleId,
+        player.zoneId,
+        record.parsed.battleId
+      );
+      if (!result.verified) continue;
+
+      const parsed = normalizeVerifiedMatch(result.match, result.matchId, record.parsed);
+      await updateScreenshotVerification(telegramId, record.id, 'verified_match', {
+        parsed,
+        verificationReason: result.reason,
+        verifiedAt: new Date().toISOString(),
+        verifiedSid: result.sid
+      });
+      verified += 1;
+    } catch (error) {
+      console.warn('⚠️ Falha ao reverificar print ' + record.id + ':', error?.message || error);
+    }
+  }
+  return verified;
+}
+
 bot.command('prints', async (ctx) => {
   const player = authenticatedPlayers.get(ctx.from.id);
   if (!player?.jwt) {
@@ -1114,6 +1151,7 @@ bot.command('prints', async (ctx) => {
     return;
   }
 
+  const reverified = await reverifyPendingPrints(ctx.from.id, player);
   const records = await getPlayerScreenshots(ctx.from.id);
   const summary = summarizePlayerScreenshots(records);
 
@@ -1121,7 +1159,8 @@ bot.command('prints', async (ctx) => {
     '📸 <b>DADOS COLETADOS</b>\n\n' +
     '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\n' +
     '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
-    '⏳ Pendentes: <b>' + summary.pendingMatches + '</b>\n' +
+    (reverified ? '🔄 Reverificadas agora: <b>' + reverified + '</b>\n' : '') +
+    '⏳ Pendentes: <b>' + summary.pendingMatches + '</b>\n'
     '🚫 Rejeitadas: <b>' + summary.rejectedMatches + '</b>\n' +
     '♻️ Duplicados: <b>' + summary.duplicates + '</b>\n' +
     '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
