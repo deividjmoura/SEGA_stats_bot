@@ -88,9 +88,7 @@ function getNaturalReplyIntro(ctx, text) {
   if (!identity) return '';
 
   const body = String(text || '');
-  const who = identity.registered
-    ? 'jogador ' + identity.mention
-    : identity.mention;
+  const who = identity.mention;
 
   if (/COUNTERS DE/i.test(body)) {
     return '🎮 Então, ' + who + ', geralmente são esses:\n\n';
@@ -728,6 +726,18 @@ function mainKeyboard() {
   ]).resize().persistent();
 }
 
+async function sendPrintInstructions(ctx) {
+  await ctx.reply(
+    '📸 <b>ENVIAR PRINT</b>\n\n' +
+    'Agora é só anexar a imagem nesta conversa pelo botão de <b>clipe/câmera do Telegram</b>.\n\n' +
+    '🥇 <b>Resultado final</b> — melhor opção; se aparecerem Battle ID, K/D/A e seu nick, melhor ainda.\n' +
+    '👤 <b>Perfil</b> — serve para conferir sua conta e guardar um snapshot geral.\n' +
+    '📋 <b>Batalhas/Histórico</b> — serve para conferência e evolução do leitor.\n\n' +
+    '💡 Você também pode usar o atalho <b>📸 Enviar print</b> no teclado do bot, na parte inferior da conversa.',
+    { parse_mode: 'HTML', ...mainKeyboard() }
+  );
+}
+
 async function askForRoleId(ctx) {
   await setRegistration(ctx.from.id, { step: 'role_id' });
   return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
@@ -947,11 +957,15 @@ bot.on('text', async (ctx, next) => {
         `🆔 ID: <code>${roleId}</code>\n` +
         `🌐 Zone: <code>${zoneId}</code>\n\n` +
         '📊 Seu jogador foi vinculado ao <b>SEGA Stats</b>.\n\n' +
-        '📸 <b>Próximo passo recomendado:</b> envie alguns prints para começar seu histórico. ' +
-        'Toque em <b>📸 Enviar print</b> no teclado abaixo e depois anexe a imagem.\n\n' +
-        '🥇 Prefira a <b>tela final da partida</b> com nick, K/D/A e Battle ID. ' +
-        'Também aceito prints do perfil e da tela de Batalhas.',
-        { parse_mode: 'HTML', ...mainKeyboard() }
+        '📸 <b>Próximo passo:</b> envie alguns prints para começar seu histórico.\n\n' +
+        '👇 O atalho <b>📸 Enviar print</b> fica no teclado do bot, na parte inferior da conversa. ' +
+        'Se preferir, use o botão destacado logo abaixo desta mensagem.',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('📸 ENVIAR PRINT AGORA', 'send_print')]
+          ])
+        }
       );
     } catch (error) {
       console.error('❌ Erro ao autenticar jogador:', error);
@@ -1293,6 +1307,11 @@ bot.action('stats', async (ctx) => {
   await sendStats(ctx);
 });
 
+bot.action('send_print', async (ctx) => {
+  await ctx.answerCbQuery();
+  await sendPrintInstructions(ctx);
+});
+
 bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await sendHelp(ctx); });
 bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
   const question = ctx.message?.text || '';
@@ -1323,7 +1342,7 @@ bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
-bot.hears('📸 Enviar print', async (ctx) => await ctx.reply('📸 <b>ENVIE O PRINT</b>\n\nPode mandar qualquer uma destas telas:\n\n🥇 <b>Resultado final</b> — melhor para registrar a partida; se tiver Battle ID, K/D/A e seu nick, melhor ainda.\n👤 <b>Perfil</b> — serve para conferir seu nick/Role ID e guardar um snapshot geral.\n📋 <b>Batalhas/Histórico</b> — serve para conferência e para melhorar a leitura do histórico.\n\nDepois de mandar a foto, o bot faz OCR, tenta identificar a tela e aplica as validações antes de contar uma partida.', { parse_mode: 'HTML' }));
+bot.hears('📸 Enviar print', sendPrintInstructions);
 bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await ctx.reply('📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await ctx.reply('📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('👥 Clã SEGA', sendClan);
 bot.hears('❓ Ajuda', sendHelp);
