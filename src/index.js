@@ -253,7 +253,9 @@ bot.telegram.setMyCommands([
   { command: 'lore', description: 'Crônicas e heróis' },
   { command: 'menu', description: 'Abrir menu principal' },
   { command: 'prints', description: 'Ver dados coletados por screenshots' },
-  { command: 'tutorial', description: 'Ver tutorial de uso' }
+  { command: 'tutorial', description: 'Ver tutorial de uso' },
+  { command: 'conhecimento', description: 'Ver o que o bot sabe' },
+  { command: 'perguntas', description: 'Relatório de perguntas (admin)' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 
 const startMessage = `🎮 <b>SEGA STATS</b>
