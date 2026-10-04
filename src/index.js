@@ -6,17 +6,26 @@ import { dirname } from 'node:path';
 import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
+import { nickMatches } from './ocr.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
 import { readJson, writeJson } from './storage/jsonStore.js';
+import {
+  apiFetch,
+  apiJson,
+  isApiSuccess,
+  apiErrorMessage,
+  authHeaders,
+  profileName,
+  battleBelongsToPlayer,
+  normalizeVerifiedMatch
+} from './roneApi.js';
 
 const token = process.env.BOT_TOKEN;
-const RONE_API = 'https://arena.rone.dev/api';
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 const HAS_PERSISTENT_VOLUME = Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
 const SESSION_FILE = process.env.SESSION_FILE || (DATA_DIR + '/sessions.json');
 const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registrations.json');
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
-const API_TIMEOUT_MS = 12000;
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
 const OCR_COOLDOWN_MS = 30 * 1000;
 const RANKING_CACHE_MS = 5 * 60 * 1000;
@@ -253,168 +262,6 @@ function authHeaders(jwt) {
   return { Authorization: 'Bearer ' + jwt };
 }
 
-function normalizeNick(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
-}
-
-function nickMatches(expected, text, lines = []) {
-  const target = normalizeNick(expected);
-  if (!target || target.length < 3) return false;
-
-  // Validação intencionalmente estrita: não aceitamos substring ou similaridade,
-  // pois isso poderia contabilizar print de outro jogador ou de um nick antigo.
-  const candidates = [
-    ...(Array.isArray(lines) ? lines : []),
-    ...String(text || '').split(/\r?\n/)
-  ];
-
-  for (const line of candidates) {
-    const compactLine = normalizeNick(line);
-    if (compactLine === target) return true;
-
-    const tokens = String(line || '')
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .map(normalizeNick)
-      .filter(Boolean);
-
-    if (tokens.includes(target)) return true;
-  }
-
-  return false;
-}
-
-function sameId(a, b) {
-  return String(a ?? '').trim() === String(b ?? '').trim();
-}
-
-async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
-  if (!battleId) return { verified: false, reason: 'battle_id_not_detected' };
-
-  try {
-    const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
-    const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
-    if (!season.response.ok || !isApiSuccess(season.body) || !sids.length) {
-      return { verified: false, reason: 'history_api_unavailable' };
-    }
-
-    // Os IDs longos devem ser tratados como strings. JavaScript perde precisão
-    // em números inteiros muito grandes, então usamos bid_s sempre que existir.
-    // Primeiro tentamos o endpoint direto do Battle ID nas temporadas mais recentes.
-    for (const sid of sids.slice(0, 3)) {
-      const direct = await apiJson(
-        '/user/matches/' + encodeURIComponent(String(battleId)) +
-        '?sid=' + encodeURIComponent(sid) + '&lang=pt',
-        { headers: authHeaders(jwt) }
-      );
-
-      if (direct.response.ok && isApiSuccess(direct.body)) {
-        const participants = Array.isArray(direct.body?.data?.result)
-          ? direct.body.data.result
-          : [];
-        const owner = participants.find(row =>
-          sameId(row.rid, roleId) && sameId(row.zid, zoneId)
-        );
-        if (owner) {
-          return {
-            verified: true,
-            reason: 'battle_and_account_confirmed',
-            sid,
-            matchId: String(battleId),
-            match: owner
-          };
-        }
-      }
-    }
-
-    // Fallback limitado às temporadas recentes para evitar dezenas de chamadas sequenciais.
-    for (const sid of sids.slice(0, 3)) {
-      let cursor = '';
-      for (let page = 0; page < 8; page += 1) {
-        const query =
-          '/user/matches?sid=' + encodeURIComponent(sid) +
-          '&limit=50' +
-          (cursor ? '&last_cursor=' + encodeURIComponent(cursor) : '') +
-          '&lang=pt';
-
-        const response = await apiJson(query, { headers: authHeaders(jwt) });
-        if (!response.response.ok || !isApiSuccess(response.body)) break;
-
-        const rows = Array.isArray(response.body?.data?.result) ? response.body.data.result : [];
-        const match = rows.find(row => sameId(row.bid_s ?? row.bid, battleId));
-
-        if (match) {
-          const matchId = String(match.bid_s ?? match.bid ?? battleId);
-          const details = await apiJson(
-            '/user/matches/' + encodeURIComponent(matchId) +
-            '?sid=' + encodeURIComponent(sid) + '&lang=pt',
-            { headers: authHeaders(jwt) }
-          );
-
-          if (!details.response.ok || !isApiSuccess(details.body)) {
-            return { verified: false, reason: 'match_details_unavailable', sid, matchId };
-          }
-
-          const participants = Array.isArray(details.body?.data?.result)
-            ? details.body.data.result
-            : [];
-
-          const owner = participants.find(row =>
-            sameId(row.rid, roleId) && sameId(row.zid, zoneId)
-          );
-
-          if (!owner) {
-            return { verified: false, reason: 'account_not_in_match', sid, matchId };
-          }
-
-          return {
-            verified: true,
-            reason: 'battle_and_account_confirmed',
-            sid,
-            matchId,
-            match: owner
-          };
-        }
-
-        const pageInfo = response.body?.data?.pageInfo || {};
-        if (!pageInfo.hasNext || !pageInfo.nextCursor) break;
-        cursor = String(pageInfo.nextCursor);
-      }
-    }
-
-    return { verified: false, reason: 'battle_id_not_found' };
-  } catch (error) {
-    console.error('❌ Falha ao validar Battle ID:', error);
-    return { verified: false, reason: 'history_api_error' };
-  }
-}
-
-function normalizeVerifiedMatch(owner, battleId, ocrParsed) {
-  const result = Number(owner?.res);
-  const scoreRaw = Number(owner?.s);
-  const hero = owner?.hid_e?.n || owner?.hid_e?.name || null;
-  return {
-    ...ocrParsed,
-    battleId: String(battleId),
-    source: 'rone_api',
-    result: result === 1 ? 'win' : result === 0 ? 'loss' : ocrParsed.result,
-    kda: {
-      kills: Number(owner?.k || 0),
-      deaths: Number(owner?.d || 0),
-      assists: Number(owner?.a || 0)
-    },
-    score: Number.isFinite(scoreRaw) ? (scoreRaw > 20 ? scoreRaw / 100 : scoreRaw) : ocrParsed.score,
-    mvp: Number(owner?.mvp) === 1,
-    hero
-  };
-}
-
 function isGroupChat(ctx) {
   return ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 }
@@ -602,115 +449,6 @@ O cadastro é feito no <b>privado</b>. Não mande Role ID, Zone ID ou código de
 
 👇 Para ver o guia completo e iniciar o cadastro com segurança, use os botões abaixo.`;
 
-
-function parseMatchStats(matches) {
-  const rows = Array.isArray(matches) ? matches : [];
-  const total = rows.length;
-  const wins = rows.filter(m => Number(m.res) === 1).length;
-  const mvps = rows.filter(m => Number(m.mvp) === 1).length;
-  const kills = rows.reduce((sum, m) => sum + Number(m.k || 0), 0);
-  const deaths = rows.reduce((sum, m) => sum + Number(m.d || 0), 0);
-  const assists = rows.reduce((sum, m) => sum + Number(m.a || 0), 0);
-  const scores = rows.map(m => Number(m.s || 0)).filter(Number.isFinite);
-  const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length / 100 : 0;
-  const heroes = new Map();
-  for (const m of rows) {
-    const name = m.hid_e?.n || String(m.hid || 'Desconhecido');
-    heroes.set(name, (heroes.get(name) || 0) + 1);
-  }
-  const mostPlayed = [...heroes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/D';
-  return { matches: total, wins, losses: Math.max(total - wins, 0), mvps, kills, deaths, assists, avgScore, mostPlayed };
-}
-
-async function fetchPlayerStats(jwt) {
-  // Preferir /user/stats quando disponível (ainda funciona em muitos casos, apesar de deprecated).
-  const direct = await apiJson('/user/stats?lang=pt', { headers: authHeaders(jwt) });
-  if (direct.response.ok && isApiSuccess(direct.body) && direct.body.data) {
-    const data = direct.body.data;
-    // Se vier com totais úteis, usa direto.
-    if (data.tc != null || data.wc != null) {
-      return { source: 'stats', data };
-    }
-  }
-
-  // Fallback: montar estatísticas a partir da temporada + partidas recentes.
-  // IMPORTANTE: a API só aceita lang=pt (não pt_BR).
-  const season = await apiJson('/user/season?lang=pt', { headers: authHeaders(jwt) });
-  const sids = Array.isArray(season.body?.data?.sids) ? season.body.data.sids : [];
-  if (!season.response.ok || !isApiSuccess(season.body) || sids.length === 0) {
-    console.error('❌ Fallback season falhou:', season.response?.status, season.body);
-    return {
-      source: 'error',
-      response: season.response?.ok === false ? season.response : direct.response,
-      body: !isApiSuccess(season.body) ? season.body : direct.body
-    };
-  }
-
-  // Tenta a temporada mais recente e, se vier vazia, as anteriores.
-  let lastError = null;
-  for (const sid of sids.slice(0, 3)) {
-    const matches = await apiJson(
-      '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt',
-      { headers: authHeaders(jwt) }
-    );
-
-    if (!matches.response.ok || !isApiSuccess(matches.body)) {
-      lastError = { response: matches.response, body: matches.body };
-      console.error('❌ Matches sid=' + sid + ' falhou:', matches.response?.status, matches.body);
-      continue;
-    }
-
-    const rows = matches.body?.data?.result;
-    if (Array.isArray(rows) && rows.length > 0) {
-      return { source: 'matches', data: parseMatchStats(rows), sid };
-    }
-
-    // Temporada sem partidas — tenta a próxima.
-    lastError = { response: matches.response, body: matches.body };
-  }
-
-  // Nenhuma temporada retornou partidas. Se /user/stats tinha algo, usa mesmo assim.
-  if (direct.response.ok && isApiSuccess(direct.body) && direct.body.data) {
-    return { source: 'stats', data: direct.body.data };
-  }
-
-  return {
-    source: 'error',
-    response: lastError?.response || direct.response,
-    body: lastError?.body || direct.body
-  };
-}
-
-function renderStats(data) {
-  const matches = Number(data.matches ?? data.tc ?? 0);
-  const wins = Number(data.wins ?? data.wc ?? 0);
-  const losses = Number(data.losses ?? Math.max(matches - wins, 0));
-  const winRate = matches > 0 ? ((wins / matches) * 100).toFixed(1) : '0.0';
-  // API /user/stats devolve `as` em escala x100; o fallback por partidas já normaliza em avgScore.
-  let avgScore = 'N/D';
-  if (data.avgScore != null && Number.isFinite(Number(data.avgScore))) {
-    avgScore = Number(data.avgScore).toFixed(1);
-  } else if (data.as != null && Number.isFinite(Number(data.as))) {
-    const raw = Number(data.as);
-    avgScore = (raw > 20 ? raw / 100 : raw).toFixed(1);
-  }
-  const mvps = data.mvps ?? data.mvpc ?? 0;
-  const kda = data.kills != null ? (data.kills + '/' + data.deaths + '/' + data.assists) : 'N/D';
-  const mostPlayed = data.mostPlayed
-    || data.mo?.hid_e?.n
-    || data.ms?.hid_e?.n
-    || null;
-  return '📊 <b>SUAS ESTATÍSTICAS</b>\n\n' +
-    '🎮 Partidas: <b>' + matches + '</b>\n' +
-    '🏆 Vitórias: <b>' + wins + '</b>\n' +
-    '💀 Derrotas: <b>' + losses + '</b>\n' +
-    '📈 Win rate: <b>' + winRate + '%</b>\n' +
-    '⚔️ K/D/A: <b>' + kda + '</b>\n' +
-    '⭐ Pontuação média: <b>' + avgScore + '</b>\n' +
-    '👑 MVPs: <b>' + mvps + '</b>\n' +
-    (mostPlayed ? '🎯 Herói mais usado: <b>' + escapeHtml(mostPlayed) + '</b>\n' : '') +
-    '\n<i>SEGA: cada partida escreve uma linha da história.</i>';
-}
 
 async function sendHelp(ctx) {
   if (isGroupChat(ctx)) {
