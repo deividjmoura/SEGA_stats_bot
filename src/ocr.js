@@ -56,16 +56,28 @@ export function parseKda(text, expectedNick = null) {
       .filter(({ line }) => normalizeNick(line).includes(target))
       .map(item => item.index);
 
-    for (const index of nickLineIndexes) {
-      const nearby = rawLines.slice(Math.max(0, index - 1), Math.min(rawLines.length, index + 3)).join(' ');
-      const nearbyMatch = nearby.match(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/);
-      if (nearbyMatch) {
-        return {
-          kills: Number(nearbyMatch[1]),
-          deaths: Number(nearbyMatch[2]),
-          assists: Number(nearbyMatch[3])
-        };
+    const nearbyMatches = [];
+    for (const nickIndex of nickLineIndexes) {
+      for (let lineIndex = 0; lineIndex < rawLines.length; lineIndex += 1) {
+        const match = rawLines[lineIndex].match(/\b(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\s*[/:|\\-]\s*(\d{1,2})\b/);
+        if (!match) continue;
+        nearbyMatches.push({
+          distance: Math.abs(lineIndex - nickIndex),
+          kills: Number(match[1]),
+          deaths: Number(match[2]),
+          assists: Number(match[3])
+        });
       }
+    }
+
+    if (nearbyMatches.length) {
+      nearbyMatches.sort((a, b) => a.distance - b.distance);
+      const best = nearbyMatches[0];
+      return {
+        kills: best.kills,
+        deaths: best.deaths,
+        assists: best.assists
+      };
     }
   }
 
