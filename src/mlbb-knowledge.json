@@ -513,7 +513,7 @@
       "aliases": [
         "aamon"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -528,7 +528,7 @@
       "aliases": [
         "akai"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -543,7 +543,7 @@
       "aliases": [
         "aldous"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -558,7 +558,7 @@
       "aliases": [
         "alice"
       ],
-      "role": "Tank/Mage",
+      "role": "Tanque/Mago",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -573,7 +573,7 @@
       "aliases": [
         "alpha"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -588,7 +588,7 @@
       "aliases": [
         "alucard"
       ],
-      "role": "Fighter/Assassin",
+      "role": "Lutador/Assassino",
       "lane": "Jungle/EXP",
       "counters": [],
       "items": [],
@@ -603,7 +603,7 @@
       "aliases": [
         "angela"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -618,7 +618,7 @@
       "aliases": [
         "argus"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -633,7 +633,7 @@
       "aliases": [
         "arlott"
       ],
-      "role": "Fighter/Assassin",
+      "role": "Lutador/Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -648,7 +648,7 @@
       "aliases": [
         "atlas"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -663,7 +663,7 @@
       "aliases": [
         "aulus"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -678,7 +678,7 @@
       "aliases": [
         "aurora"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -693,7 +693,7 @@
       "aliases": [
         "badang"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -708,7 +708,7 @@
       "aliases": [
         "balmond"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -723,7 +723,7 @@
       "aliases": [
         "bane"
       ],
-      "role": "Fighter/Mage",
+      "role": "Lutador/Mago",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -738,7 +738,7 @@
       "aliases": [
         "baxia"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -753,7 +753,7 @@
       "aliases": [
         "beatrix"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -768,7 +768,7 @@
       "aliases": [
         "belerick"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -783,7 +783,7 @@
       "aliases": [
         "benedetta"
       ],
-      "role": "Assassin/Fighter",
+      "role": "Assassino/Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -798,7 +798,7 @@
       "aliases": [
         "brody"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -813,7 +813,7 @@
       "aliases": [
         "bruno"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -828,7 +828,7 @@
       "aliases": [
         "carmilla"
       ],
-      "role": "Support/Tank",
+      "role": "Suporte/Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -843,7 +843,7 @@
       "aliases": [
         "cecilion"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -858,7 +858,7 @@
       "aliases": [
         "chang'e"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -873,7 +873,7 @@
       "aliases": [
         "chip"
       ],
-      "role": "Support/Tank",
+      "role": "Suporte/Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -888,7 +888,7 @@
       "aliases": [
         "chou"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -903,7 +903,7 @@
       "aliases": [
         "cici"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -918,7 +918,7 @@
       "aliases": [
         "clint"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -933,7 +933,7 @@
       "aliases": [
         "cyclops"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -948,7 +948,7 @@
       "aliases": [
         "diggie"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -963,7 +963,7 @@
       "aliases": [
         "dyrroth"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -978,7 +978,7 @@
       "aliases": [
         "edith"
       ],
-      "role": "Tank/Marksman",
+      "role": "Tanque/Atirador",
       "lane": "EXP/Gold",
       "counters": [],
       "items": [],
@@ -993,7 +993,7 @@
       "aliases": [
         "esmeralda"
       ],
-      "role": "Tank/Mage",
+      "role": "Tanque/Mago",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1008,7 +1008,7 @@
       "aliases": [
         "estes"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1023,7 +1023,7 @@
       "aliases": [
         "eudora"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1038,7 +1038,7 @@
       "aliases": [
         "faramis"
       ],
-      "role": "Support/Mage",
+      "role": "Suporte/Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1053,7 +1053,7 @@
       "aliases": [
         "floryn"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1068,7 +1068,7 @@
       "aliases": [
         "franco"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1083,7 +1083,7 @@
       "aliases": [
         "fredrinn"
       ],
-      "role": "Fighter/Tank",
+      "role": "Lutador/Tanque",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1098,7 +1098,7 @@
       "aliases": [
         "freya"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1113,7 +1113,7 @@
       "aliases": [
         "gatotkaca"
       ],
-      "role": "Tank/Fighter",
+      "role": "Tanque/Lutador",
       "lane": "Roam/EXP",
       "counters": [],
       "items": [],
@@ -1128,7 +1128,7 @@
       "aliases": [
         "gloo"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam/EXP",
       "counters": [],
       "items": [],
@@ -1143,7 +1143,7 @@
       "aliases": [
         "gord"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1158,7 +1158,7 @@
       "aliases": [
         "grock"
       ],
-      "role": "Tank/Fighter",
+      "role": "Tanque/Lutador",
       "lane": "Roam/EXP",
       "counters": [],
       "items": [],
@@ -1173,7 +1173,7 @@
       "aliases": [
         "guinevere"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1188,7 +1188,7 @@
       "aliases": [
         "hanzo"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1203,7 +1203,7 @@
       "aliases": [
         "harith"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1218,7 +1218,7 @@
       "aliases": [
         "helcurt"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1233,7 +1233,7 @@
       "aliases": [
         "hilda"
       ],
-      "role": "Fighter/Tank",
+      "role": "Lutador/Tanque",
       "lane": "EXP/Roam",
       "counters": [],
       "items": [],
@@ -1248,7 +1248,7 @@
       "aliases": [
         "hirara"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1263,7 +1263,7 @@
       "aliases": [
         "hylos"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1278,7 +1278,7 @@
       "aliases": [
         "irithel"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1293,7 +1293,7 @@
       "aliases": [
         "ixia"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1308,7 +1308,7 @@
       "aliases": [
         "jawhead"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "Roam/EXP",
       "counters": [],
       "items": [],
@@ -1323,7 +1323,7 @@
       "aliases": [
         "johnson"
       ],
-      "role": "Tank/Support",
+      "role": "Tanque/Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1338,7 +1338,7 @@
       "aliases": [
         "julian"
       ],
-      "role": "Assassin/Fighter",
+      "role": "Assassino/Lutador",
       "lane": "Jungle/EXP",
       "counters": [],
       "items": [],
@@ -1353,7 +1353,7 @@
       "aliases": [
         "kadita"
       ],
-      "role": "Mage/Assassin",
+      "role": "Mago/Assassino",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1368,7 +1368,7 @@
       "aliases": [
         "kagura"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1383,7 +1383,7 @@
       "aliases": [
         "kaja"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1398,7 +1398,7 @@
       "aliases": [
         "kalea"
       ],
-      "role": "Support/Fighter",
+      "role": "Suporte/Lutador",
       "lane": "Roam/EXP",
       "counters": [],
       "items": [],
@@ -1413,7 +1413,7 @@
       "aliases": [
         "karina"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1428,7 +1428,7 @@
       "aliases": [
         "karrie"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1443,7 +1443,7 @@
       "aliases": [
         "khaleed"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1458,7 +1458,7 @@
       "aliases": [
         "kimmy"
       ],
-      "role": "Marksman/Mage",
+      "role": "Atirador/Mago",
       "lane": "Gold/Mid",
       "counters": [],
       "items": [],
@@ -1473,7 +1473,7 @@
       "aliases": [
         "lancelot"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1488,7 +1488,7 @@
       "aliases": [
         "lapu-lapu"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1503,7 +1503,7 @@
       "aliases": [
         "leomord"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1518,7 +1518,7 @@
       "aliases": [
         "lesley"
       ],
-      "role": "Marksman/Assassin",
+      "role": "Atirador/Assassino",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1533,7 +1533,7 @@
       "aliases": [
         "lukas"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1548,7 +1548,7 @@
       "aliases": [
         "lunox"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1563,7 +1563,7 @@
       "aliases": [
         "luo yi"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1578,7 +1578,7 @@
       "aliases": [
         "lylia"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1593,7 +1593,7 @@
       "aliases": [
         "marcel"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1608,7 +1608,7 @@
       "aliases": [
         "martis"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1623,7 +1623,7 @@
       "aliases": [
         "masha"
       ],
-      "role": "Fighter/Tank",
+      "role": "Lutador/Tanque",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1638,7 +1638,7 @@
       "aliases": [
         "mathilda"
       ],
-      "role": "Support/Assassin",
+      "role": "Suporte/Assassino",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1653,7 +1653,7 @@
       "aliases": [
         "melissa"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1668,7 +1668,7 @@
       "aliases": [
         "minsitthar"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1683,7 +1683,7 @@
       "aliases": [
         "moskov"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1698,7 +1698,7 @@
       "aliases": [
         "nana"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1713,7 +1713,7 @@
       "aliases": [
         "natan"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1728,7 +1728,7 @@
       "aliases": [
         "nolan"
       ],
-      "role": "Assassin",
+      "role": "Assassino",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -1743,7 +1743,7 @@
       "aliases": [
         "novaria"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1758,7 +1758,7 @@
       "aliases": [
         "obsidia"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1773,7 +1773,7 @@
       "aliases": [
         "odette"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1788,7 +1788,7 @@
       "aliases": [
         "paquito"
       ],
-      "role": "Fighter/Assassin",
+      "role": "Lutador/Assassino",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1803,7 +1803,7 @@
       "aliases": [
         "pharsa"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1818,7 +1818,7 @@
       "aliases": [
         "phoveus"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1833,7 +1833,7 @@
       "aliases": [
         "popol e kupa"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -1848,7 +1848,7 @@
       "aliases": [
         "rafaela"
       ],
-      "role": "Support",
+      "role": "Suporte",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1863,7 +1863,7 @@
       "aliases": [
         "ruby"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP/Roam",
       "counters": [],
       "items": [],
@@ -1878,7 +1878,7 @@
       "aliases": [
         "selena"
       ],
-      "role": "Assassin/Mage",
+      "role": "Assassino/Mago",
       "lane": "Jungle/Mid",
       "counters": [],
       "items": [],
@@ -1893,7 +1893,7 @@
       "aliases": [
         "sora"
       ],
-      "role": "Fighter/Assassin",
+      "role": "Lutador/Assassino",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1908,7 +1908,7 @@
       "aliases": [
         "suyou"
       ],
-      "role": "Assassin/Fighter",
+      "role": "Assassino/Lutador",
       "lane": "Jungle/EXP",
       "counters": [],
       "items": [],
@@ -1923,7 +1923,7 @@
       "aliases": [
         "terizla"
       ],
-      "role": "Fighter/Tank",
+      "role": "Lutador/Tanque",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1938,7 +1938,7 @@
       "aliases": [
         "thamuz"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1953,7 +1953,7 @@
       "aliases": [
         "tigreal"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "Roam",
       "counters": [],
       "items": [],
@@ -1968,7 +1968,7 @@
       "aliases": [
         "uranus"
       ],
-      "role": "Tank",
+      "role": "Tanque",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -1983,7 +1983,7 @@
       "aliases": [
         "vale"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -1998,7 +1998,7 @@
       "aliases": [
         "valentina"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2013,7 +2013,7 @@
       "aliases": [
         "valir"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2028,7 +2028,7 @@
       "aliases": [
         "vexana"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2043,7 +2043,7 @@
       "aliases": [
         "wanwan"
       ],
-      "role": "Marksman",
+      "role": "Atirador",
       "lane": "Gold",
       "counters": [],
       "items": [],
@@ -2058,7 +2058,7 @@
       "aliases": [
         "x.borg"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -2073,7 +2073,7 @@
       "aliases": [
         "xavier"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2088,7 +2088,7 @@
       "aliases": [
         "yi sun-shin"
       ],
-      "role": "Assassin/Marksman",
+      "role": "Assassino/Atirador",
       "lane": "Jungle",
       "counters": [],
       "items": [],
@@ -2103,7 +2103,7 @@
       "aliases": [
         "yin"
       ],
-      "role": "Fighter/Assassin",
+      "role": "Lutador/Assassino",
       "lane": "EXP/Jungle",
       "counters": [],
       "items": [],
@@ -2118,7 +2118,7 @@
       "aliases": [
         "yu zhong"
       ],
-      "role": "Fighter",
+      "role": "Lutador",
       "lane": "EXP",
       "counters": [],
       "items": [],
@@ -2133,7 +2133,7 @@
       "aliases": [
         "yve"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2148,7 +2148,7 @@
       "aliases": [
         "zetian"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2163,7 +2163,7 @@
       "aliases": [
         "zhask"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2178,7 +2178,7 @@
       "aliases": [
         "zhuxin"
       ],
-      "role": "Mage",
+      "role": "Mago",
       "lane": "Mid",
       "counters": [],
       "items": [],
@@ -2193,7 +2193,7 @@
       "aliases": [
         "zilong"
       ],
-      "role": "Fighter/Assassin",
+      "role": "Lutador/Assassino",
       "lane": "EXP",
       "counters": [],
       "items": [],
