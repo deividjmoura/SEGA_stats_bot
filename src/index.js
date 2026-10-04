@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
 import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
-import { groupBanterMiddleware } from './groupBanters.js';
+import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
 
@@ -33,6 +33,35 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function profileName(data) {
+  const value = data?.name || data?.nickname || data?.nick || data?.player_name || null;
+  const name = String(value || '').trim();
+  return name || null;
+}
+
+async function refreshPlayerName(telegramId) {
+  const player = authenticatedPlayers.get(Number(telegramId));
+  if (!player?.jwt) return null;
+  if (player.nameVerified && player.name) return player.name;
+
+  try {
+    const info = await apiJson('/user/info?lang=pt', { headers: authHeaders(player.jwt) });
+    if (info.response.ok && isApiSuccess(info.body)) {
+      const name = profileName(info.body?.data);
+      if (name) {
+        player.name = name;
+        player.nameVerified = true;
+        await saveSessions();
+        return name;
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Não consegui atualizar o nick do jogador:', error?.message || error);
+  }
+
+  return player.name || null;
 }
 
 function getReplyIdentity(ctx) {
@@ -149,12 +178,19 @@ async function syncMemberTag(ctx, player) {
 // a introdução conforme o assunto para a conversa não parecer automatizada.
 bot.use(async (ctx, next) => {
   const player = authenticatedPlayers.get(Number(ctx.from?.id));
-  if (player) await syncMemberTag(ctx, player);
+  if (player) {
+    await refreshPlayerName(ctx.from?.id);
+    await syncMemberTag(ctx, player);
+  }
 
   const originalReply = ctx.reply.bind(ctx);
 
-  ctx.reply = (text, extra = {}) => {
+  ctx.reply = async (text, extra = {}) => {
     const options = { ...extra };
+
+    // Uma resposta do bot também conta como interação: cancela qualquer timer
+    // de “ninguém respondeu” armado pela mensagem que originou esta resposta.
+    markBanterHandled(ctx);
 
     if (typeof text === 'string') {
       const intro = getNaturalReplyIntro(ctx, text);
@@ -209,7 +245,7 @@ async function restoreRegistrations() {
 async function resolvePlayerName(telegramId) {
   const player = authenticatedPlayers.get(Number(telegramId));
   if (!player?.jwt) return null;
-  return player.name || null;
+  return (await refreshPlayerName(telegramId)) || player.name || null;
 }
 
 async function apiFetch(path, options = {}) {
@@ -414,6 +450,7 @@ async function saveSessions() {
       roleId: player.roleId,
       zoneId: player.zoneId,
       name: player.name || null,
+      nameVerified: Boolean(player.nameVerified),
       savedAt: new Date().toISOString()
     };
   }
@@ -429,7 +466,9 @@ async function restoreSessions() {
         jwt: decrypt(player.jwt),
         roleId: player.roleId,
         zoneId: player.zoneId,
-        name: player.name || null
+        name: player.name || null,
+        // Sessões antigas serão atualizadas pela API na primeira interação.
+        nameVerified: Boolean(player.nameVerified)
       });
     }
     console.log(`🔐 Sessões restauradas: ${authenticatedPlayers.size}`);
@@ -891,17 +930,28 @@ bot.on('text', async (ctx, next) => {
         return;
       }
 
-      authenticatedPlayers.set(ctx.from.id, { jwt, roleId, zoneId, name: infoBody.data?.name || 'Jogador' });
+      const verifiedName = profileName(infoBody.data) || 'Jogador';
+      authenticatedPlayers.set(ctx.from.id, {
+        jwt,
+        roleId,
+        zoneId,
+        name: verifiedName,
+        nameVerified: true
+      });
       await saveSessions();
       await deleteRegistration(ctx.from.id);
 
       await ctx.reply(
         '✅ <b>CONTA VERIFICADA!</b>\n\n' +
-        `👤 <b>${infoBody.data?.name ?? 'Jogador'}</b>\n` +
+        `🎮 Nick confirmado: <b>${escapeHtml(verifiedName)}</b>\n` +
         `🆔 ID: <code>${roleId}</code>\n` +
         `🌐 Zone: <code>${zoneId}</code>\n\n` +
-        '📊 Seu jogador foi vinculado ao <b>SEGA Stats</b>. Agora podemos consultar seus dados para gerar suas estatísticas e participar dos rankings do clã.',
-        { parse_mode: 'HTML' }
+        '📊 Seu jogador foi vinculado ao <b>SEGA Stats</b>.\n\n' +
+        '📸 <b>Próximo passo recomendado:</b> envie alguns prints para começar seu histórico. ' +
+        'Toque em <b>📸 Enviar print</b> no teclado abaixo e depois anexe a imagem.\n\n' +
+        '🥇 Prefira a <b>tela final da partida</b> com nick, K/D/A e Battle ID. ' +
+        'Também aceito prints do perfil e da tela de Batalhas.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
       );
     } catch (error) {
       console.error('❌ Erro ao autenticar jogador:', error);
@@ -937,7 +987,8 @@ async function sendRanking(ctx) {
     players.map(async ([telegramId, player]) => {
       const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
       if (!info.response.ok || !isApiSuccess(info.body)) return null;
-      player.name = info.body.data?.name || player.name || 'Jogador';
+      player.name = profileName(info.body.data) || player.name || 'Jogador';
+      player.nameVerified = Boolean(profileName(info.body.data)) || player.nameVerified;
 
       const stats = await fetchPlayerStats(player.jwt);
       if (stats.source === 'error') return null;
@@ -1030,7 +1081,8 @@ async function sendStats(ctx) {
       return;
     }
 
-    player.name = infoBody.data?.name || player.name || 'Jogador';
+    player.name = profileName(infoBody.data) || player.name || 'Jogador';
+    player.nameVerified = Boolean(profileName(infoBody.data)) || player.nameVerified;
     await saveSessions();
 
     const statsResult = await fetchPlayerStats(player.jwt);
@@ -1107,9 +1159,11 @@ bot.on('photo', async (ctx, next) => {
 
   try {
     const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
-    const currentName = info.body?.data?.name || player.name || 'Jogador';
+    const liveName = profileName(info.body?.data);
+    const currentName = liveName || player.name || 'Jogador';
     if (info.response.ok && isApiSuccess(info.body)) {
       player.name = currentName;
+      player.nameVerified = Boolean(liveName) || player.nameVerified;
       await saveSessions();
     }
 

@@ -140,6 +140,31 @@ function isIgnoredText(ctx) {
   return false;
 }
 
+function isCallForPlayers(text) {
+  const source = String(text || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9@]+/g, ' ')
+    .trim();
+
+  // Perguntas dirigidas ao próprio bot nunca entram no monitor de ausência.
+  if (/@sega(?:_?stats)?(?:_?bot)?\b/i.test(String(text || ''))) return false;
+
+  return [
+    /\bbora\b/,
+    /\bpartiu\b/,
+    /\bduo\b/,
+    /\bquem (?:vai|vem|joga|anima)\b/,
+    /\balguem (?:vai|vem|joga|anima|on)\b/,
+    /\bvamos jogar\b/,
+    /\bquer jogar\b/,
+    /\bquer (?:duo|ranked)\b/,
+    /\bfecha(?:r)? (?:duo|time|squad)\b/,
+    /\bfalta (?:um|1|alguem)\b/
+  ].some(pattern => pattern.test(source));
+}
+
 function clearPending(chatId) {
   const pending = pendingByChat.get(chatId);
   if (pending?.timer) clearTimeout(pending.timer);
@@ -150,7 +175,12 @@ async function scheduleBanter(ctx, resolvePlayerName) {
   if (!isGroup(ctx) || isIgnoredText(ctx)) return;
 
   const chatId = ctx.chat.id;
+
+  // Qualquer mensagem humana posterior conta como resposta/conversa e encerra
+  // a espera anterior. Só abrimos uma nova espera se a própria mensagem for
+  // realmente um convite para jogar.
   clearPending(chatId);
+  if (!isCallForPlayers(ctx.message?.text)) return;
 
   const lastBanter = lastBanterByChat.get(chatId) || 0;
   if (Date.now() - lastBanter < COOLDOWN_MS) return;
@@ -186,6 +216,21 @@ async function scheduleBanter(ctx, resolvePlayerName) {
   }, WAIT_MS);
 
   pendingByChat.set(chatId, { timer, messageId, userId });
+}
+
+export function markBanterHandled(ctx) {
+  if (!isGroup(ctx) || !ctx.chat?.id) return;
+
+  const pending = pendingByChat.get(ctx.chat.id);
+  if (!pending) return;
+
+  // Se o bot respondeu à mesma mensagem que armou o timer, consideramos a
+  // conversa atendida e a zoeira de ausência não deve disparar.
+  const sourceMessageId = ctx.message?.message_id;
+  const sameMessage = !sourceMessageId || pending.messageId === sourceMessageId;
+  const sameUser = !ctx.from?.id || pending.userId === ctx.from.id;
+
+  if (sameMessage && sameUser) clearPending(ctx.chat.id);
 }
 
 export function groupBanterMiddleware(resolvePlayerName) {

@@ -199,6 +199,7 @@ function suggestHero(text) {
   return candidates[0]?.name || null;
 }
 
+const RONE_API = 'https://arena.rone.dev/api';
 const LIVE_HEROES_URL = 'https://arda.ozyurt.tr/mlbb/data/heroes.min.json';
 const LIVE_MATRIX_URL = 'https://arda.ozyurt.tr/mlbb/data/matrix.json';
 let liveDataCache = null;
@@ -282,14 +283,59 @@ function canonicalHeroName(name) {
 
 function intentOf(text) {
   const source = compact(text);
-  if (/(counter|couter|countera|counteram|counterado|counterada|ganha|vence|bom contra|forte contra)/.test(source)) return 'counter';
-  if (/(item|itens|equipamento|equipamentos).*(contra|counter)/.test(source) ||
-      /(contra|counter).*(item|itens|equipamento|equipamentos)/.test(source)) return 'items';
-  if (/(como jogar|como luto|como enfrentar|como jogar contra|dica|dicas).*(contra|vs|versus)/.test(source)) return 'tips';
+  const against = '(?:contra|conta|cotra|conra|counter|couter)';
+
+  // Aceita erros de digitação comuns sem perder a intenção da pergunta.
+  if (new RegExp('(?:counter|couter|countera|counteram|counterado|counterada|ganha|vence|bom\\s+' + against + '|forte\\s+' + against + ')').test(source)) return 'counter';
+  if (new RegExp('(?:item|itens|equipamento|equipamentos).*' + against + '|' + against + '.*(?:item|itens|equipamento|equipamentos)').test(source)) return 'items';
+  if (new RegExp('(?:como jogar|como luto|como enfrentar|dica|dicas).*' + against + '|como jogar\\s+' + against).test(source)) return 'tips';
   if (/(build|montar|montagem).*(de|do|da)/.test(source)) return 'build';
   if (/(funcao|lane|rota|papel|role|quem e|quem eh|qual heroi)/.test(source)) return 'hero';
-  if (/(counter|couter|contra|build|item|equipamento|heroi)/.test(source)) return 'unknown_mlbb';
+  if (new RegExp('(?:counter|couter|' + against + '|build|item|equipamento|heroi)').test(source)) return 'unknown_mlbb';
   return 'unknown';
+}
+
+const liveProfileCache = new Map();
+
+async function getLiveHeroProfile(heroName) {
+  const key = compact(heroName);
+  const cached = liveProfileCache.get(key);
+  if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.value;
+
+  try {
+    const response = await fetch(
+      RONE_API + '/heroes/' + encodeURIComponent(heroName) + '?lang=pt&size=1'
+    );
+    if (!response.ok) return null;
+
+    const body = await response.json();
+    const record = body?.data?.records?.[0];
+    const data = record?.data?.hero?.data || record?.data || {};
+    const sort = data.sortid;
+    const role = Array.isArray(sort)
+      ? sort.map(item => item?.sort_title).filter(Boolean).join('/')
+      : sort?.sort_title || null;
+
+    const roads = Array.isArray(data.roadsort)
+      ? data.roadsort.map(item => item?.sort_title).filter(Boolean)
+      : [];
+    const lane =
+      data?.story?.road_sort_title ||
+      data?.road_sort_title ||
+      roads[0] ||
+      null;
+
+    const value = {
+      name: data.name || heroName,
+      role,
+      lane
+    };
+    liveProfileCache.set(key, { at: Date.now(), value });
+    return value;
+  } catch (error) {
+    console.warn('⚠️ Perfil live do herói indisponível:', error?.message || error);
+    return null;
+  }
 }
 
 export function listKnowledgeExamples() {
@@ -363,7 +409,19 @@ export async function answerMlbbQuestion(text) {
   }
 
   if (intent === 'hero') {
-    return '🎮 <b>' + title + '</b>\n\n🎭 Função: <b>' + hero.role + '</b>\n🗺️ Rota comum: <b>' + hero.lane + '</b>\n⚔️ Counters conhecidos: <b>' + hero.counters.slice(0, 3).map(canonicalHeroName).join(', ') + '</b>';
+    const liveProfile = (!hero.role || !hero.lane)
+      ? await getLiveHeroProfile(hero.pt)
+      : null;
+    const role = hero.role || liveProfile?.role || 'ainda não disponível';
+    const lane = hero.lane || liveProfile?.lane || 'ainda não disponível';
+    const counters = Array.isArray(hero.counters) && hero.counters.length
+      ? hero.counters.slice(0, 3).map(canonicalHeroName).join(', ')
+      : 'pergunte “quem countera ' + hero.pt + '?” para consultar o matchup atualizado';
+
+    return '🎮 <b>' + title + '</b>\n\n' +
+      '🎭 Função: <b>' + role + '</b>\n' +
+      '🗺️ Rota comum: <b>' + lane + '</b>\n' +
+      '⚔️ Counters: <b>' + counters + '</b>';
   }
 
   if (intent === 'build') {
