@@ -35,18 +35,75 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function getReplyMention(ctx) {
+function getReplyIdentity(ctx) {
   const telegramId = ctx.from?.id;
   if (!telegramId) return null;
 
   const player = authenticatedPlayers.get(Number(telegramId));
+  const registered = Boolean(player?.name);
   const name =
     player?.name ||
     ctx.from?.first_name ||
     ctx.from?.username ||
     'Jogador';
 
-  return '<a href="tg://user?id=' + telegramId + '">' + escapeHtml(name) + '</a>';
+  return {
+    registered,
+    name,
+    mention: '<a href="tg://user?id=' + telegramId + '">' + escapeHtml(name) + '</a>'
+  };
+}
+
+function getNaturalReplyIntro(ctx, text) {
+  const identity = getReplyIdentity(ctx);
+  if (!identity) return '';
+
+  const body = String(text || '');
+  const who = identity.registered
+    ? 'jogador ' + identity.mention
+    : identity.mention;
+
+  if (/COUNTERS DE/i.test(body)) {
+    return '🎮 Então, ' + who + ', geralmente são esses:\n\n';
+  }
+
+  if (/ITENS CONTRA/i.test(body)) {
+    return '🛡️ ' + who + ', contra esse herói eu olharia primeiro para estes itens:\n\n';
+  }
+
+  if (/COMO JOGAR CONTRA/i.test(body)) {
+    return '🧠 ' + who + ', o caminho mais seguro costuma ser este:\n\n';
+  }
+
+  if (/BUILD \/|BUILD DE|BUILD DO|BUILD DA/i.test(body)) {
+    return '🧩 ' + who + ', sobre a build, olha só:\n\n';
+  }
+
+  if (/RANKING SEGA|Calculando o ranking/i.test(body)) {
+    return '🏆 ' + who + ', olha como está essa parte do ranking:\n\n';
+  }
+
+  if (/SUAS ESTATÍSTICAS|Buscando suas estatísticas|DADOS COLETADOS|COLETA DE PARTIDAS/i.test(body)) {
+    return '📊 ' + who + ', aqui estão seus dados:\n\n';
+  }
+
+  if (/CONTA VERIFICADA|jogador foi vinculado/i.test(body)) {
+    return '✅ ' + who + ', cadastro confirmado. Agora sim:\n\n';
+  }
+
+  if (/^(?:❌|⚠️|🔐|🚫)/u.test(body.trim())) {
+    return '⚠️ ' + who + ', tive um imprevisto por aqui:\n\n';
+  }
+
+  if (/PRINT|screenshot|foto/i.test(body)) {
+    return '📸 ' + who + ', sobre esse print:\n\n';
+  }
+
+  if (/Não identifiquei esse herói|ainda não entendeu essa pergunta/i.test(body)) {
+    return '🤔 ' + who + ', não consegui fechar essa resposta ainda. Olha só:\n\n';
+  }
+
+  return '🎮 ' + who + ', olha só:\n\n';
 }
 
 const memberTagCache = new Map();
@@ -87,9 +144,9 @@ async function syncMemberTag(ctx, player) {
   }
 }
 
-// Toda resposta do bot menciona quem acionou a interação.
-// Após o cadastro, o texto da menção usa o nick do Mobile Legends.
-// Antes do cadastro, usa o nome do Telegram como fallback.
+// Toda resposta textual do bot chama quem acionou a interação pelo nome.
+// Depois do cadastro, priorizamos sempre o nick do Mobile Legends e variamos
+// a introdução conforme o assunto para a conversa não parecer automatizada.
 bot.use(async (ctx, next) => {
   const player = authenticatedPlayers.get(Number(ctx.from?.id));
   if (player) await syncMemberTag(ctx, player);
@@ -97,14 +154,14 @@ bot.use(async (ctx, next) => {
   const originalReply = ctx.reply.bind(ctx);
 
   ctx.reply = (text, extra = {}) => {
-    const mention = getReplyMention(ctx);
     const options = { ...extra };
 
-    if (mention && typeof text === 'string') {
-      text = mention + ' · ' + text;
-      // A menção usa tg://user, então precisamos de HTML quando
-      // a chamada original ainda não definiu outro modo de formatação.
-      if (!options.parse_mode) options.parse_mode = 'HTML';
+    if (typeof text === 'string') {
+      const intro = getNaturalReplyIntro(ctx, text);
+      if (intro) {
+        text = intro + text;
+        if (!options.parse_mode) options.parse_mode = 'HTML';
+      }
     }
 
     return originalReply(text, options);
