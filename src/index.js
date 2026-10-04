@@ -5,11 +5,13 @@ import crypto from 'node:crypto';
 import { dirname } from 'node:path';
 import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
 import { groupBanterMiddleware } from './groupBanters.js';
-import { answerMlbbQuestion } from './mlbbKnowledge.js';
+import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
+import { logQuestion, getQuestionReport } from './questionLog.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
 const SESSION_FILE = process.env.SESSION_FILE || ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/sessions.json');
+const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
 const API_TIMEOUT_MS = 12000;
 const SESSION_KEY = crypto.createHash('sha256').update(token || '').digest();
 
@@ -950,6 +952,49 @@ bot.on('photo', async (ctx, next) => {
   }
 });
 
+async function isKnowledgeAdmin(ctx) {
+  if (KNOWLEDGE_ADMIN_IDS.has(String(ctx.from?.id || ''))) return true;
+  if (!isGroupChat(ctx)) return false;
+  try {
+    const member = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
+    return member.status === 'creator' || member.status === 'administrator';
+  } catch {
+    return false;
+  }
+}
+
+bot.command('conhecimento', async (ctx) => {
+  const summary = knowledgeSummary();
+  await ctx.reply(
+    '🧠 <b>CONHECIMENTO SEGA</b>\n\n' +
+    '🎮 Heróis cadastrados: <b>' + summary.heroes + '</b>\n' +
+    '🛡️ Itens cadastrados: <b>' + summary.items + '</b>\n' +
+    '📦 Versão da base: <b>' + summary.version + '</b>\n\n' +
+    'Posso entender perguntas sobre counters, itens, dicas, função e rota.\n\n' +
+    listKnowledgeExamples().map(item => '• ' + item).join('\n'),
+    { parse_mode: 'HTML' }
+  );
+});
+
+bot.command('perguntas', async (ctx) => {
+  if (!(await isKnowledgeAdmin(ctx))) {
+    await ctx.reply('🔐 Esse relatório é reservado aos administradores do SEGA.');
+    return;
+  }
+  const report = await getQuestionReport(15);
+  const top = report.top.length
+    ? report.top.map(item => item.rank + '. <code>' + item.question.replace(/[<>]/g, '') + '</code> — ' + item.count + 'x').join('\n')
+    : 'Ainda não há perguntas registradas.';
+  await ctx.reply(
+    '📚 <b>PERGUNTAS DO SEGA</b>\n\n' +
+    '📝 Total: <b>' + report.total + '</b>\n' +
+    '✅ Respondidas: <b>' + report.answered + '</b>\n' +
+    '❓ Não respondidas: <b>' + report.unanswered + '</b>\n\n' +
+    '<b>Mais frequentes:</b>\n' + top,
+    { parse_mode: 'HTML' }
+  );
+});
+
 bot.command('ajuda', sendHelp);
 bot.command('tutorial', sendHelp);
 
@@ -967,8 +1012,30 @@ bot.action('stats', async (ctx) => {
 
 bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await sendHelp(ctx); });
 bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
-  const answer = answerMlbbQuestion(ctx.message?.text || '');
-  if (answer) await ctx.reply(answer, { parse_mode: 'HTML' });
+  const question = ctx.message?.text || '';
+  const answer = answerMlbbQuestion(question);
+  try {
+    await logQuestion({
+      telegramId: ctx.from?.id || null,
+      chatId: ctx.chat?.id || null,
+      question: question.slice(0, 500),
+      normalizedQuestion: question.toLowerCase().replace(/@sega(?:[ _]?stats)?(?:[ _]?bot)?/i, '').replace(/\s+/g, ' ').trim().slice(0, 300),
+      answered: Boolean(answer)
+    });
+  } catch (error) {
+    console.error('⚠️ Não foi possível registrar pergunta:', error);
+  }
+  if (answer) {
+    await ctx.reply(answer, { parse_mode: 'HTML' });
+  } else {
+    await ctx.reply(
+      '🧠 <b>SEGA Stats ainda não entendeu essa pergunta.</b>\n\n' +
+      'Tente uma destas formas:\n' +
+      listKnowledgeExamples().map(item => '• ' + item).join('\n') +
+      '\n\n📌 A pergunta foi registrada para podermos ampliar o conhecimento do bot.',
+      { parse_mode: 'HTML' }
+    );
+  }
 });
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
