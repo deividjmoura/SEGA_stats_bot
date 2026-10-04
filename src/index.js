@@ -5,6 +5,7 @@ import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummarie
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { nickMatches } from './ocr.js';
+import { escapeHtml, renderRanking, renderPlayerStats } from './render.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
 import { readJson, writeJson, quarantineJson } from './storage/jsonStore.js';
 import {
@@ -50,14 +51,6 @@ const bot = new Telegraf(token);
 
 const registration = new Map();
 const authenticatedPlayers = new Map();
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function profileName(data) {
   const value = data?.name || data?.nickname || data?.nick || data?.player_name || null;
@@ -789,18 +782,8 @@ async function sendRanking(ctx) {
     return;
   }
 
-  const lines = ranking.slice(0, 10).map((player, index) => {
-    const medal = ['🥇', '🥈', '🥉'][index] || '🏅';
-    return medal + ' <b>' + (index + 1) + '. ' + escapeHtml(player.name) + '</b>\n' +
-      '   📈 ' + player.winRate.toFixed(1) + '% WR  •  🏆 ' +
-      player.wins + '/' + player.verifiedMatches +
-      (player.averageScore > 0 ? '  •  ⭐ ' + player.averageScore.toFixed(1) : '');
-  });
-
   await replyAs(ctx, 'ranking', 
-    '🏆 <b>RANKING SEGA</b>\n\n' +
-    lines.join('\n\n') +
-    '\n\n<i>Ranking calculado exclusivamente com partidas verificadas a partir dos prints salvos.</i>',
+    renderRanking(ranking),
     { parse_mode: 'HTML', ...mainKeyboard() }
   );
 }
@@ -833,19 +816,8 @@ async function sendStats(ctx) {
     return;
   }
 
-  const kda = summary.kills + '/' + summary.deaths + '/' + summary.assists;
-  const name = player?.name ? ' • ' + escapeHtml(player.name) : '';
-
   await replyAs(ctx, 'stats', 
-    '📊 <b>SUAS ESTATÍSTICAS' + name + '</b>\n\n' +
-    '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
-    '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
-    '💀 Derrotas: <b>' + summary.losses + '</b>\n' +
-    '📈 Win rate: <b>' + summary.winRate.toFixed(1) + '%</b>\n' +
-    '⚔️ K/D/A somado: <b>' + kda + '</b>\n' +
-    (summary.averageScore > 0 ? '⭐ Pontuação média: <b>' + summary.averageScore.toFixed(1) + '</b>\n' : '') +
-    (summary.mvps > 0 ? '👑 MVPs detectados: <b>' + summary.mvps + '</b>\n' : '') +
-    '\n<i>Dados calculados somente a partir dos prints verificados e armazenados pelo bot.</i>',
+    renderPlayerStats(summary, player?.name),
     { parse_mode: 'HTML', ...mainKeyboard() }
   );
 }
