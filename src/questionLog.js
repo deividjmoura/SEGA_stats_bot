@@ -1,12 +1,18 @@
 import { promises as fs } from 'node:fs';
-import { readJson, updateJson } from './storage/jsonStore.js';
+import { readJson, updateJson, quarantineJson } from './storage/jsonStore.js';
 
 export const QUESTIONS_FILE = process.env.QUESTIONS_FILE ||
   ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/questions.json');
 
 async function readRows() {
-  const rows = await readJson(QUESTIONS_FILE, []);
-  return Array.isArray(rows) ? rows : [];
+  try {
+    const rows = await readJson(QUESTIONS_FILE, []);
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    console.error('❌ questions.json corrompido; preservando cópia:', error);
+    await quarantineJson(QUESTIONS_FILE).catch(() => {});
+    return [];
+  }
 }
 
 export async function logQuestion(entry) {
