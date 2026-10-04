@@ -1,4 +1,3 @@
-import { promises as fs } from 'node:fs';
 import { readJson, updateJson, quarantineJson } from './storage/jsonStore.js';
 
 export const QUESTIONS_FILE = process.env.QUESTIONS_FILE ||
