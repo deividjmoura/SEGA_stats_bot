@@ -3,6 +3,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { promises as fs } from 'node:fs';
 import crypto from 'node:crypto';
 import { dirname } from 'node:path';
+import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots } from './screenshotStats.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -96,7 +97,8 @@ bot.telegram.setMyCommands([
   { command: 'ajuda', description: 'Mostrar ajuda' },
   { command: 'cancelar', description: 'Cancelar cadastro' },
   { command: 'lore', description: 'Crônicas e heróis' },
-  { command: 'menu', description: 'Abrir menu principal' }
+  { command: 'menu', description: 'Abrir menu principal' },
+  { command: 'prints', description: 'Ver dados coletados por screenshots' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 
 const startMessage = `🎮 <b>SEGA STATS</b>
@@ -108,6 +110,7 @@ Bem-vindo ao bot oficial do clã <b>SEGA</b>.
 Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua batalha. Aqui você vai poder:
 
 🏆 Consultar o ranking do clã
+📸 Enviar prints das partidas para guardar os dados
 ⚔️ Ver suas partidas e desempenho
 🛡️ Conferir sua rota mais jogada
 📊 Acompanhar seus pontos e estatísticas
@@ -129,7 +132,8 @@ const helpMessage = `📚 <b>COMANDOS DO SEGA STATS</b>
 ❓ <code>/ajuda</code> — mostrar esta ajuda
 👥 <code>/clan</code> — painel do clã SEGA
 📜 <code>/lore</code> — crônicas e heróis
-❌ <code>/cancelar</code> — cancelar cadastro`;
+❌ <code>/cancelar</code> — cancelar cadastro
+📸 <code>/prints</code> — ver o que o bot já coletou por screenshots`;
 
 
 function parseMatchStats(matches) {
@@ -245,6 +249,7 @@ function mainKeyboard() {
   return Markup.keyboard([
     ['📝 Cadastrar jogador', '📊 Minhas stats'],
     ['🏆 Ranking', '👥 Clã SEGA'],
+    ['📸 Enviar print', '📋 Dados coletados'],
     ['❓ Ajuda', '📜 Lore']
   ]).resize().persistent();
 }
@@ -558,6 +563,80 @@ async function sendStats(ctx) {
 
 bot.command('stats', sendStats);
 
+
+bot.command('prints', async (ctx) => {
+  const player = authenticatedPlayers.get(ctx.from.id);
+  if (!player?.jwt) {
+    await ctx.reply('📸 <b>COLETA DE PARTIDAS</b>\\n\\nVocê ainda não tem um jogador vinculado. Use /cadastrar primeiro.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  const records = await getPlayerScreenshots(ctx.from.id);
+  const summary = summarizePlayerScreenshots(records);
+
+  await ctx.reply(
+    '📸 <b>DADOS COLETADOS</b>\\n\\n' +
+    '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\\n' +
+    '⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\\n' +
+    '🏆 Vitórias: <b>' + summary.wins + '</b>\\n' +
+    '💀 Derrotas: <b>' + summary.losses + '</b>\\n' +
+    '⚔️ K/D/A somado: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>\\n\\n' +
+    '<i>Os prints e os dados extraídos ficam guardados no volume do bot.</i>',
+    { parse_mode: 'HTML', ...mainKeyboard() }
+  );
+});
+
+bot.on('photo', async (ctx, next) => {
+  const player = authenticatedPlayers.get(ctx.from.id);
+
+  if (!player?.jwt) {
+    await ctx.reply(
+      '📸 <b>PRINT DE PARTIDA</b>\\n\\n' +
+      'Primeiro vincule seu jogador com /cadastrar. Depois pode mandar os prints aqui que eu vou guardar e extrair os dados.',
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
+  await ctx.reply('📸 <b>Print recebido.</b>\\n\\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
+
+  try {
+    const record = await processScreenshot(ctx, player);
+    const parsed = record.parsed || {};
+
+    let detail;
+    if (parsed.kind === 'match_result') {
+      detail =
+        '⚔️ <b>Partida detectada!</b>\\n' +
+        (parsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\\n' : parsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\\n' : '') +
+        (parsed.kda ? '📊 K/D/A: <b>' + parsed.kda.kills + '/' + parsed.kda.deaths + '/' + parsed.kda.assists + '</b>\\n' : '') +
+        (parsed.score != null ? '⭐ Pontuação: <b>' + parsed.score + '</b>\\n' : '');
+    } else if (parsed.kind === 'profile') {
+      detail =
+        '📊 <b>Print geral detectado!</b>\\n' +
+        (parsed.winRate != null ? '📈 Win rate lido: <b>' + parsed.winRate + '%</b>\\n' : '') +
+        'Esse tipo de print serve como <b>snapshot geral</b>; ele não conta como uma partida individual.';
+    } else {
+      detail =
+        '🗂️ <b>Print armazenado.</b>\\n' +
+        'Ainda não consegui classificar essa tela com segurança. Os dados brutos foram guardados para melhorarmos o leitor.';
+    }
+
+    await ctx.reply(
+      '✅ <b>DADO REGISTRADO NO SEGA</b>\\n\\n' +
+      detail +
+      '\\n\\n🧠 O OCR salvou também o texto lido da imagem para podermos melhorar o parser sem perder o print.',
+      { parse_mode: 'HTML', ...mainKeyboard() }
+    );
+  } catch (error) {
+    console.error('❌ Erro ao processar screenshot:', error);
+    await ctx.reply(
+      '⚠️ Recebi o print, mas o leitor não conseguiu processá-lo agora. A imagem pode não ter sido salva; tente novamente com a tela inteira e boa resolução.',
+      { parse_mode: 'HTML' }
+    );
+  }
+});
+
 bot.command('ajuda', async (ctx) => {
   await ctx.reply(helpMessage, { parse_mode: 'HTML' });
 });
@@ -578,6 +657,8 @@ bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(h
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
+bot.hears('📸 Enviar print', async (ctx) => await ctx.reply('📸 <b>ENVIE O PRINT</b>\\n\\nMande aqui a captura da tela do Mobile Legends. Pode ser o resultado final da partida ou o painel geral de estatísticas.', { parse_mode: 'HTML' }));
+bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await ctx.reply('📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await ctx.reply('📋 <b>DADOS COLETADOS</b>\\n\\n🖼️ Prints: <b>' + summary.screenshots + '</b>\\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\\n🏆 Vitórias: <b>' + summary.wins + '</b>\\n💀 Derrotas: <b>' + summary.losses + '</b>\\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('👥 Clã SEGA', sendClan);
 bot.hears('❓ Ajuda', async (ctx) => await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }));
 bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
