@@ -567,12 +567,14 @@ async function getLiveHeroProfile(heroName) {
 
 export function listKnowledgeExamples() {
   return [
-    '@SEGA Stats quem countera Harley?',
-    '@SEGA Stats quem é bom contra Gusion?',
-    '@SEGA Stats qual item faço contra Silvanna?',
-    '@SEGA Stats como jogar contra Fanny?',
-    '@SEGA Stats qual a função do Khufra?',
-    '@SEGA Stats qual build faço de Harley?'
+    'quem countera Harley?',
+    'quem é bom contra Gusion?',
+    'qual item faço contra Silvanna?',
+    'como jogar contra Fanny?',
+    'qual a função do Khufra?',
+    'qual build faço de Harley?',
+    'qual a melhor rota para Bruno?',
+    'quais heróis combinam com Angela?'
   ];
 }
 
@@ -599,7 +601,7 @@ export async function answerMlbbQuestion(text) {
         (suggestion
           ? '🤔 Você quis dizer <b>' + suggestion + '</b>?\n\nEnvie a pergunta novamente usando esse nome.'
           : 'Tente escrever o nome completo em português ou inglês.') +
-        '\n\nEx.: <code>@SEGA Stats quem countera Harley?</code>';
+        '\n\nEx.: <code>quem countera Harley?</code>';
     }
     return null;
   }
