@@ -66,7 +66,7 @@ const SCOREBOARD_SIDES = [
 function normalizeNickForRow(value) {
   return String(value || '')
     .normalize('NFKD')
-    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '');
 }
@@ -111,7 +111,7 @@ function scoreRowIdentity(text, expectedNick) {
   if (compact.includes(target)) return 1;
 
   const tokens = raw
-    .split(/[^\\p{L}\\p{N}]+/u)
+    .split(/[^\p{L}\p{N}]+/u)
     .map(normalizeNickForRow)
     .filter(token => token.length >= 2);
 
@@ -129,9 +129,9 @@ function scoreRowIdentity(text, expectedNick) {
 
 function parseTsvWords(tsv) {
   return String(tsv || '')
-    .split(/\\r?\\n/)
+    .split(/\r?\n/)
     .slice(1)
-    .map(line => line.split('\\t'))
+    .map(line => line.split('\t'))
     .filter(parts => parts.length >= 12)
     .map(parts => ({
       level: Number(parts[0]),
@@ -145,7 +145,7 @@ function parseTsvWords(tsv) {
       width: Number(parts[8]),
       height: Number(parts[9]),
       confidence: Number(parts[10]),
-      text: parts.slice(11).join('\\t').trim()
+      text: parts.slice(11).join('\t').trim()
     }))
     .filter(word => word.text && Number.isFinite(word.left) && Number.isFinite(word.top));
 }
@@ -189,7 +189,7 @@ function findPlayerOcrLine(tsv, expectedNick) {
 }
 
 async function ocrScoreboardRow(worker, imagePath, bounds, expectedNick) {
-  const basePath = imagePath.replace(/\\.(?:png|jpg|jpeg)$/i, '') +
+  const basePath = imagePath.replace(/\.(?:png|jpg|jpeg)$/i, '') +
     `.row-${bounds.side}-${bounds.rowIndex}`;
   const cropPath = basePath + '.png';
   const invertedPath = basePath + '.inv.png';
