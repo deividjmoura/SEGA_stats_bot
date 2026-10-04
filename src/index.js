@@ -529,7 +529,7 @@ function mainKeyboard() {
   ]).resize().persistent();
 }
 
-function askForRoleId(ctx) {
+async function askForRoleId(ctx) {
   await setRegistration(ctx.from.id, { step: 'role_id' });
   return ctx.reply('📝 <b>CADASTRO DO JOGADOR</b>\n\nMe manda agora o <b>ID do Mobile Legends</b> (Role ID).\n\nExemplo: <code>123456789</code>', { parse_mode: 'HTML' });
 }
