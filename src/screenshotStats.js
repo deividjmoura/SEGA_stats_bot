@@ -57,195 +57,288 @@ async function preprocessImage(inputPath, outputPath) {
     .toFile(outputPath);
 }
 
-function heartPresenceScore(buffer) {
-  const pixels = buffer;
-  const count = pixels.length / 3;
-  let mean = 0;
-  let sumSq = 0;
+const SCOREBOARD_ROW_CENTERS = [0.2683, 0.3984, 0.5271, 0.6558, 0.7859];
+const SCOREBOARD_SIDES = [
+  { side: 'left', leftRatio: 0.025, widthRatio: 0.47 },
+  { side: 'right', leftRatio: 0.505, widthRatio: 0.47 }
+];
 
-  for (let i = 0; i < pixels.length; i += 3) {
-    const gray = pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114;
-    mean += gray;
-    sumSq += gray * gray;
+function normalizeNickForRow(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function levenshteinDistance(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  if (!left) return right.length;
+  if (!right) return left.length;
+
+  let previous = Array.from({ length: right.length + 1 }, (_, i) => i);
+  for (let i = 0; i < left.length; i += 1) {
+    const current = [i + 1];
+    for (let j = 0; j < right.length; j += 1) {
+      const insert = current[j] + 1;
+      const remove = previous[j + 1] + 1;
+      const replace = previous[j] + (left[i] === right[j] ? 0 : 1);
+      current.push(Math.min(insert, remove, replace));
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+function similarity(a, b) {
+  const left = normalizeNickForRow(a);
+  const right = normalizeNickForRow(b);
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  if (left.includes(right) || right.includes(left)) {
+    return Math.min(0.98, Math.max(left.length, right.length) / Math.min(left.length, right.length) >= 1.5 ? 0.76 : 0.92);
+  }
+  const distance = levenshteinDistance(left, right);
+  return Math.max(0, 1 - distance / Math.max(left.length, right.length));
+}
+
+function scoreRowIdentity(text, expectedNick) {
+  const target = normalizeNickForRow(expectedNick);
+  if (!target) return 0;
+  const raw = String(text || '');
+  const compact = normalizeNickForRow(raw);
+  if (compact.includes(target)) return 1;
+
+  const tokens = raw
+    .split(/[^\p{L}\p{N}]+/u)
+    .map(normalizeNickForRow)
+    .filter(token => token.length >= 2);
+
+  let best = similarity(compact, target);
+  for (const token of tokens) best = Math.max(best, similarity(token, target));
+
+  // Tesseract pode separar o nick em dois blocos; também testamos pares
+  // consecutivos sem espaço.
+  for (let i = 0; i < tokens.length - 1; i += 1) {
+    best = Math.max(best, similarity(tokens[i] + tokens[i + 1], target));
   }
 
-  mean /= count;
-  const variance = Math.max(0, sumSq / count - mean * mean);
+  return best;
+}
 
-  // O coração desenha um contorno e preenchimento dentro da pequena região.
-  // A linha sem coração é muito mais uniforme. Medimos variação local e
-  // bordas para distinguir "não há coração" de um coração escuro.
-  let edge = 0;
-  const width = Math.sqrt(count * 0.9);
-  const approxWidth = Math.max(1, Math.round(width));
-  const rows = Math.max(1, Math.floor(count / approxWidth));
+function parseTsvWords(tsv) {
+  return String(tsv || '')
+    .split(/\r?\n/)
+    .slice(1)
+    .map(line => line.split('\t'))
+    .filter(parts => parts.length >= 12)
+    .map(parts => ({
+      level: Number(parts[0]),
+      page: Number(parts[1]),
+      block: Number(parts[2]),
+      paragraph: Number(parts[3]),
+      line: Number(parts[4]),
+      word: Number(parts[5]),
+      left: Number(parts[6]),
+      top: Number(parts[7]),
+      width: Number(parts[8]),
+      height: Number(parts[9]),
+      confidence: Number(parts[10]),
+      text: parts.slice(11).join('\t').trim()
+    }))
+    .filter(word => word.text && Number.isFinite(word.left) && Number.isFinite(word.top));
+}
 
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < approxWidth - 1; x += 1) {
-      const i = (y * approxWidth + x) * 3;
-      const j = i + 3;
-      if (j >= pixels.length) break;
-      const a = pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114;
-      const b = pixels[j] * 0.299 + pixels[j + 1] * 0.587 + pixels[j + 2] * 0.114;
-      edge += Math.abs(a - b);
+function findPlayerOcrLine(tsv, expectedNick) {
+  const words = parseTsvWords(tsv);
+  const target = normalizeNickForRow(expectedNick);
+  if (!target || !words.length) return null;
+
+  const grouped = new Map();
+  for (const word of words) {
+    const key = [word.block, word.paragraph, word.line].join(':');
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(word);
+  }
+
+  let best = null;
+  for (const lineWords of grouped.values()) {
+    lineWords.sort((a, b) => a.left - b.left);
+    const text = lineWords.map(word => word.text).join(' ');
+    const rowScore = scoreRowIdentity(text, expectedNick);
+    if (!best || rowScore > best.similarity) {
+      const left = Math.min(...lineWords.map(word => word.left));
+      const top = Math.min(...lineWords.map(word => word.top));
+      const right = Math.max(...lineWords.map(word => word.left + word.width));
+      const bottom = Math.max(...lineWords.map(word => word.top + word.height));
+      best = {
+        text,
+        left,
+        top,
+        right,
+        bottom,
+        height: Math.max(1, bottom - top),
+        confidence: lineWords.reduce((sum, word) => sum + Math.max(0, word.confidence || 0), 0) / lineWords.length,
+        similarity: rowScore
+      };
     }
   }
 
-  edge /= Math.max(1, count);
-  return {
-    texture: Math.sqrt(variance),
-    edge,
-    score: Math.sqrt(variance) + edge
-  };
+  return best && best.similarity >= 0.55 ? best : null;
 }
 
-async function detectSelectedRowByHeart(imagePath) {
-  const metadata = await sharp(imagePath).metadata();
-  const imageWidth = metadata.width || 1600;
-  const imageHeight = metadata.height || 738;
-  const rowCenters = [0.2683, 0.3984, 0.5271, 0.6558, 0.7859];
-  const sides = [
-    { side: 'left', x: 0.101 },
-    { side: 'right', x: 0.895 }
-  ];
-  const candidates = [];
+async function ocrScoreboardRow(worker, imagePath, bounds, expectedNick) {
+  const basePath = imagePath.replace(/\.(?:png|jpg|jpeg)$/i, '') +
+    `.row-${bounds.side}-${bounds.rowIndex}`;
+  const cropPath = basePath + '.png';
+  const invertedPath = basePath + '.inv.png';
 
-  for (const side of sides) {
-    for (let rowIndex = 0; rowIndex < rowCenters.length; rowIndex += 1) {
-      const centerY = Math.round(imageHeight * rowCenters[rowIndex]);
-      const roiWidth = Math.max(20, Math.round(imageWidth * 0.028));
-      const roiHeight = Math.max(20, Math.round(imageHeight * 0.06));
-      const left = Math.max(0, Math.min(
-        imageWidth - roiWidth,
-        Math.round(imageWidth * side.x - roiWidth / 2)
-      ));
-      const top = Math.max(0, Math.min(
-        imageHeight - roiHeight,
-        centerY - Math.round(roiHeight / 2)
-      ));
+  try {
+    const margin = 8;
+    const metadata = await sharp(imagePath).metadata();
+    const imageWidth = metadata.width || 1600;
+    const imageHeight = metadata.height || 738;
+    const left = Math.max(0, Math.round(bounds.left) - margin);
+    const top = Math.max(0, Math.round(bounds.top) - margin);
+    const right = Math.min(imageWidth, Math.round(bounds.left + bounds.width) + margin);
+    const bottom = Math.min(imageHeight, Math.round(bounds.top + bounds.height) + margin);
+    const width = Math.max(20, right - left);
+    const height = Math.max(20, bottom - top);
 
-      const { data } = await sharp(imagePath)
-        .extract({ left, top, width: roiWidth, height: roiHeight })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+    const common = sharp(imagePath)
+      .extract({ left, top, width, height })
+      .resize({ width: Math.max(2200, width * 3), withoutEnlargement: false })
+      .grayscale()
+      .normalize()
+      .sharpen()
+      .extend({ top: 10, bottom: 10, left: 10, right: 10, background: '#ffffff' });
 
-      const presence = heartPresenceScore(data);
-      candidates.push({
-        side: side.side,
-        rowIndex,
-        presence,
-        bounds: { left, top, width: roiWidth, height: roiHeight }
-      });
+    await common.clone().png().toFile(cropPath);
+
+    await worker.setParameters({
+      tessedit_pageseg_mode: '7',
+      preserve_interword_spaces: '1',
+      tessedit_char_whitelist: '',
+      user_defined_dpi: '300'
+    });
+
+    const first = await worker.recognize(cropPath, {}, { text: true });
+    const firstText = normalizeOcrText(first.data?.text || '');
+    const firstScore = scoreRowIdentity(firstText, expectedNick);
+
+    let bestText = firstText;
+    let bestScore = firstScore;
+
+    // Segunda leitura invertida: no placar do MLBB o nick costuma ser texto
+    // claro sobre fundo escuro. O Tesseract tende a funcionar melhor quando
+    // recebe texto escuro sobre fundo claro.
+    if (firstScore < 0.9) {
+      await common.clone()
+        .negate()
+        .threshold(150)
+        .png()
+        .toFile(invertedPath);
+
+      const second = await worker.recognize(invertedPath, {}, { text: true });
+      const secondText = normalizeOcrText(second.data?.text || '');
+      const secondScore = scoreRowIdentity(secondText, expectedNick);
+      if (secondScore > bestScore) {
+        bestText = secondText;
+        bestScore = secondScore;
+      }
     }
+
+    const kda = parseScreenshotStats(bestText, expectedNick).kda ||
+      parseScreenshotStats(bestText, null).kda;
+
+    return {
+      side: bounds.side,
+      rowIndex: bounds.rowIndex,
+      text: bestText.slice(0, 700),
+      identityScore: Number(bestScore.toFixed(3)),
+      kda,
+      bounds: { left, top, width, height }
+    };
+  } finally {
+    await fs.unlink(cropPath).catch(() => {});
+    await fs.unlink(invertedPath).catch(() => {});
   }
-
-  // O jogador da conta é a linha que não oferece o botão "seguir".
-  // Portanto, procuramos o menor sinal de coração entre as 10 linhas.
-  const sorted = candidates.slice().sort((a, b) => a.presence.score - b.presence.score);
-  const best = sorted[0];
-  const second = sorted[1];
-
-  if (!best || !second) return null;
-
-  const gap = second.presence.score - best.presence.score;
-  const ratio = best.presence.score > 0
-    ? second.presence.score / best.presence.score
-    : Infinity;
-
-  // No print de referência, a linha sem coração tem textura/bordas muito
-  // menores que qualquer linha que contém o botão. Exigimos uma diferença
-  // clara para não escolher uma linha por ruído.
-  if (best.presence.score >= 8 || (gap < 0.8 && ratio < 1.35)) {
-    return null;
-  }
-
-  return {
-    ...best,
-    confidence: Math.min(1, Math.max(0, gap / Math.max(second.presence.score, 0.001))),
-    heartPresence: best.presence,
-    runnerUpPresence: second.presence
-  };
 }
+
 async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
   const metadata = await sharp(imagePath).metadata();
   const imageWidth = metadata.width || 1600;
   const imageHeight = metadata.height || 738;
-  const selected = await detectSelectedRowByHeart(imagePath);
+  const candidates = [];
 
-  let line = null;
-  if (selected) {
-    const rowCenters = [0.2683, 0.3984, 0.5271, 0.6558, 0.7859];
-    const centerY = Math.round(imageHeight * rowCenters[selected.rowIndex]);
-    const rowHeight = Math.max(40, Math.round(imageHeight * 0.128));
-    line = {
-      left: 0,
-      top: Math.max(0, centerY - Math.round(rowHeight / 2)),
-      right: imageWidth,
-      bottom: Math.min(imageHeight, centerY + Math.round(rowHeight / 2)),
-      height: rowHeight,
-      text: '',
-      confidence: selected.confidence * 100,
-      similarity: 1,
-      selectedByMissingHeart: true,
-      selectedSide: selected.side,
-      selectedRowIndex: selected.rowIndex
-    };
-  } else {
-    line = findPlayerOcrLine(tsv, expectedNick);
-    if (!line) return null;
+  for (const side of SCOREBOARD_SIDES) {
+    for (let rowIndex = 0; rowIndex < SCOREBOARD_ROW_CENTERS.length; rowIndex += 1) {
+      const centerY = Math.round(imageHeight * SCOREBOARD_ROW_CENTERS[rowIndex]);
+      const rowHeight = Math.max(48, Math.round(imageHeight * 0.105));
+      const bounds = {
+        side: side.side,
+        rowIndex,
+        left: Math.round(imageWidth * side.leftRatio),
+        top: Math.max(0, centerY - Math.round(rowHeight / 2)),
+        width: Math.round(imageWidth * side.widthRatio),
+        height: Math.min(rowHeight, imageHeight - Math.max(0, centerY - Math.round(rowHeight / 2)))
+      };
+
+      try {
+        const candidate = await ocrScoreboardRow(worker, imagePath, bounds, expectedNick);
+        candidates.push(candidate);
+      } catch (error) {
+        console.warn('⚠️ Falha no OCR da linha ' + side.side + '/' + (rowIndex + 1) + ':', error?.message || error);
+      }
+    }
   }
 
-  const verticalPadding = selected
-    ? Math.round(imageHeight * 0.018)
-    : Math.max(24, Math.round(line.height * 1.35));
-  const left = 0;
-  const top = Math.max(0, line.top - verticalPadding);
-  const width = imageWidth;
-  const height = Math.min(
-    imageHeight - top,
-    selected ? Math.round(imageHeight * 0.155) : Math.max(line.height * 3.2, 100)
-  );
-  const cropPath = imagePath.replace(/.(?:png|jpg|jpeg)$/i, '.player-row.png');
-
-  try {
-    await sharp(imagePath)
-      .extract({ left, top, width, height })
-      .resize({ width: Math.max(width, 3000), withoutEnlargement: false })
-      .grayscale()
-      .normalize()
-      .sharpen()
-      .png()
-      .toFile(cropPath);
-
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '1',
-      tessedit_char_whitelist: ''
+  // Se o OCR de uma linha isolada não achou o nick, tentamos o TSV global como
+  // segunda chance. Isso mantém compatibilidade com prints com layout diferente.
+  const tsvLine = findPlayerOcrLine(tsv, expectedNick);
+  if (tsvLine) {
+    candidates.push({
+      side: 'tsv',
+      rowIndex: null,
+      text: tsvLine.text,
+      identityScore: Number(tsvLine.similarity.toFixed(3)),
+      kda: parseScreenshotStats(tsvLine.text, expectedNick).kda || parseScreenshotStats(tsvLine.text, null).kda,
+      bounds: { left: tsvLine.left, top: tsvLine.top, width: tsvLine.right - tsvLine.left, height: tsvLine.height }
     });
-
-    const result = await worker.recognize(cropPath, {}, { text: true, tsv: true });
-    const text = String(result.data?.text || '').trim();
-
-    return {
-      text,
-      kda: parseScreenshotStats(text, expectedNick).kda || parseScreenshotStats(text, null).kda,
-      lineText: line.text,
-      confidence: line.confidence,
-      similarity: line.similarity,
-      selectedByMissingHeart: Boolean(line.selectedByMissingHeart),
-      selectedSide: line.selectedSide || null,
-      selectedRowIndex: Number.isInteger(line.selectedRowIndex) ? line.selectedRowIndex : null,
-      bounds: { left, top, width, height }
-    };
-  } finally {
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '0',
-      tessedit_char_whitelist: ''
-    }).catch(() => {});
-    await fs.unlink(cropPath).catch(() => {});
   }
+
+  candidates.sort((a, b) => b.identityScore - a.identityScore);
+  const best = candidates[0] || null;
+  const second = candidates[1] || null;
+
+  if (!best) return null;
+
+  const gap = best.identityScore - (second?.identityScore || 0);
+  const accepted = best.identityScore >= 0.68 && (gap >= 0.06 || best.identityScore >= 0.92);
+
+  return {
+    text: best.text,
+    kda: best.kda,
+    lineText: best.text,
+    confidence: Math.round(Math.max(0, Math.min(1, best.identityScore)) * 1000) / 10,
+    similarity: best.identityScore,
+    selectedByMissingHeart: false,
+    selectedSide: best.side,
+    selectedRowIndex: best.rowIndex,
+    bounds: best.bounds,
+    candidates: candidates.slice(0, 10).map(item => ({
+      side: item.side,
+      rowIndex: item.rowIndex,
+      identityScore: item.identityScore,
+      kda: item.kda,
+      text: item.text
+    })),
+    accepted,
+    runnerUpScore: second?.identityScore || 0
+  };
 }
+
 async function improveBattleId(worker, imagePath, initialText, tsv) {
   const initial = String(initialText || '').match(/\b\d{14,18}\b/g);
   if (initial?.length) return initial.sort((a, b) => b.length - a.length)[0];
@@ -399,6 +492,16 @@ export async function processScreenshot(ctx, player) {
     parsed.battleId = await withOcrLock(() =>
       improveBattleId(worker, processedPath, rawOcrText, result.data?.tsv)
     );
+  }
+
+  // Se o OCR inicial não encontrou o Battle ID, a segunda leitura pode tê-lo
+  // encontrado. Reclassificamos a tela aqui para não descartá-la como unknown.
+  if (parsed.battleId && parsed.kda) parsed.kind = 'match_result';
+
+  if (highlightedRow) {
+    parsed.playerRowAccepted = Boolean(highlightedRow.accepted);
+    parsed.playerRowRunnerUpScore = Number(highlightedRow.runnerUpScore || 0);
+    parsed.playerRowCandidates = highlightedRow.candidates || [];
   }
 
   await fs.unlink(processedPath).catch(() => {});
