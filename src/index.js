@@ -709,13 +709,13 @@ function renderStats(data) {
     '⚔️ K/D/A: <b>' + kda + '</b>\n' +
     '⭐ Pontuação média: <b>' + avgScore + '</b>\n' +
     '👑 MVPs: <b>' + mvps + '</b>\n' +
-    (mostPlayed ? '🎯 Herói mais usado: <b>' + mostPlayed + '</b>\n' : '') +
+    (mostPlayed ? '🎯 Herói mais usado: <b>' + escapeHtml(mostPlayed) + '</b>\n' : '') +
     '\n<i>SEGA: cada partida escreve uma linha da história.</i>';
 }
 
 async function sendHelp(ctx) {
   if (isGroupChat(ctx)) {
-    const username = await getBotUsername();
+    const username = getBotUsername(ctx);
     const helpLink = username ? 'https://t.me/' + username + '?start=ajuda' : null;
     const registerLink = username ? 'https://t.me/' + username + '?start=cadastro' : null;
 
