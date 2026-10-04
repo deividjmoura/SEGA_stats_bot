@@ -52,12 +52,6 @@ const bot = new Telegraf(token);
 const registration = new Map();
 const authenticatedPlayers = new Map();
 
-function profileName(data) {
-  const value = data?.name || data?.nickname || data?.nick || data?.player_name || null;
-  const name = String(value || '').trim();
-  return name || null;
-}
-
 async function refreshPlayerName(telegramId) {
   const player = authenticatedPlayers.get(Number(telegramId));
   if (!player?.jwt) return null;
