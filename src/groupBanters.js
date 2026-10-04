@@ -36,7 +36,7 @@ function clearPending(chatId) {
   pendingByChat.delete(chatId);
 }
 
-function scheduleBanter(ctx) {
+async function scheduleBanter(ctx, resolvePlayerName) {
   if (!isGroup(ctx) || isIgnoredText(ctx)) return;
 
   const chatId = ctx.chat.id;
@@ -48,6 +48,7 @@ function scheduleBanter(ctx) {
   const messageId = ctx.message.message_id;
   const userId = ctx.from.id;
   const displayName =
+    (await resolvePlayerName?.(userId)) ||
     ctx.from.first_name ||
     ctx.from.username ||
     'guerreiro';
@@ -77,10 +78,10 @@ function scheduleBanter(ctx) {
   pendingByChat.set(chatId, { timer, messageId, userId });
 }
 
-export function groupBanterMiddleware() {
+export function groupBanterMiddleware(resolvePlayerName) {
   return async (ctx, next) => {
     try {
-      scheduleBanter(ctx);
+      await scheduleBanter(ctx, resolvePlayerName);
     } catch (error) {
       console.error('⚠️ Erro no monitor de zoeira do grupo:', error);
     }
