@@ -54,7 +54,17 @@ export async function updateJson(filePath, fallback, updater) {
   const next = previous
     .catch(() => {})
     .then(async () => {
-      const current = await readJson(filePath, fallback);
+      let current;
+      try {
+        current = await readJson(filePath, fallback);
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          current = clone(fallback);
+        } else {
+          await quarantineJson(filePath).catch(() => {});
+          current = clone(fallback);
+        }
+      }
       const updated = await updater(current);
       await atomicWrite(filePath, updated);
       return updated;
