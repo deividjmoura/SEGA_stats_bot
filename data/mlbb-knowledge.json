@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "updatedAt": "2026-10-03",
   "sourcePolicy": "Os dados de matchup são um snapshot pesquisado. O bot deve evitar afirmar que um counter é absoluto e deve informar que o meta pode mudar por patch/rank.",
   "heroes": {
@@ -456,6 +456,56 @@
       "tips": [
         "Não entregue um alvo isolado para o ultimate.",
         "Resistência e proteção do time reduzem o impacto do pickoff."
+      ]
+    },
+    "natalia": {
+      "pt": "Natalia",
+      "en": "Natalia",
+      "aliases": [
+        "natalia",
+        "natália",
+        "naty"
+      ],
+      "role": "Assassina",
+      "lane": "Jungle/Roam",
+      "counters": [
+        "Cyclops",
+        "Mathilda",
+        "Karina",
+        "Saber",
+        "Rafaela"
+      ],
+      "items": [
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Use visão e controle de área para reduzir os ângulos de emboscada.",
+        "Proteja os carregadores e evite andar sozinho sem informação."
+      ]
+    },
+    "minotaur": {
+      "pt": "Minotaur",
+      "en": "Minotaur",
+      "aliases": [
+        "minotaur",
+        "minotauro",
+        "minotauro"
+      ],
+      "role": "Tank/Suporte",
+      "lane": "Roam",
+      "counters": [
+        "Alice",
+        "Zhuxin",
+        "Beatrix",
+        "Yve",
+        "Kimmy"
+      ],
+      "items": [
+        "Gelo Dominante"
+      ],
+      "tips": [
+        "Evite agrupar o time para facilitar o ultimate do Minotaur.",
+        "Forçe o Minotaur a gastar recursos antes da luta decisiva."
       ]
     }
   },
