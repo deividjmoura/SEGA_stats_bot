@@ -567,7 +567,7 @@ bot.command('stats', sendStats);
 bot.command('prints', async (ctx) => {
   const player = authenticatedPlayers.get(ctx.from.id);
   if (!player?.jwt) {
-    await ctx.reply('📸 <b>COLETA DE PARTIDAS</b>\\n\\nVocê ainda não tem um jogador vinculado. Use /cadastrar primeiro.', { parse_mode: 'HTML' });
+    await ctx.reply('📸 <b>COLETA DE PARTIDAS</b>\n\nVocê ainda não tem um jogador vinculado. Use /cadastrar primeiro.', { parse_mode: 'HTML' });
     return;
   }
 
@@ -575,12 +575,12 @@ bot.command('prints', async (ctx) => {
   const summary = summarizePlayerScreenshots(records);
 
   await ctx.reply(
-    '📸 <b>DADOS COLETADOS</b>\\n\\n' +
-    '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\\n' +
-    '⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\\n' +
-    '🏆 Vitórias: <b>' + summary.wins + '</b>\\n' +
-    '💀 Derrotas: <b>' + summary.losses + '</b>\\n' +
-    '⚔️ K/D/A somado: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>\\n\\n' +
+    '📸 <b>DADOS COLETADOS</b>\n\n' +
+    '🖼️ Screenshots recebidos: <b>' + summary.screenshots + '</b>\n' +
+    '⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n' +
+    '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
+    '💀 Derrotas: <b>' + summary.losses + '</b>\n' +
+    '⚔️ K/D/A somado: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>\n\n' +
     '<i>Os prints e os dados extraídos ficam guardados no volume do bot.</i>',
     { parse_mode: 'HTML', ...mainKeyboard() }
   );
@@ -591,14 +591,14 @@ bot.on('photo', async (ctx, next) => {
 
   if (!player?.jwt) {
     await ctx.reply(
-      '📸 <b>PRINT DE PARTIDA</b>\\n\\n' +
+      '📸 <b>PRINT DE PARTIDA</b>\n\n' +
       'Primeiro vincule seu jogador com /cadastrar. Depois pode mandar os prints aqui que eu vou guardar e extrair os dados.',
       { parse_mode: 'HTML' }
     );
     return;
   }
 
-  await ctx.reply('📸 <b>Print recebido.</b>\\n\\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
+  await ctx.reply('📸 <b>Print recebido.</b>\n\n🔎 Lendo os dados da imagem e salvando no histórico...', { parse_mode: 'HTML' });
 
   try {
     const record = await processScreenshot(ctx, player);
@@ -607,25 +607,25 @@ bot.on('photo', async (ctx, next) => {
     let detail;
     if (parsed.kind === 'match_result') {
       detail =
-        '⚔️ <b>Partida detectada!</b>\\n' +
-        (parsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\\n' : parsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\\n' : '') +
-        (parsed.kda ? '📊 K/D/A: <b>' + parsed.kda.kills + '/' + parsed.kda.deaths + '/' + parsed.kda.assists + '</b>\\n' : '') +
-        (parsed.score != null ? '⭐ Pontuação: <b>' + parsed.score + '</b>\\n' : '');
+        '⚔️ <b>Partida detectada!</b>\n' +
+        (parsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\n' : parsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\n' : '') +
+        (parsed.kda ? '📊 K/D/A: <b>' + parsed.kda.kills + '/' + parsed.kda.deaths + '/' + parsed.kda.assists + '</b>\n' : '') +
+        (parsed.score != null ? '⭐ Pontuação: <b>' + parsed.score + '</b>\n' : '');
     } else if (parsed.kind === 'profile') {
       detail =
-        '📊 <b>Print geral detectado!</b>\\n' +
-        (parsed.winRate != null ? '📈 Win rate lido: <b>' + parsed.winRate + '%</b>\\n' : '') +
+        '📊 <b>Print geral detectado!</b>\n' +
+        (parsed.winRate != null ? '📈 Win rate lido: <b>' + parsed.winRate + '%</b>\n' : '') +
         'Esse tipo de print serve como <b>snapshot geral</b>; ele não conta como uma partida individual.';
     } else {
       detail =
-        '🗂️ <b>Print armazenado.</b>\\n' +
+        '🗂️ <b>Print armazenado.</b>\n' +
         'Ainda não consegui classificar essa tela com segurança. Os dados brutos foram guardados para melhorarmos o leitor.';
     }
 
     await ctx.reply(
-      '✅ <b>DADO REGISTRADO NO SEGA</b>\\n\\n' +
+      '✅ <b>DADO REGISTRADO NO SEGA</b>\n\n' +
       detail +
-      '\\n\\n🧠 O OCR salvou também o texto lido da imagem para podermos melhorar o parser sem perder o print.',
+      '\n\n🧠 O OCR salvou também o texto lido da imagem para podermos melhorar o parser sem perder o print.',
       { parse_mode: 'HTML', ...mainKeyboard() }
     );
   } catch (error) {
@@ -657,8 +657,8 @@ bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(h
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
-bot.hears('📸 Enviar print', async (ctx) => await ctx.reply('📸 <b>ENVIE O PRINT</b>\\n\\nMande aqui a captura da tela do Mobile Legends. Pode ser o resultado final da partida ou o painel geral de estatísticas.', { parse_mode: 'HTML' }));
-bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await ctx.reply('📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await ctx.reply('📋 <b>DADOS COLETADOS</b>\\n\\n🖼️ Prints: <b>' + summary.screenshots + '</b>\\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\\n🏆 Vitórias: <b>' + summary.wins + '</b>\\n💀 Derrotas: <b>' + summary.losses + '</b>\\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
+bot.hears('📸 Enviar print', async (ctx) => await ctx.reply('📸 <b>ENVIE O PRINT</b>\n\nMande aqui a captura da tela do Mobile Legends. Pode ser o resultado final da partida ou o painel geral de estatísticas.', { parse_mode: 'HTML' }));
+bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await ctx.reply('📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await ctx.reply('📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('👥 Clã SEGA', sendClan);
 bot.hears('❓ Ajuda', async (ctx) => await ctx.reply(helpMessage, { parse_mode: 'HTML', ...mainKeyboard() }));
 bot.hears('📜 Lore', async (ctx) => await ctx.reply('📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
