@@ -394,6 +394,12 @@ export async function answerMlbbQuestion(text) {
   }
 
   if (intent === 'items') {
+    if (!Array.isArray(hero.items) || !hero.items.length) {
+      return '🛡️ <b>ITENS CONTRA ' + title.toUpperCase() + '</b>\n\n' +
+        'Ainda não tenho uma recomendação local de itens confiável para esse herói. ' +
+        'Prefiro não inventar uma build. Você pode perguntar pelos counters atualizados enquanto essa parte da base é ampliada.';
+    }
+
     return '🛡️ <b>ITENS CONTRA ' + title.toUpperCase() + '</b>\n\n' +
       hero.items.map(item => {
         const found = Object.values(knowledge.items).find(i => compact(i.pt) === compact(item) || compact(i.en) === compact(item));
@@ -403,6 +409,12 @@ export async function answerMlbbQuestion(text) {
   }
 
   if (intent === 'tips') {
+    if (!Array.isArray(hero.tips) || !hero.tips.length) {
+      return '🧠 <b>COMO JOGAR CONTRA ' + title.toUpperCase() + '</b>\n\n' +
+        'Ainda não tenho dicas detalhadas cadastradas para esse herói. ' +
+        'Posso reconhecer o herói e consultar matchups, mas não vou preencher a resposta com informação inventada.';
+    }
+
     return '🧠 <b>COMO JOGAR CONTRA ' + title.toUpperCase() + '</b>\n\n' +
       hero.tips.map(tip => '• ' + tip).join('\n') +
       '\n\n⚔️ Adapte a decisão à sua rota e à composição.';

@@ -172,15 +172,20 @@ function clearPending(chatId) {
 }
 
 async function scheduleBanter(ctx, resolvePlayerName) {
-  if (!isGroup(ctx) || isIgnoredText(ctx)) return;
+  if (!isGroup(ctx) || ctx.from?.is_bot) return;
 
   const chatId = ctx.chat.id;
+  const previous = pendingByChat.get(chatId);
 
-  // Qualquer mensagem humana posterior conta como resposta/conversa e encerra
-  // a espera anterior. Só abrimos uma nova espera se a própria mensagem for
-  // realmente um convite para jogar.
-  clearPending(chatId);
-  if (!isCallForPlayers(ctx.message?.text)) return;
+  // Qualquer interação humana posterior encerra a espera anterior e já conta
+  // como resposta. Não armamos outro timer nessa mesma mensagem, mesmo que a
+  // resposta seja algo como “bora!”. Fotos, stickers e comandos também contam.
+  if (previous) {
+    clearPending(chatId);
+    return;
+  }
+
+  if (isIgnoredText(ctx) || !isCallForPlayers(ctx.message?.text)) return;
 
   const lastBanter = lastBanterByChat.get(chatId) || 0;
   if (Date.now() - lastBanter < COOLDOWN_MS) return;
