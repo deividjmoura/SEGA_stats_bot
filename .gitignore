@@ -4,3 +4,11 @@ node_modules/
 !.env.example
 npm-debug.log*
 .DS_Store
+
+# Dados runtime / privados
+data/sessions.json
+data/registrations.json
+data/matches.json
+data/questions.json
+data/screenshots/
+*.log
