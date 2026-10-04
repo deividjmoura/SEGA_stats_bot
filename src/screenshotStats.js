@@ -165,15 +165,20 @@ export async function getPlayerScreenshots(telegramId) {
 
 export function summarizePlayerScreenshots(records) {
   const list = Array.isArray(records) ? records : [];
-  const wins = list.filter(item => item.parsed?.result === 'win').length;
-  const losses = list.filter(item => item.parsed?.result === 'loss').length;
-  const kdas = list.map(item => item.parsed?.kda).filter(Boolean);
+  const validMatches = list.filter(item => item.verification === 'verified_match');
+  const wins = validMatches.filter(item => item.parsed?.result === 'win').length;
+  const losses = validMatches.filter(item => item.parsed?.result === 'loss').length;
+  const kdas = validMatches.map(item => item.parsed?.kda).filter(Boolean);
   const kills = kdas.reduce((sum, kda) => sum + Number(kda.kills || 0), 0);
   const deaths = kdas.reduce((sum, kda) => sum + Number(kda.deaths || 0), 0);
   const assists = kdas.reduce((sum, kda) => sum + Number(kda.assists || 0), 0);
 
   return {
     screenshots: list.length,
+    verifiedMatches: validMatches.length,
+    pendingMatches: list.filter(item => item.verification === 'pending_api_confirmation').length,
+    rejectedMatches: list.filter(item => item.verification === 'rejected_name_mismatch').length,
+    verifiedProfiles: list.filter(item => item.verification === 'verified_profile').length,
     matchResults: wins + losses,
     wins,
     losses,
