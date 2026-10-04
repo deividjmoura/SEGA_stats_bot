@@ -23,16 +23,23 @@ export function nickMatches(expected, text, lines = []) {
   ];
 
   return candidates.some(line => {
-    const compactLine = normalizeNick(line);
-    if (compactLine === target) return true;
-    return String(line || '')
+    const rawLine = String(line || '');
+    const compactLine = normalizeNick(rawLine);
+
+    // O OCR pode colar o nome do clã, separadores ou símbolos ao nick
+    // (ex.: "SEGA | Deivid", "SEGA_Deivid", "SEGADeivid").
+    // Se o nick confirmado aparecer dentro da linha, consideramos a identidade
+    // encontrada. O Battle ID + Role ID continuam sendo a segunda barreira.
+    if (compactLine.includes(target)) return true;
+
+    return rawLine
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .map(normalizeNick)
       .filter(Boolean)
-      .includes(target);
+      .some(token => token === target || token.includes(target));
   });
 }
 
