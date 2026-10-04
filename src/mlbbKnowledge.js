@@ -19,7 +19,7 @@ const knowledge = {
 
 export function answerMlbbQuestion(text) {
   const source = String(text || '').toLowerCase();
-  const mentionsBot = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\\b/i.test(text);
+  const mentionsBot = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(text);
   if (!mentionsBot) return null;
 
   if (knowledge.silvanna.aliases.some(alias => source.includes(alias))) {
