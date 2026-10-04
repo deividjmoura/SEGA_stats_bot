@@ -177,10 +177,14 @@ export async function processScreenshot(ctx, player) {
   const telegramId = String(ctx.from.id);
   if (!Array.isArray(matches[telegramId])) matches[telegramId] = [];
 
-  const duplicate = matches[telegramId].find(item =>
-    (item.imageHash && item.imageHash === imageHash) ||
-    (parsed.battleId && item.parsed?.battleId && String(item.parsed.battleId) === String(parsed.battleId))
-  );
+  const duplicate = matches[telegramId].find(item => {
+    const final = !['pending', 'pending_api_confirmation', 'pending_name_confirmation'].includes(item.verification);
+    if (!final) return false;
+    return (
+      (item.imageHash && item.imageHash === imageHash) ||
+      (parsed.battleId && item.parsed?.battleId && String(item.parsed.battleId) === String(parsed.battleId))
+    );
+  });
 
   const record = {
     id,
