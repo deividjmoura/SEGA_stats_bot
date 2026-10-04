@@ -105,7 +105,9 @@ O objetivo é poder trocar a fonte de dados sem reescrever a lógica do bot.
 - No grupo, imagens só são processadas quando têm a legenda `#print` ou respondem a uma mensagem do bot.
 - Prints classificados como desconhecidos são descartados; prints processados podem conter nicks de outros jogadores visíveis na imagem.
 - O OCR é usado para localizar/validar a tela e o Battle ID; depois da confirmação, K/D/A, resultado, MVP, herói e pontuação vêm da API de partidas como fonte de verdade.
-- Dados de OCR e screenshots são mantidos no volume até serem removidos pela manutenção da aplicação. Planejamos migrar esse armazenamento para banco de dados.
+- Dados de OCR e screenshots têm retenção padrão de 90 dias e são limpos na inicialização; ajuste com `SCREENSHOT_RETENTION_DAYS` se necessário.
+- O texto OCR armazenado é limitado a 2500 caracteres por print.
+- Planejamos migrar esse armazenamento para banco de dados.
 
 **Importante:** qualquer integração oficial futura deverá respeitar os termos, requisitos técnicos, privacidade e regras de acesso da MOONTON.
 
@@ -148,7 +150,7 @@ SEGA_stats_bot/
 
 ## 🛠️ Stack
 
-- **Node.js 20+**
+- **Node.js 20.9+**
 - **Telegraf 4**
 - **Telegram Bot API**
 - **Fetch nativo do Node.js**
