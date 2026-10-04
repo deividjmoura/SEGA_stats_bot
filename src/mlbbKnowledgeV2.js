@@ -1,4 +1,4 @@
-import knowledge from '../data/mlbb-knowledge.json' assert { type: 'json' };
+import knowledge from './mlbb-knowledge.json' with { type: 'json' };
 
 const KNOWN_HEROES = [
   "Aamon",
