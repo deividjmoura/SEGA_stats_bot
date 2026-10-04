@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
 import crypto from 'node:crypto';
-import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification, cleanupScreenshots } from './screenshotStats.js';
+import { processScreenshot, recordVerifiedBattle, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification, cleanupScreenshots } from './screenshotStats.js';
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { nickMatches } from './ocr.js';
@@ -475,7 +475,7 @@ function mainKeyboard() {
   return Markup.keyboard([
     ['📝 Cadastrar jogador', '📊 Minhas stats'],
     ['🏆 Ranking', '👥 Clã SEGA'],
-    ['📸 Enviar print', '📋 Dados coletados'],
+    ['📸 Enviar print', '🔢 Enviar Battle ID'],
     ['❓ Ajuda', '📜 Lore']
   ]).resize().persistent();
 }
@@ -487,7 +487,8 @@ async function sendPrintInstructions(ctx) {
     '🥇 <b>Resultado final</b> — melhor opção; se aparecerem Battle ID, K/D/A e seu nick, melhor ainda.\n' +
     '👤 <b>Perfil</b> — serve para conferir sua conta e guardar um snapshot geral.\n' +
     '📋 <b>Batalhas/Histórico</b> — serve para conferência e evolução do leitor.\n\n' +
-    '💡 Você também pode usar o atalho <b>📸 Enviar print</b> no teclado do bot, na parte inferior da conversa.',
+    '🔢 <b>Battle ID sozinho também funciona:</b> envie o número da partida ou use /battle 1234567890123456. Se a API confirmar que a partida é sua, ela entra nas estatísticas mesmo sem print.\n\n' +
+    '💡 Você também pode usar os atalhos no teclado do bot, na parte inferior da conversa.',
     { parse_mode: 'HTML', ...mainKeyboard() }
   );
 }
@@ -1217,6 +1218,74 @@ bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
 bot.hears('📸 Enviar print', sendPrintInstructions);
+async function handleBattleId(ctx, battleId) {
+  const player = authenticatedPlayers.get(ctx.from.id);
+  if (!player?.jwt) {
+    await replyAs(ctx, 'general', '🔐 Primeiro vincule seu jogador com /cadastrar.');
+    return;
+  }
+
+  const cleanId = String(battleId || '').replace(/[^0-9]/g, '');
+  if (!/^\d{10,18}$/.test(cleanId)) {
+    await replyAs(ctx, 'general', '⚠️ Battle ID inválido. Envie somente o número da partida.');
+    return;
+  }
+
+  await replyAs(ctx, 'general', '🔎 Consultando o Battle ID na API da comunidade...');
+
+  try {
+    const verification = await battleBelongsToPlayer(
+      player.jwt,
+      player.roleId,
+      player.zoneId,
+      cleanId
+    );
+
+    if (!verification.verified) {
+      await replyAs(ctx, 'general',
+        '⏳ <b>PARTIDA NÃO CONFIRMADA</b>\n\n' +
+        'A API não conseguiu confirmar esse Battle ID como uma partida da sua conta.\n' +
+        '<code>' + escapeHtml(cleanId) + '</code>\n\n' +
+        'Motivo: <code>' + escapeHtml(verification.reason) + '</code>',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    const verifiedParsed = normalizeVerifiedMatch(
+      verification.match,
+      verification.matchId,
+      { kind: 'match_result', battleId: cleanId }
+    );
+    const record = await recordVerifiedBattle(ctx.from.id, player, verifiedParsed);
+
+    if (record.duplicate) {
+      await replyAs(ctx, 'general',
+        '♻️ <b>PARTIDA JÁ CONTABILIZADA</b>\n\nEsse Battle ID já foi confirmado anteriormente. Não contei novamente.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
+    await replyAs(ctx, 'general',
+      '✅ <b>PARTIDA VERIFICADA</b>\n\n' +
+      '🔢 Battle ID: <code>' + escapeHtml(cleanId) + '</code>\n' +
+      (verifiedParsed.result === 'win' ? '🏆 Resultado: <b>VITÓRIA</b>\n' : verifiedParsed.result === 'loss' ? '💀 Resultado: <b>DERROTA</b>\n' : '') +
+      '📊 K/D/A: <b>' + verifiedParsed.kda.kills + '/' + verifiedParsed.kda.deaths + '/' + verifiedParsed.kda.assists + '</b>\n' +
+      (verifiedParsed.hero ? '🦸 Herói: <b>' + escapeHtml(verifiedParsed.hero) + '</b>\n' : '') +
+      '\n🛡️ Dados confirmados pela API da comunidade; não foi necessário enviar print.',
+      { parse_mode: 'HTML', ...mainKeyboard() }
+    );
+  } catch (error) {
+    console.error('❌ Erro ao validar Battle ID:', error);
+    await replyAs(ctx, 'general', '⚠️ Não consegui consultar esse Battle ID agora. Tente novamente em alguns instantes.', { ...mainKeyboard() });
+  }
+}
+
+bot.hears('🔢 Enviar Battle ID', async (ctx) => { await replyAs(ctx, 'general', '🔢 Envie agora o número do Battle ID.\n\nExemplo: <code>1234567890123456</code>', { parse_mode: 'HTML', ...mainKeyboard() }); });
+bot.command('battle', async (ctx) => { await handleBattleId(ctx, String(ctx.message?.text || '').replace(/^\/battle(?:@\w+)?\s*/i, '')); });
+bot.hears(/^\d{10,18}$/, async (ctx) => { await handleBattleId(ctx, ctx.message.text); });
+
 bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await replyAs(ctx, 'general', '📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await replyAs(ctx, 'general', '📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
 bot.hears('👥 Clã SEGA', sendClan);
 bot.hears('❓ Ajuda', sendHelp);
