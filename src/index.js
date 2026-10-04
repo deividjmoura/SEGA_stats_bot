@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { dirname } from 'node:path';
 import { processScreenshot, getPlayerScreenshots, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
 import { groupBanterMiddleware } from './groupBanters.js';
+import { answerMlbbQuestion } from './mlbbKnowledge.js';
 
 const token = process.env.BOT_TOKEN;
 const RONE_API = 'https://arena.rone.dev/api';
@@ -965,6 +966,10 @@ bot.action('stats', async (ctx) => {
 });
 
 bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await sendHelp(ctx); });
+bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
+  const answer = answerMlbbQuestion(ctx.message?.text || '');
+  if (answer) await ctx.reply(answer, { parse_mode: 'HTML' });
+});
 bot.hears('📝 Cadastrar jogador', async (ctx) => await askForRoleId(ctx));
 bot.hears('📊 Minhas stats', sendStats);
 bot.hears('🏆 Ranking', sendRanking);
