@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
 import crypto from 'node:crypto';
-import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification } from './screenshotStats.js';
+import { processScreenshot, getPlayerScreenshots, getAllPlayerScreenshotSummaries, summarizePlayerScreenshots, updateScreenshotVerification, cleanupScreenshots } from './screenshotStats.js';
 import { groupBanterMiddleware, markBanterHandled } from './groupBanters.js';
 import { answerMlbbQuestion, listKnowledgeExamples, knowledgeSummary } from './mlbbKnowledgeV2.js';
 import { nickMatches } from './ocr.js';
@@ -1207,6 +1207,7 @@ bot.catch((error) => console.error('❌ Erro no bot:', error));
 
 await restoreSessions();
 await restoreRegistrations();
+await cleanupScreenshots();
 console.log('💾 Diretório de dados: ' + DATA_DIR);
 console.log('💾 Arquivo de sessão: ' + SESSION_FILE);
 console.log('📝 Arquivo de cadastros pendentes: ' + REGISTRATION_FILE);
