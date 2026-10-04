@@ -255,6 +255,50 @@ export async function cleanupScreenshots() {
   }
 }
 
+export async function recordVerifiedBattle(telegramId, player, parsed) {
+  const id = crypto.randomUUID();
+  const battleId = String(parsed?.battleId || '').trim();
+  if (!battleId) throw new Error('Battle ID ausente.');
+
+  let createdRecord = null;
+  await updateJson(MATCHES_FILE, {}, matches => {
+    const key = String(telegramId);
+    if (!Array.isArray(matches[key])) matches[key] = [];
+
+    const duplicate = matches[key].find(item =>
+      item.verification === 'verified_match' &&
+      item.parsed?.battleId &&
+      String(item.parsed.battleId) === battleId
+    );
+
+    createdRecord = {
+      id,
+      telegramId: Number(telegramId),
+      roleId: player.roleId,
+      zoneId: player.zoneId,
+      playerName: player.name || null,
+      createdAt: new Date().toISOString(),
+      imageFile: null,
+      imageHash: null,
+      inputType: 'battle_id',
+      kind: 'match_result',
+      parsed,
+      verification: duplicate ? 'duplicate' : 'verified_match',
+      duplicateOf: duplicate?.id || null,
+      duplicate: Boolean(duplicate),
+      ocrText: '',
+      ocrLines: [],
+      verificationReason: duplicate ? 'battle_id_already_verified' : 'battle_and_account_confirmed',
+      verifiedAt: duplicate ? null : new Date().toISOString()
+    };
+
+    matches[key].push(createdRecord);
+    return matches;
+  });
+
+  return createdRecord;
+}
+
 export async function getPlayerScreenshots(telegramId) {
   const matches = await loadMatches();
   return Array.isArray(matches[String(telegramId)]) ? matches[String(telegramId)] : [];
