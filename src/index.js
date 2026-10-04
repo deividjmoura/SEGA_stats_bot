@@ -1138,7 +1138,8 @@ bot.command('conhecimento', async (ctx) => {
   const summary = knowledgeSummary();
   await ctx.reply(
     '🧠 <b>CONHECIMENTO SEGA</b>\n\n' +
-    '🎮 Heróis cadastrados: <b>' + summary.heroes + '</b>\n' +
+    '🎮 Heróis reconhecidos: <b>' + summary.heroes + '</b>\n' +
+    '🧠 Matchups locais: <b>' + summary.detailedHeroes + '</b>\n' +
     '🛡️ Itens cadastrados: <b>' + summary.items + '</b>\n' +
     '📦 Versão da base: <b>' + summary.version + '</b>\n\n' +
     'Posso entender perguntas sobre counters, itens, dicas, função e rota.\n\n' +
@@ -1184,7 +1185,7 @@ bot.action('stats', async (ctx) => {
 bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await sendHelp(ctx); });
 bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
   const question = ctx.message?.text || '';
-  const answer = answerMlbbQuestion(question);
+  const answer = await answerMlbbQuestion(question);
   try {
     await logQuestion({
       telegramId: ctx.from?.id || null,
