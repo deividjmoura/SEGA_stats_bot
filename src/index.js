@@ -758,8 +758,19 @@ bot.on('photo', async (ctx, next) => {
       await saveSessions();
     }
 
-    const record = await processScreenshot(ctx, player, { name: currentName });
+    const record = await processScreenshot(ctx, player);
     const parsed = record.parsed || {};
+
+    if (record.duplicate) {
+      await updateScreenshotVerification(ctx.from.id, record.id, 'duplicate');
+      await ctx.reply(
+        '♻️ <b>PRINT DUPLICADO</b>\n\n' +
+        'Esse print ou Battle ID já foi registrado para sua conta. Não vou contar a mesma partida duas vezes.',
+        { parse_mode: 'HTML', ...mainKeyboard() }
+      );
+      return;
+    }
+
     const nameOk = nickMatches(currentName, record.ocrText);
     let verification = nameOk ? 'name_match' : 'rejected_name_mismatch';
 
