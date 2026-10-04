@@ -27,7 +27,9 @@ const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || ''
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
 const OCR_COOLDOWN_MS = 30 * 1000;
 const RANKING_CACHE_MS = 5 * 60 * 1000;
+const RANKING_COOLDOWN_MS = 15 * 1000;
 const ocrCooldownByUser = new Map();
+const rankingCooldownByUser = new Map();
 let rankingCache = null;
 const sessionEncryptionSecret = process.env.SESSION_ENCRYPTION_KEY;
 if (!sessionEncryptionSecret) {
@@ -735,6 +737,15 @@ async function sendClan(ctx) {
 }
 
 async function sendRanking(ctx) {
+  const userId = Number(ctx.from?.id);
+  const lastRequest = rankingCooldownByUser.get(userId) || 0;
+  if (Date.now() - lastRequest < RANKING_COOLDOWN_MS) {
+    const remaining = Math.ceil((RANKING_COOLDOWN_MS - (Date.now() - lastRequest)) / 1000);
+    await replyAs(ctx, 'ranking', '⏳ <b>Ranking em cooldown.</b>\n\nAguarde ' + remaining + 's antes de consultar novamente.', { parse_mode: 'HTML' });
+    return;
+  }
+  rankingCooldownByUser.set(userId, Date.now());
+
   const now = Date.now();
   const rows = rankingCache && now - rankingCache.createdAt < RANKING_CACHE_MS
     ? rankingCache.rows
