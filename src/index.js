@@ -489,6 +489,7 @@ async function sendRanking(ctx) {
     players.map(async ([telegramId, player]) => {
       const info = await apiJson('/user/info', { headers: authHeaders(player.jwt) });
       if (!info.response.ok || info.body?.code !== 0) return null;
+      player.name = info.body.data?.name || player.name || 'Jogador';
 
       const stats = await fetchPlayerStats(player.jwt);
       if (stats.source === 'error') return null;
@@ -514,6 +515,8 @@ async function sendRanking(ctx) {
       };
     })
   );
+
+  await saveSessions();
 
   const ranking = results
     .filter(result => result.status === 'fulfilled' && result.value)
@@ -578,6 +581,9 @@ async function sendStats(ctx) {
       await ctx.reply('⚠️ A API respondeu com erro ao validar sua sessão. Tente novamente em alguns instantes.');
       return;
     }
+
+    player.name = infoBody.data?.name || player.name || 'Jogador';
+    await saveSessions();
 
     const statsResult = await fetchPlayerStats(player.jwt);
 
