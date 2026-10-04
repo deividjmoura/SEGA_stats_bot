@@ -202,6 +202,153 @@ function suggestHero(text) {
 const RONE_API = 'https://arena.rone.dev/api';
 const LIVE_HEROES_URL = 'https://arda.ozyurt.tr/mlbb/data/heroes.min.json';
 const LIVE_MATRIX_URL = 'https://arda.ozyurt.tr/mlbb/data/matrix.json';
+
+const ACADEMY_API = 'https://arena.rone.dev/api';
+const academyCache = new Map();
+
+async function academyFetch(path, params = {}) {
+  const url = new URL(ACADEMY_API + path);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Academy API HTTP ' + response.status);
+
+  const body = await response.json();
+  if (body?.code !== 0) throw new Error(body?.message || 'Academy API error');
+  return body;
+}
+
+async function academyCached(key, loader, ttl = 30 * 60 * 1000) {
+  const cached = academyCache.get(key);
+  if (cached && Date.now() - cached.at < ttl) return cached.value;
+
+  const value = await loader();
+  if (value) academyCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+async function loadAcademyCatalog() {
+  return academyCached('catalog', async () => {
+    const body = await academyFetch('/academy/heroes/catalog', { size: 200, lang: 'pt' });
+    return body?.data?.records || [];
+  }, 60 * 60 * 1000);
+}
+
+async function loadAcademyEquipment() {
+  return academyCached('equipment', async () => {
+    const body = await academyFetch('/academy/equipment', { size: 250, lang: 'pt' });
+    return body?.data?.records || [];
+  }, 60 * 60 * 1000);
+}
+
+function academyHeroIdMap(records) {
+  const map = new Map();
+  for (const record of records || []) {
+    const data = record?.data || {};
+    const name = data?.hero?.data?.name;
+    if (name && data.hero_id != null) map.set(String(data.hero_id), name);
+  }
+  return map;
+}
+
+async function getAcademyCounters(heroName) {
+  try {
+    const body = await academyFetch(
+      '/academy/heroes/' + encodeURIComponent(heroName) + '/counters',
+      { rank: 'all', size: 20, lang: 'en' }
+    );
+    const record = body?.data?.records?.[0]?.data;
+    if (!record?.sub_hero?.length) return null;
+
+    const catalog = await loadAcademyCatalog();
+    const names = academyHeroIdMap(catalog);
+
+    return record.sub_hero
+      .slice()
+      .sort((a, b) => Number(b.increase_win_rate || 0) - Number(a.increase_win_rate || 0))
+      .map(row => names.get(String(row.heroid)))
+      .filter(Boolean)
+      .slice(0, 5);
+  } catch (error) {
+    console.warn('⚠️ Counters da Academy indisponíveis:', error?.message || error);
+    return null;
+  }
+}
+
+async function getAcademyBuild(heroName) {
+  try {
+    const body = await academyFetch(
+      '/academy/heroes/' + encodeURIComponent(heroName) + '/builds',
+      { rank: 'all', size: 10, lang: 'pt' }
+    );
+    const records = body?.data?.records || [];
+    const candidates = [];
+
+    for (const record of records) {
+      const data = record?.data || {};
+      for (const build of data.build || []) {
+        candidates.push({
+          heroName: data.hero_name || heroName,
+          laneId: data.real_road,
+          items: Array.isArray(build.equipid) ? build.equipid : [],
+          emblem: build?.emblem?.data?.emblemname || build?.emblem?.emblemname || null,
+          emblemAttr: build?.emblem?.data?.emblemattr?.emblemattr || build?.emblem?.emblemattr || null,
+          spell: build?.battleskill?.data?.skillname || build?.battleskill?.skillname || null,
+          winRate: Number(build.build_win_rate || 0),
+          pickRate: Number(build.build_pick_rate || 0)
+        });
+      }
+    }
+
+    if (!candidates.length) return null;
+
+    candidates.sort((a, b) => {
+      const winDiff = b.winRate - a.winRate;
+      if (Math.abs(winDiff) > 0.0001) return winDiff;
+      return b.pickRate - a.pickRate;
+    });
+
+    const best = candidates[0];
+    const equipment = await loadAcademyEquipment();
+    const itemNames = new Map();
+
+    for (const record of equipment) {
+      const data = record?.data || {};
+      if (data.equipid != null && data.equipname) itemNames.set(String(data.equipid), data.equipname);
+    }
+
+    return {
+      ...best,
+      items: best.items.map(id => itemNames.get(String(id)) || ('Item #' + id)).filter(Boolean)
+    };
+  } catch (error) {
+    console.warn('⚠️ Build da Academy indisponível:', error?.message || error);
+    return null;
+  }
+}
+
+async function getAcademyStats(heroName) {
+  try {
+    const body = await academyFetch(
+      '/academy/heroes/' + encodeURIComponent(heroName) + '/stats',
+      { rank: 'all', size: 10, lang: 'pt' }
+    );
+    const data = body?.data?.records?.[0]?.data;
+    if (!data) return null;
+
+    return {
+      winRate: Number(data.main_hero_win_rate),
+      pickRate: Number(data.main_hero_pick_rate),
+      banRate: Number(data.main_hero_ban_rate)
+    };
+  } catch (error) {
+    console.warn('⚠️ Stats da Academy indisponíveis:', error?.message || error);
+    return null;
+  }
+}
+
 let liveDataCache = null;
 let liveDataFetchedAt = 0;
 let liveDataPromise = null;
@@ -249,6 +396,11 @@ function liveHeroByName(name, heroes) {
 }
 
 async function getLiveCounters(heroName) {
+  // Preferimos a fonte Academy/Rone, que expõe counters por rank e patch.
+  const academyCounters = await getAcademyCounters(heroName);
+  if (academyCounters?.length) return academyCounters;
+
+  // Fallback para a matriz live legada.
   const live = await loadLiveMatchups();
   if (!live) return null;
 
@@ -268,7 +420,7 @@ async function getLiveCounters(heroName) {
     rows.push({ name: attacker.n, edge });
   }
 
-  rows.sort((a, b) => b.edge - a.edge);
+  rows.sort((x, y) => y.edge - x.edge);
   return rows.slice(0, 5).map(row => row.name);
 }
 
@@ -369,7 +521,7 @@ async function getLiveHeroProfile(heroName) {
     const response = await fetch(
       RONE_API + '/heroes/' + encodeURIComponent(heroName) + '?lang=pt&size=1'
     );
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error('hero profile HTTP ' + response.status);
 
     const body = await response.json();
     const record = body?.data?.records?.[0];
@@ -380,19 +532,11 @@ async function getLiveHeroProfile(heroName) {
       : sort?.sort_title || null;
 
     const roads = Array.isArray(data.roadsort)
-      ? data.roadsort.map(item => item?.sort_title).filter(Boolean)
+      ? data.roadsort.map(item => item?.data?.road_sort_title || item?.road_sort_title).filter(Boolean)
       : [];
-    const lane =
-      data?.story?.road_sort_title ||
-      data?.road_sort_title ||
-      roads[0] ||
-      null;
+    const lane = data?.story?.road_sort_title || data?.road_sort_title || roads[0] || null;
 
-    const value = {
-      name: data.name || heroName,
-      role,
-      lane
-    };
+    const value = { name: data.name || heroName, role, lane };
     liveProfileCache.set(key, { at: Date.now(), value });
     return value;
   } catch (error) {
@@ -416,6 +560,8 @@ export function knowledgeSummary() {
   return {
     heroes: KNOWN_HEROES.length,
     detailedHeroes: Object.keys(knowledge.heroes).length,
+    liveRoster: KNOWN_HEROES.length,
+    liveKnowledgeSource: 'Rone Arena / Academy API',
     items: Object.keys(knowledge.items).length,
     version: knowledge.version,
     updatedAt: knowledge.updatedAt
@@ -500,26 +646,45 @@ export async function answerMlbbQuestion(text) {
   }
 
   if (intent === 'build') {
-    const build = buildForHero(hero);
+    // A build dinâmica cobre o roster inteiro. A fonte é a Academy/Rone,
+    // com taxa de vitória/uso do conjunto, em vez de manter só alguns heróis hardcoded.
+    const liveBuild = await getAcademyBuild(hero.pt);
 
-    if (!build) {
-      const liveProfile = await getLiveHeroProfile(hero.pt);
-      return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\n\n' +
-        (liveProfile
-          ? '🎯 Função: <b>' + liveProfile.role + '</b> • Rota: <b>' + liveProfile.lane + '</b>\n\n'
-          : '') +
-        'Ainda não tenho uma build curada específica para esse herói. Prefiro não inventar seis itens.\n\n' +
-        'Posso consultar os counters atualizados e, conforme a base crescer, adicionar a build recomendada.';
+    if (!liveBuild) {
+      const fallback = buildForHero(hero);
+      if (!fallback) {
+        const liveProfile = await getLiveHeroProfile(hero.pt);
+        return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
+          (liveProfile
+            ? '🎯 Função: <b>' + (liveProfile.role || 'não disponível') + '</b> • Rota: <b>' + (liveProfile.lane || 'não disponível') + '</b>\\n\\n'
+            : '') +
+          '⚠️ A base live de builds está indisponível neste momento. Não vou inventar seis itens. Tente novamente em alguns segundos.';
+      }
+
+      return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
+        '🛒 <b>Ordem sugerida:</b>\\n' +
+        fallback.items.map((item, index) => (index + 1) + '. ' + item).join('\\n') + '\\n\\n' +
+        '🧿 Emblema: <b>' + fallback.emblem + '</b>\\n' +
+        '✨ Feitiço: <b>' + fallback.spell + '</b>\\n\\n' +
+        '💡 ' + fallback.note + '\\n\\n' +
+        '📚 Fallback local; a fonte live de builds não respondeu.';
     }
 
-    return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\n\n' +
-      '🎯 <b>' + build.role + '</b> • ' + build.lane + '\n' +
-      '🛒 <b>Ordem sugerida:</b>\n' +
-      build.items.map((item, index) => (index + 1) + '. ' + item).join('\n') + '\n\n' +
-      '🧿 Emblema: <b>' + build.emblem + '</b>\n' +
-      '✨ Feitiço: <b>' + build.spell + '</b>\n\n' +
-      '💡 ' + build.note + '\n\n' +
-      '📚 Referência: <b>' + build.sourceLabel + '</b> no patch ' + build.patch + '. É uma base, não uma regra fixa; a partida deve decidir os itens situacionais.';
+    const wr = Number.isFinite(liveBuild.winRate) && liveBuild.winRate > 0
+      ? '\\n📈 WR da build: <b>' + (liveBuild.winRate * 100).toFixed(1) + '%</b>'
+      : '';
+    const pr = Number.isFinite(liveBuild.pickRate) && liveBuild.pickRate > 0
+      ? '\\n📌 Uso da build: <b>' + (liveBuild.pickRate * 100).toFixed(2) + '%</b>'
+      : '';
+
+    return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
+      '🛒 <b>Itens recomendados:</b>\\n' +
+      liveBuild.items.map((item, index) => (index + 1) + '. ' + item).join('\\n') + '\\n\\n' +
+      '🧿 Emblema: <b>' + (liveBuild.emblem || 'não informado') + '</b>' +
+      (liveBuild.emblemAttr ? '\\n📐 ' + liveBuild.emblemAttr.replace(/\\n/g, ' • ').trim() : '') + '\\n' +
+      '✨ Feitiço: <b>' + (liveBuild.spell || 'não informado') + '</b>' +
+      wr + pr + '\\n\\n' +
+      '📚 Fonte live: <b>Rone Arena / Academy</b>. A build é uma referência estatística; ajuste botas, defesa, penetração e itens situacionais conforme a composição inimiga.';
   }
 
   return '🎮 <b>' + title + '</b> foi reconhecido.\n\nTente perguntar:\n• quem countera ' + hero.pt + '?\n• qual item faço contra ' + hero.pt + '?\n• como jogar contra ' + hero.pt + '?';
