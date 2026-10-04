@@ -91,6 +91,28 @@ function normalizeNickForOcr(value) {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+function levenshteinSimilarity(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  if (!left || !right) return 0;
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + cost
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+}
+
 function findPlayerOcrLine(tsv, expectedNick) {
   const target = normalizeNickForOcr(expectedNick);
   if (!target || target.length < 3) return null;
@@ -110,22 +132,33 @@ function findPlayerOcrLine(tsv, expectedNick) {
       const text = group.map(word => word.text).join(' ');
       const compact = normalizeNickForOcr(text);
       const targetIndex = compact.indexOf(target);
+      let similarity = targetIndex >= 0 ? 1 : 0;
+      if (targetIndex < 0 && compact) {
+        const minWindow = Math.max(3, target.length - 2);
+        const maxWindow = Math.min(compact.length, target.length + 4);
+        for (let size = minWindow; size <= maxWindow; size += 1) {
+          for (let start = 0; start + size <= compact.length; start += 1) {
+            similarity = Math.max(similarity, levenshteinSimilarity(target, compact.slice(start, start + size)));
+          }
+        }
+      }
       return {
         words: group,
         text,
         compact,
         targetIndex,
+        similarity,
         confidence: group.reduce((sum, word) => sum + (Number.isFinite(word.confidence) ? word.confidence : 0), 0) / group.length
       };
     })
-    .filter(group => group.targetIndex >= 0);
+    .filter(group => group.targetIndex >= 0 || group.similarity >= 0.58);
 
   if (!candidates.length) return null;
 
   candidates.sort((a, b) => {
     const aExact = a.compact === target ? 1 : 0;
     const bExact = b.compact === target ? 1 : 0;
-    return bExact - aExact || b.confidence - a.confidence;
+    return bExact - aExact || b.similarity - a.similarity || b.confidence - a.confidence;
   });
 
   const best = candidates[0];
@@ -182,9 +215,10 @@ async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
 
     return {
       text,
-      kda: parseScreenshotStats(text, expectedNick).kda,
+      kda: parseScreenshotStats(text, expectedNick).kda || parseScreenshotStats(text, null).kda,
       lineText: line.text,
       confidence: line.confidence,
+      similarity: line.similarity,
       bounds: { left, top, width, height }
     };
   } finally {
@@ -328,6 +362,9 @@ export async function processScreenshot(ctx, player) {
   if (highlightedRow?.text) {
     parsed.playerRowOcr = highlightedRow.text.slice(0, 1200);
     parsed.playerRowFound = true;
+    parsed.playerRowIdentityScore = Number.isFinite(highlightedRow.similarity)
+      ? Number(highlightedRow.similarity.toFixed(3))
+      : null;
     parsed.playerRowConfidence = Number.isFinite(highlightedRow.confidence)
       ? Number(highlightedRow.confidence.toFixed(1))
       : null;
