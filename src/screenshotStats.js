@@ -57,20 +57,46 @@ async function preprocessImage(inputPath, outputPath) {
     .toFile(outputPath);
 }
 
-function heartSelectionScore(buffer) {
-  let bright = 0;
-  let cyan = 0;
-  const total = buffer.length / 3;
+function heartPresenceScore(buffer) {
+  const pixels = buffer;
+  const count = pixels.length / 3;
+  let mean = 0;
+  let sumSq = 0;
 
-  for (let i = 0; i < buffer.length; i += 3) {
-    const r = buffer[i];
-    const g = buffer[i + 1];
-    const b = buffer[i + 2];
-    if (r > 160 && g > 160 && b > 160) bright += 1;
-    if (g > 100 && b > 120 && r < 130) cyan += 1;
+  for (let i = 0; i < pixels.length; i += 3) {
+    const gray = pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114;
+    mean += gray;
+    sumSq += gray * gray;
   }
 
-  return (bright / total) + (cyan / total) * 0.35;
+  mean /= count;
+  const variance = Math.max(0, sumSq / count - mean * mean);
+
+  // O coração desenha um contorno e preenchimento dentro da pequena região.
+  // A linha sem coração é muito mais uniforme. Medimos variação local e
+  // bordas para distinguir "não há coração" de um coração escuro.
+  let edge = 0;
+  const width = Math.sqrt(count * 0.9);
+  const approxWidth = Math.max(1, Math.round(width));
+  const rows = Math.max(1, Math.floor(count / approxWidth));
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < approxWidth - 1; x += 1) {
+      const i = (y * approxWidth + x) * 3;
+      const j = i + 3;
+      if (j >= pixels.length) break;
+      const a = pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114;
+      const b = pixels[j] * 0.299 + pixels[j + 1] * 0.587 + pixels[j + 2] * 0.114;
+      edge += Math.abs(a - b);
+    }
+  }
+
+  edge /= Math.max(1, count);
+  return {
+    texture: Math.sqrt(variance),
+    edge,
+    score: Math.sqrt(variance) + edge
+  };
 }
 
 async function detectSelectedRowByHeart(imagePath) {
@@ -103,157 +129,43 @@ async function detectSelectedRowByHeart(imagePath) {
         .raw()
         .toBuffer({ resolveWithObject: true });
 
+      const presence = heartPresenceScore(data);
       candidates.push({
         side: side.side,
         rowIndex,
-        score: heartSelectionScore(data)
+        presence,
+        bounds: { left, top, width: roiWidth, height: roiHeight }
       });
     }
   }
 
-  const standout = [];
-  for (const side of sides) {
-    const rows = candidates.filter(item => item.side === side.side);
-    const sorted = rows.slice().sort((a, b) => b.score - a.score);
-    const best = sorted[0];
-    const rest = sorted.slice(1).map(item => item.score).sort((a, b) => a - b);
-    const median = rest[Math.floor(rest.length / 2)] || 0;
-    const gap = best.score - median;
+  // O jogador da conta é a linha que não oferece o botão "seguir".
+  // Portanto, procuramos o menor sinal de coração entre as 10 linhas.
+  const sorted = candidates.slice().sort((a, b) => a.presence.score - b.presence.score);
+  const best = sorted[0];
+  const second = sorted[1];
 
-    // O coração selecionado fica visivelmente mais claro/preenchido.
-    if (best.score >= 0.045 && (gap >= 0.018 || best.score >= median * 1.65)) {
-      standout.push({
-        ...best,
-        gap,
-        confidence: Math.min(1, Math.max(0, gap / Math.max(best.score, 0.001)))
-      });
-    }
+  if (!best || !second) return null;
+
+  const gap = second.presence.score - best.presence.score;
+  const ratio = best.presence.score > 0
+    ? second.presence.score / best.presence.score
+    : Infinity;
+
+  // No print de referência, a linha sem coração tem textura/bordas muito
+  // menores que qualquer linha que contém o botão. Exigimos uma diferença
+  // clara para não escolher uma linha por ruído.
+  if (best.presence.score >= 8 || (gap < 0.8 && ratio < 1.35)) {
+    return null;
   }
-
-  standout.sort((a, b) => b.confidence - a.confidence || b.gap - a.gap);
-  return standout[0] || null;
-}
-
-function parseTsvWords(tsv) {
-  return String(tsv || '')
-    .split(/\r?\n/)
-    .slice(1)
-    .map(line => line.split('\t'))
-    .filter(parts => parts.length >= 12)
-    .map(parts => ({
-      block: Number(parts[2]),
-      paragraph: Number(parts[3]),
-      line: Number(parts[4]),
-      left: Number(parts[6]),
-      top: Number(parts[7]),
-      width: Number(parts[8]),
-      height: Number(parts[9]),
-      confidence: Number(parts[10]),
-      text: String(parts[11] || '').trim()
-    }))
-    .filter(word =>
-      Number.isFinite(word.left) &&
-      Number.isFinite(word.top) &&
-      word.width > 0 &&
-      word.height > 0 &&
-      word.text
-    );
-}
-
-function normalizeNickForOcr(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
-}
-
-function levenshteinSimilarity(a, b) {
-  const left = String(a || '');
-  const right = String(b || '');
-  if (!left || !right) return 0;
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-
-  for (let i = 1; i <= left.length; i += 1) {
-    const current = [i];
-    for (let j = 1; j <= right.length; j += 1) {
-      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
-      current[j] = Math.min(
-        current[j - 1] + 1,
-        previous[j] + 1,
-        previous[j - 1] + cost
-      );
-    }
-    previous.splice(0, previous.length, ...current);
-  }
-
-  return 1 - previous[right.length] / Math.max(left.length, right.length);
-}
-
-function findPlayerOcrLine(tsv, expectedNick) {
-  const target = normalizeNickForOcr(expectedNick);
-  if (!target || target.length < 3) return null;
-
-  const words = parseTsvWords(tsv);
-  const groups = new Map();
-
-  for (const word of words) {
-    const key = [word.block, word.paragraph, word.line].join(':');
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(word);
-  }
-
-  const candidates = [...groups.values()]
-    .map(group => {
-      group.sort((a, b) => a.left - b.left);
-      const text = group.map(word => word.text).join(' ');
-      const compact = normalizeNickForOcr(text);
-      const targetIndex = compact.indexOf(target);
-      let similarity = targetIndex >= 0 ? 1 : 0;
-      if (targetIndex < 0 && compact) {
-        const minWindow = Math.max(3, target.length - 2);
-        const maxWindow = Math.min(compact.length, target.length + 4);
-        for (let size = minWindow; size <= maxWindow; size += 1) {
-          for (let start = 0; start + size <= compact.length; start += 1) {
-            similarity = Math.max(similarity, levenshteinSimilarity(target, compact.slice(start, start + size)));
-          }
-        }
-      }
-      return {
-        words: group,
-        text,
-        compact,
-        targetIndex,
-        similarity,
-        confidence: group.reduce((sum, word) => sum + (Number.isFinite(word.confidence) ? word.confidence : 0), 0) / group.length
-      };
-    })
-    .filter(group => group.targetIndex >= 0 || group.similarity >= 0.58);
-
-  if (!candidates.length) return null;
-
-  candidates.sort((a, b) => {
-    const aExact = a.compact === target ? 1 : 0;
-    const bExact = b.compact === target ? 1 : 0;
-    return bExact - aExact || b.similarity - a.similarity || b.confidence - a.confidence;
-  });
-
-  const best = candidates[0];
-  const left = Math.min(...best.words.map(word => word.left));
-  const top = Math.min(...best.words.map(word => word.top));
-  const right = Math.max(...best.words.map(word => word.left + word.width));
-  const bottom = Math.max(...best.words.map(word => word.top + word.height));
 
   return {
     ...best,
-    left,
-    top,
-    right,
-    bottom,
-    height: Math.max(1, bottom - top)
+    confidence: Math.min(1, Math.max(0, gap / Math.max(second.presence.score, 0.001))),
+    heartPresence: best.presence,
+    runnerUpPresence: second.presence
   };
 }
-
 async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
   const metadata = await sharp(imagePath).metadata();
   const imageWidth = metadata.width || 1600;
@@ -274,7 +186,7 @@ async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
       text: '',
       confidence: selected.confidence * 100,
       similarity: 1,
-      selectedByHeart: true,
+      selectedByMissingHeart: true,
       selectedSide: selected.side,
       selectedRowIndex: selected.rowIndex
     };
@@ -320,7 +232,7 @@ async function readHighlightedPlayerRow(worker, imagePath, tsv, expectedNick) {
       lineText: line.text,
       confidence: line.confidence,
       similarity: line.similarity,
-      selectedByHeart: Boolean(line.selectedByHeart),
+      selectedByMissingHeart: Boolean(line.selectedByMissingHeart),
       selectedSide: line.selectedSide || null,
       selectedRowIndex: Number.isInteger(line.selectedRowIndex) ? line.selectedRowIndex : null,
       bounds: { left, top, width, height }
@@ -471,7 +383,7 @@ export async function processScreenshot(ctx, player) {
     parsed.playerRowConfidence = Number.isFinite(highlightedRow.confidence)
       ? Number(highlightedRow.confidence.toFixed(1))
       : null;
-    parsed.playerRowSelectedByHeart = Boolean(highlightedRow.selectedByHeart);
+    parsed.playerRowSelectedByMissingHeart = Boolean(highlightedRow.selectedByMissingHeart);
     parsed.playerRowSelectedSide = highlightedRow.selectedSide || null;
     parsed.playerRowIndex = Number.isInteger(highlightedRow.selectedRowIndex)
       ? highlightedRow.selectedRowIndex
