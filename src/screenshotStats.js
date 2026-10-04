@@ -182,3 +182,13 @@ export function summarizePlayerScreenshots(records) {
     assists
   };
 }
+
+export async function updateScreenshotVerification(telegramId, recordId, verification) {
+  const matches = await loadMatches();
+  const list = Array.isArray(matches[String(telegramId)]) ? matches[String(telegramId)] : [];
+  const record = list.find(item => item.id === recordId);
+  if (!record) return null;
+  record.verification = verification;
+  await saveMatches(matches);
+  return record;
+}
