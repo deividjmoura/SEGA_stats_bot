@@ -1,21 +1,15 @@
 import { promises as fs } from 'node:fs';
-import { dirname } from 'node:path';
+import { readJson, writeJson } from './storage/jsonStore.js';
 
 export const QUESTIONS_FILE = process.env.QUESTIONS_FILE ||
   ((process.env.RAILWAY_VOLUME_MOUNT_PATH || './data') + '/questions.json');
 
 async function readRows() {
-  try {
-    const rows = JSON.parse(await fs.readFile(QUESTIONS_FILE, 'utf8'));
-    return Array.isArray(rows) ? rows : [];
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
+  const rows = await readJson(QUESTIONS_FILE, []);
+  return Array.isArray(rows) ? rows : [];
 }
 
 export async function logQuestion(entry) {
-  await fs.mkdir(dirname(QUESTIONS_FILE), { recursive: true });
   const rows = await readRows();
   rows.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
@@ -23,7 +17,7 @@ export async function logQuestion(entry) {
     ...entry
   });
   const trimmed = rows.slice(-2000);
-  await fs.writeFile(QUESTIONS_FILE, JSON.stringify(trimmed, null, 2), 'utf8');
+  await writeJson(QUESTIONS_FILE, trimmed);
 }
 
 export async function getQuestionReport(limit = 15) {
