@@ -289,7 +289,7 @@ function intentOf(text) {
   if (new RegExp('(?:counter|couter|countera|counteram|counterado|counterada|ganha|vence|bom\\s+' + against + '|forte\\s+' + against + ')').test(source)) return 'counter';
   if (new RegExp('(?:item|itens|equipamento|equipamentos).*' + against + '|' + against + '.*(?:item|itens|equipamento|equipamentos)').test(source)) return 'items';
   if (new RegExp('(?:como jogar|como luto|como enfrentar|dica|dicas).*' + against + '|como jogar\\s+' + against).test(source)) return 'tips';
-  if (/(build|montar|montagem).*(de|do|da)/.test(source)) return 'build';
+  if (/(?:build|buildar|montar|montagem)(?:.*(?:de|do|da)\b|\s+[a-z0-9áàâãéêíóôõúçü' -]+$)/.test(source)) return 'build';
   if (/(funcao|lane|rota|papel|role|quem e|quem eh|qual heroi)/.test(source)) return 'hero';
   if (new RegExp('(?:counter|couter|' + against + '|build|item|equipamento|heroi)').test(source)) return 'unknown_mlbb';
   return 'unknown';
