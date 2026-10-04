@@ -402,6 +402,23 @@ function askForRoleId(ctx) {
 }
 
 async function sendMenu(ctx) {
+  if (isGroupChat(ctx)) {
+    await ctx.reply(
+      '🎮 <b>SEGA STATS ONLINE</b>\n\n' +
+      '🏆 Ranking • 📊 Stats • 📸 Prints\n\n' +
+      '🔐 O cadastro de cada jogador é feito no privado, para não expor Role ID, Zone ID ou código de verificação no grupo.\n\n' +
+      'Use /cadastrar no privado e, depois de vincular a conta, envie seus prints aqui no grupo.',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🏆 Ranking', 'ranking'), Markup.button.callback('📊 Minhas stats', 'stats')],
+          [Markup.button.callback('👥 Clã SEGA', 'clan'), Markup.button.callback('❓ Ajuda', 'help')]
+        ])
+      }
+    );
+    return;
+  }
+
   await ctx.reply(startMessage, { parse_mode: 'HTML', ...mainKeyboard() });
   await ctx.reply('⚡ <b>AÇÕES RÁPIDAS</b>', {
     parse_mode: 'HTML',
@@ -728,6 +745,7 @@ bot.command('prints', async (ctx) => {
     '⚔️ Partidas verificadas: <b>' + summary.verifiedMatches + '</b>\n' +
     '⏳ Pendentes: <b>' + summary.pendingMatches + '</b>\n' +
     '🚫 Rejeitadas: <b>' + summary.rejectedMatches + '</b>\n' +
+    '♻️ Duplicados: <b>' + summary.duplicates + '</b>\n' +
     '🏆 Vitórias: <b>' + summary.wins + '</b>\n' +
     '💀 Derrotas: <b>' + summary.losses + '</b>\n' +
     '⚔️ K/D/A somado: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>\n\n' +
