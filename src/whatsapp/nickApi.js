@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { buildNickSnapshot } from './nickSnapshot.js';
 
 const ROUTE = '/api/whatsapp/nicks';
@@ -12,15 +13,13 @@ function isAuthorized(request, expectedToken) {
   const provided = Buffer.from(authorization.slice(prefix.length));
   const expected = Buffer.from(expectedToken);
   return provided.length === expected.length && provided.length > 0 &&
-    (awaitSafeCompare(provided, expected));
+    (safeCompare(provided, expected));
 }
 
-function awaitSafeCompare(left, right) {
+function safeCompare(left, right) {
   // Lengths are checked before timingSafeEqual to avoid its length exception.
-  return cryptoTimingSafeEqual(left, right);
+  return timingSafeEqual(left, right);
 }
-
-import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto';
 
 export function createNickApiServer({ token, getPlayers }) {
   if (typeof token !== 'string' || token.length < MIN_TOKEN_LENGTH) {
