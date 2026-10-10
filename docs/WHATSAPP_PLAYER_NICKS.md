@@ -10,6 +10,8 @@ Publicar no grupo do WhatsApp uma lista dos nicks dos jogadores que já estão c
 
 - `buildNickListMessage(players)`: cria uma mensagem organizada, ordena os nomes, ignora valores vazios e remove duplicados.
 - `publishNickList({ client, groupJid, players })`: envia a mensagem usando um cliente de WhatsApp injetado, sem acoplar a função à biblioteca de conexão.
+- `src/whatsapp/nickSnapshot.js`: gera e grava um snapshot público mínimo com apenas os nicks; não copia JWT, Role ID, Zone ID nem IDs do Telegram.
+- `test/whatsappNickSnapshot.test.js`: verifica a lista segura e a gravação do snapshot.
 
 O teste automatizado está em `test/whatsappNickList.test.js`.
 
@@ -21,7 +23,7 @@ Esta é a função de montagem e publicação da lista, não a conexão completa
 
 1. Escolher e validar a biblioteca/conexão do WhatsApp em um ambiente de teste.
 2. Parear uma conta de teste e identificar o grupo de destino.
-3. Ler apenas os nicks já salvos no armazenamento persistente, sem expor JWTs ou códigos de verificação.
+3. Integrar o processo principal a `writeNickSnapshot()` para exportar somente os nicks verificados para um arquivo separado configurado por `WHATSAPP_NICKS_FILE`, sem expor JWTs ou códigos de verificação.
 4. Publicar a lista manualmente no primeiro teste e confirmar o resultado no aplicativo do celular.
 5. Só então automatizar atualização da lista.
 
