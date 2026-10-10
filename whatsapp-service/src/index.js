@@ -1,6 +1,23 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { createNickAnnouncer } from '../../src/whatsapp/nickAnnouncer.js';
+const DEFAULT_INACTIVITY_MS = 15 * 60 * 1000;
+function createNickAnnouncer({ lookupNick, inactivityMs = DEFAULT_INACTIVITY_MS, now = Date.now } = {}) {
+  if (typeof lookupNick !== 'function') throw new TypeError('lookupNick deve ser uma função');
+  const lastMessageBySender = new Map();
+  async function handle({ groupJid, senderJid, message, fromMe = false, isHistory = false, sendReply }) {
+    if (fromMe || isHistory || !groupJid?.endsWith('@g.us') || !senderJid || !message) return false;
+    const timestamp = now();
+    const key = groupJid + ':' + senderJid;
+    const previous = lastMessageBySender.get(key);
+    lastMessageBySender.set(key, timestamp);
+    if (previous !== undefined && timestamp - previous < inactivityMs) return false;
+    const nick = await lookupNick(senderJid, groupJid);
+    if (typeof nick !== 'string' || !nick.trim()) return false;
+    await sendReply({ groupJid, message, text: nick.trim() + ' disse:' });
+    return true;
+  }
+  return { handle };
+}
 
 const logger = pino({ level: 'silent' });
 const authDir = process.env.WHATSAPP_AUTH_DIR || '/app/data/whatsapp-auth';
