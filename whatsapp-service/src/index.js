@@ -6,9 +6,7 @@ function createNickAnnouncer({ lookupNick, inactivityMs = DEFAULT_INACTIVITY_MS,
   const lastMessageBySender = new Map();
   async function handle({ groupJid, senderJid, message, fromMe = false, isHistory = false, sendReply }) {
     if (fromMe || isHistory || !groupJid?.endsWith('@g.us') || !senderJid || !message) return false;
-    const timestamp = now();
-    const key = groupJid + ':' + senderJid;
-    const previous = lastMessageBySender.get(key);
+    const timestamp = now(), key = groupJid + ':' + senderJid, previous = lastMessageBySender.get(key);
     lastMessageBySender.set(key, timestamp);
     if (previous !== undefined && timestamp - previous < inactivityMs) return false;
     const nick = await lookupNick(senderJid, groupJid);
@@ -18,7 +16,6 @@ function createNickAnnouncer({ lookupNick, inactivityMs = DEFAULT_INACTIVITY_MS,
   }
   return { handle };
 }
-
 const logger = pino({ level: 'silent' });
 const authDir = process.env.WHATSAPP_AUTH_DIR || '/app/data/whatsapp-auth';
 const targetGroup = process.env.WHATSAPP_GROUP_JID;
@@ -28,27 +25,21 @@ let mapping = {};
 try {
   mapping = JSON.parse(process.env.WHATSAPP_NICK_MAP_JSON || '{}');
   if (!mapping || Array.isArray(mapping) || typeof mapping !== 'object') throw Error();
-} catch {
-  throw new Error('WHATSAPP_NICK_MAP_JSON deve ser um objeto JSON de JID para nick');
-}
+} catch { throw new Error('WHATSAPP_NICK_MAP_JSON deve ser um objeto JSON de JID para nick'); }
 const announcer = createNickAnnouncer({ lookupNick: async (sender) => mapping[sender] || null });
-
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const sock = makeWASocket({ auth: state, logger, syncFullHistory: false });
   sock.ev.on('creds.update', saveCreds);
-  let pairingRequested = false;
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr && !state.creds.registered && pairPhone && !pairingRequested) {
-      pairingRequested = true;
+  if (!state.creds.registered && pairPhone) {
+    setTimeout(async () => {
       try {
         const code = await sock.requestPairingCode(pairPhone);
-        // TEMPORÁRIO: capturado pelo operador e removido logo após o pareamento.
         console.log('PAIRING_CODE_ONCE:' + code);
-      } catch (error) {
-        console.error('Falha ao solicitar pareamento:', error?.message);
-      }
-    }
+      } catch (error) { console.error('Falha ao solicitar pareamento:', error?.message); }
+    }, 2500);
+  }
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     if (connection === 'open') console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
     if (connection === 'close') {
       const status = lastDisconnect?.error?.output?.statusCode;
@@ -59,17 +50,12 @@ async function connect() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify' || !enabled || !targetGroup) return;
     for (const message of messages || []) {
-      const groupJid = message.key?.remoteJid;
-      const senderJid = message.key?.participant;
+      const groupJid = message.key?.remoteJid, senderJid = message.key?.participant;
       if (groupJid !== targetGroup || !senderJid || message.key?.fromMe || !message.message) continue;
       try {
-        await announcer.handle({
-          groupJid, senderJid, message,
-          sendReply: async ({ text }) => sock.sendMessage(groupJid, { text })
-        });
-      } catch (error) {
-        console.error('Falha ao anunciar nick:', error?.message);
-      }
+        await announcer.handle({ groupJid, senderJid, message,
+          sendReply: async ({ text }) => sock.sendMessage(groupJid, { text }) });
+      } catch (error) { console.error('Falha ao anunciar nick:', error?.message); }
     }
   });
 }
