@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 const DEFAULT_INACTIVITY_MS = 15 * 60 * 1000;
 function createNickAnnouncer({ lookupNick, inactivityMs = DEFAULT_INACTIVITY_MS, now = Date.now } = {}) {
