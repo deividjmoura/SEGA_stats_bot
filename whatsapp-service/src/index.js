@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 const DEFAULT_INACTIVITY_MS = 15 * 60 * 1000;
 function createNickAnnouncer({ lookupNick, inactivityMs = DEFAULT_INACTIVITY_MS, now = Date.now } = {}) {
@@ -29,7 +29,8 @@ try {
 const announcer = createNickAnnouncer({ lookupNick: async (sender) => mapping[sender] || null });
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const sock = makeWASocket({ auth: state, logger, syncFullHistory: false });
+  const { version } = await fetchLatestBaileysVersion();
+  const sock = makeWASocket({ auth: state, logger, version, browser: Browsers.windows('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
   sock.ev.on('creds.update', saveCreds);
   let closed = false;
   if (!state.creds.registered && pairPhone) {
@@ -44,6 +45,7 @@ async function connect() {
     if (connection === 'open') console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
     if (connection === 'close') {
       closed = true;
+      console.error('WhatsApp socket fechado. Status:', lastDisconnect?.error?.output?.statusCode, 'Motivo:', lastDisconnect?.error?.message);
       const status = lastDisconnect?.error?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) console.error('Sessão desconectada; requer novo pareamento.');
       else setTimeout(() => { void connect().catch((error) => console.error(error?.message)); }, 5000);
