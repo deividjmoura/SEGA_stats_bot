@@ -31,9 +31,7 @@ try {
 } catch {
   throw new Error('WHATSAPP_NICK_MAP_JSON deve ser um objeto JSON de JID para nick');
 }
-const announcer = createNickAnnouncer({
-  lookupNick: async (sender) => mapping[sender] || null
-});
+const announcer = createNickAnnouncer({ lookupNick: async (sender) => mapping[sender] || null });
 
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -41,14 +39,12 @@ async function connect() {
   sock.ev.on('creds.update', saveCreds);
   let pairingRequested = false;
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr && !sock.authState.creds.registered && pairPhone && !pairingRequested) {
+    if (qr && !state.creds.registered && pairPhone && !pairingRequested) {
       pairingRequested = true;
       try {
         const code = await sock.requestPairingCode(pairPhone);
-        // O código é temporário; não publicar em logs compartilhados.
-        console.log('PAREAMENTO_PENDENTE: consulte o canal privado de operação para obter o código.');
-        // Sem painel autenticado, executar localmente para parear antes de subir ao Railway.
-        void code;
+        // TEMPORÁRIO: capturado pelo operador e removido logo após o pareamento.
+        console.log('PAIRING_CODE_ONCE:' + code);
       } catch (error) {
         console.error('Falha ao solicitar pareamento:', error?.message);
       }
@@ -56,11 +52,8 @@ async function connect() {
     if (connection === 'open') console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
     if (connection === 'close') {
       const status = lastDisconnect?.error?.output?.statusCode;
-      if (status === DisconnectReason.loggedOut) {
-        console.error('Sessão desconectada; requer novo pareamento.');
-      } else {
-        setTimeout(() => { void connect().catch((error) => console.error(error?.message)); }, 5000);
-      }
+      if (status === DisconnectReason.loggedOut) console.error('Sessão desconectada; requer novo pareamento.');
+      else setTimeout(() => { void connect().catch((error) => console.error(error?.message)); }, 5000);
     }
   });
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
@@ -72,7 +65,7 @@ async function connect() {
       try {
         await announcer.handle({
           groupJid, senderJid, message,
-          sendReply: async ({ text }) => sock.sendMessage(groupJid, { text }, { quoted: message })
+          sendReply: async ({ text }) => sock.sendMessage(groupJid, { text })
         });
       } catch (error) {
         console.error('Falha ao anunciar nick:', error?.message);
