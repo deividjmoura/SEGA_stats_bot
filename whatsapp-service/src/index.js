@@ -31,17 +31,17 @@ async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const sock = makeWASocket({ auth: state, logger, syncFullHistory: false });
   sock.ev.on('creds.update', saveCreds);
-  if (!state.creds.registered && pairPhone) {
+  let closed = false;\n  if (!state.creds.registered && pairPhone) {
     setTimeout(async () => {
       try {
         const code = await sock.requestPairingCode(pairPhone);
         console.log('PAIRING_CODE_ONCE:' + code);
       } catch (error) { console.error('Falha ao solicitar pareamento:', error?.message); }
-    }, 2500);
+    }, 10000);
   }
   sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     if (connection === 'open') console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
-    if (connection === 'close') {
+    if (connection === 'close') {\n      closed = true;
       const status = lastDisconnect?.error?.output?.statusCode;
       if (status === DisconnectReason.loggedOut) console.error('Sessão desconectada; requer novo pareamento.');
       else setTimeout(() => { void connect().catch((error) => console.error(error?.message)); }, 5000);
