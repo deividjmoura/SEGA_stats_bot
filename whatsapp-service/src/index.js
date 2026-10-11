@@ -694,6 +694,32 @@ function whatsappName(jid, fallback = 'jogador') {
 function displayPlayer(jid, fallback = 'jogador') {
   return playerForJid(jid)?.name || (jidAliases(jid).includes(ownJid) ? players.get('self')?.name : null) || whatsappName(jid, fallback);
 }
+function participantJids(participant) {
+  return [...new Set([
+    participant?.id,
+    participant?.jid,
+    participant?.lid,
+    participant?.phoneNumber,
+    participant?.phoneNumberJid
+  ].filter(Boolean).flatMap(jidAliases))];
+}
+async function warmGroupParticipantNames(sock, groupJid) {
+  try {
+    const metadata = await sock.groupMetadata(groupJid);
+    for (const participant of metadata?.participants || []) {
+      const aliases = participantJids(participant);
+      const knownPlayer = aliases.map(playerForJid).find(Boolean);
+      if (knownPlayer?.name) {
+        for (const alias of aliases) rememberGroupName(alias, knownPlayer.name);
+        continue;
+      }
+      const name = participant?.notify || participant?.name || participant?.verifiedName;
+      if (name) for (const alias of aliases) rememberGroupName(alias, name);
+    }
+  } catch (error) {
+    console.warn('Não consegui aquecer nomes do grupo:', error?.message);
+  }
+}
 function registrationLink() {
   const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('!cadastrar') : null;
@@ -720,7 +746,12 @@ async function handleGroup(sock, message) {
   } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
   const aliases = aliasesFor(key);
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
-  for (const jid of mentionIds(message.message)) {
+  const mentionedNow = mentionIds(message.message);
+  if (mentionedNow.some(jid => displayPlayer(jid, '') === '')) {
+    await warmGroupParticipantNames(sock, groupJid);
+  }
+  for (const jid of mentionedNow) {
+    if (displayPlayer(jid, '')) continue;
     try {
       const contact = await sock.onWhatsApp(jid).catch(() => null);
       const name = contact?.[0]?.notify || contact?.[0]?.name;
@@ -795,7 +826,7 @@ async function handleGroup(sock, message) {
     await sendSavedRanking(sock,groupJid);
     return;
   }
-  const mentioned = mentionIds(message.message);
+  const mentioned = mentionedNow;
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
     const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
