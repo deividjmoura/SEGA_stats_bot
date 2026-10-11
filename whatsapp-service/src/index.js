@@ -29,7 +29,7 @@ try {
 const announcer = createNickAnnouncer({ lookupNick: async (sender) => mapping[sender] || null });
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
+  const { version } = await fetchLatestWaWebVersion();
   const sock = makeWASocket({ auth: state, logger, version, browser: Browsers.windows('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
   sock.ev.on('creds.update', saveCreds);
   let closed = false;
