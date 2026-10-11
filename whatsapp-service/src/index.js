@@ -24,6 +24,7 @@ const players = new Map();
 const registrations = new Map();
 const lastMessageBySender = new Map();
 const botSentMessageIds = new Set();
+const groupNames = new Map();
 let ownJid = null;
 
 async function readJson(path, fallback) {
@@ -357,7 +358,57 @@ const mentionRoasts = [
   '🔋 {target}, economize bateria: talvez responder {author} não valha os elétrons.',
   '{target}, {author} te encontrou no mapa. Bush não funciona mais. 🌿',
   '🏴‍☠️ {target}, {author} embarcou no navio da resenha e te colocou na tripulação.',
-  '{target}, {author} iniciou uma reunião que poderia ter sido absolutamente nada. 😂'
+  '{target}, {author} iniciou uma reunião que poderia ter sido absolutamente nada. 😂',
+  '{target}, {author} te marcou. Até o bot sentiu cheiro de merda vindo dessa conversa. 💩',
+  '{target}, responde o {author} logo antes que ele comece a pensar sozinho e piore tudo. 😂',
+  '🚑 {target}, {author} chamou você. A ambulância foi avisada por precaução.',
+  '{target}, {author} quer falar contigo. Se vier ideia boa, confirma se a conta dele foi hackeada.',
+  '💀 {target}, {author} te marcou. Mais uma decisão ruim pra coleção de vocês.',
+  '{target}, cuidado: {author} está tentando formar uma frase completa. Você pode ser testemunha desse milagre.',
+  '🤡 {target}, o palhaço {author} pediu reforço. O circo agora tem elenco completo.',
+  '{target}, {author} te chamou pra reunião dos dois neurônios restantes do clã. Compareça.',
+  '⚠️ {target}, não faça movimentos bruscos. {author} aparentemente está tentando raciocinar.',
+  '{target}, {author} quer sua opinião. Considerando o histórico de vocês, estamos oficialmente fodidos. 😂',
+  '🪦 {target}, {author} te marcou. Já reservei duas vagas no cemitério da dignidade.',
+  '{target}, {author} chamou. Talvez seja importante. KKKKK desculpa, nem eu consegui escrever isso sério.',
+  '🧠 {target}, empresta um neurônio pro {author}. O dele está claramente em manutenção.',
+  '{target}, {author} quer conversar. Minha recomendação profissional: não alimente o animal.',
+  '🚨 {target}, {author} está solto no grupo novamente. Contenção falhou.',
+  '{target}, o {author} te chamou. Se a conversa ficar inteligente eu reinicio o bot porque claramente deu bug.',
+  '🎪 {target}, {author} abriu o circo e você acaba de ser anunciado como atração principal.',
+  '{target}, {author} marcou você. O nível intelectual médio da conversa caiu antes mesmo da resposta.',
+  '☠️ {target}, {author} quer papo. Não aceite bebida nem conselho financeiro dele.',
+  '{target}, atende o {author}. Ele está carente e o CAPS do Land of Dawn fechou cedo. 😂',
+  '🧯 {target}, {author} está cozinhando alguma merda. Trouxe o extintor?',
+  '{target}, {author} te convocou. O prêmio por responder é ganhar outra mensagem dele.',
+  '🤖 {target}, análise concluída: ignorar {author} aumenta sua expectativa de vida em 14%.',
+  '{target}, {author} te marcou porque aparentemente tomar decisão ruim sozinho perdeu a graça.',
+  '🗑️ {target}, chegou uma notificação de {author}. O WhatsApp ainda não implementou coleta seletiva.',
+  '{target}, {author} precisa de ajuda. De novo. Finja surpresa.',
+  '🎮 {target}, missão lendária: descobrir que porra {author} quer sem perder sanidade.',
+  '{target}, {author} chamou. Coloque o cérebro no modo avião pra vocês conversarem de igual pra igual. 😂',
+  '👻 {target}, finge que não viu. Talvez {author} ache que você morreu e desista.',
+  '{target}, {author} te marcou. Eu poderia explicar o motivo, mas nem inteligência artificial faz milagre.',
+  '🧪 {target}, você foi selecionado para um experimento: medir quanto tempo alguém aguenta conversar com {author}.',
+  '{target}, {author} pediu sua atenção. Meus servidores calcularam 98% de chance de ser bobagem.',
+  '💣 {target}, {author} lançou a granada e marcou você. Agora segura essa merda. 😂',
+  '{target}, o {author} está te procurando. Eu entregaria ele pros creeps e seguiria a partida.',
+  '🦧 {target}, {author} chamou. Tradutor de primata ativado, pode responder.',
+  '{target}, {author} digitou seu nome sem errar. Já é a maior conquista dele hoje. 🏆',
+  '🚽 {target}, {author} trouxe uma ideia. Pela qualidade prevista, provavelmente veio sentado no vaso.',
+  '{target}, {author} quer discutir. Dois idosos brigando por WhatsApp: o futuro chegou. 😂',
+  '📉 {target}, desde que {author} te marcou o QI do servidor caiu 12 pontos.',
+  '{target}, {author} te convocou. Não esquece de falar devagar e usar desenhos.',
+  '🧟 {target}, responde o {author}; ele está vagando pelo chat atrás de atividade cerebral.',
+  '{target}, {author} te marcou. É assim que começam documentários sobre decisões catastróficas.',
+  '🤦 {target}, o {author} teve uma ideia e, em vez de guardar pra si, resolveu te envolver.',
+  '{target}, {author} está pedindo atenção. Alguém esqueceu o portão do hospício do Land of Dawn aberto.',
+  '⚰️ {target}, {author} chamou. Se for duo rankeada, meus sentimentos antecipados.',
+  '{target}, {author} quer você no chat. A dignidade é opcional; aparentemente vocês já decidiram isso.',
+  '🔥 {target}, {author} te marcou. O incêndio ainda não começou, mas trouxe gasolina por garantia.',
+  '{target}, {author} solicitou suporte técnico. Erro identificado entre a cadeira e o celular.',
+  '🧠 {target}, cuidado ao responder {author}: burrice em grupo pode ser contagiosa.',
+  '{target}, {author} chamou. Não sei quem está mais ferrado: quem perguntou ou quem vai responder.'
 ];
 
 function mentionIds(message) {
@@ -365,7 +416,7 @@ function mentionIds(message) {
   return [...new Set(m.filter(Boolean))];
 }
 function displayPlayer(jid, fallback = 'jogador') {
-  return players.get(jid)?.name || (jid === ownJid ? players.get('self')?.name : null) || fallback;
+  return players.get(jid)?.name || (jid === ownJid ? players.get('self')?.name : null) || groupNames.get(jid) || fallback;
 }
 function roastFor(author, target, key) {
   const seed = [...String(key || '')].reduce((n, ch) => (n * 33 + ch.codePointAt(0)) >>> 0, 5381);
@@ -378,6 +429,7 @@ async function handleGroup(sock, message) {
   if (!groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
   const text = messageText(message.message);
   const aliases = aliasesFor(key);
+  if (key.pushName) for (const alias of aliases) groupNames.set(alias, key.pushName);
   const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
   const mentioned = mentionIds(message.message);
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
