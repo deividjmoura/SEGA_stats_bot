@@ -529,14 +529,21 @@ const geekTemplates = [
   '{nick} foi promovido de bot para beta tester humano. Disse:'
 ];
 
-function geekLine(nick, senderKey, now = Date.now()) {
-  // Há 653 combinações estáveis: 101 frases-base × variações de abertura.
-  const seed = [...String(senderKey) + ':' + Math.floor(now / INACTIVITY_MS)]
-    .reduce((sum, ch) => (sum * 31 + ch.codePointAt(0)) >>> 0, 2166136261);
-  const base = geekTemplates[seed % geekTemplates.length];
+const recentGeekIndexes = [];
+function geekLine(nick) {
+  // Escolha realmente aleatória. Mantém uma janela das últimas frases usadas
+  // para não repetir a mesma abertura em sequência, nem entre jogadores.
+  const blocked = new Set(recentGeekIndexes);
+  const available = geekTemplates
+    .map((_, index) => index)
+    .filter(index => !blocked.has(index));
+  const pool = available.length ? available : geekTemplates.map((_, index) => index);
+  const index = pool[crypto.randomBytes(4).readUInt32BE(0) % pool.length];
+  recentGeekIndexes.push(index);
+  if (recentGeekIndexes.length > Math.min(25, Math.max(1, geekTemplates.length - 1))) recentGeekIndexes.shift();
   const prefixes = ['', '🎮 ', '⚡ ', '👾 ', '🤖 ', '🕹️ ', '💾 '];
-  const prefix = prefixes[Math.floor(seed / geekTemplates.length) % prefixes.length];
-  return prefix + base.replaceAll('{nick}', nick);
+  const prefix = prefixes[crypto.randomBytes(4).readUInt32BE(0) % prefixes.length];
+  return prefix + geekTemplates[index].replaceAll('{nick}', nick);
 }
 
 const mentionRoasts = [
