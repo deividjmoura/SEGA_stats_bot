@@ -22,6 +22,7 @@ const SESSION_KEY = crypto.createHash('sha256').update(secret).digest();
 const players = new Map();
 const registrations = new Map();
 const lastMessageBySender = new Map();
+const botSentMessageIds = new Set();
 
 async function readJson(path, fallback) {
   try { return JSON.parse(await fs.readFile(path, 'utf8')); }
@@ -86,12 +87,16 @@ function findPlayer(aliases) {
   for (const jid of aliases) if (players.has(jid)) return players.get(jid);
   return null;
 }
-async function sendText(sock, jid, text) { await sock.sendMessage(jid, { text }); }
+async function sendText(sock, jid, text) {
+  const sent = await sock.sendMessage(jid, { text });
+  if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
+  return sent;
+}
 
 async function handleRegistration(sock, message) {
   const key = message.key || {};
   const jid = key.remoteJid;
-  if (!jid || jid.endsWith('@g.us')) return false;
+  if (!jid || jid.endsWith('@g.us') || botSentMessageIds.has(key.id)) return false;
   const text = messageText(message.message);
   if (!text) return false;
   const command = text.toLowerCase();
