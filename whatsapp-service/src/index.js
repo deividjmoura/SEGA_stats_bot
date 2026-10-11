@@ -3,7 +3,7 @@ import pino from 'pino';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
-import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch } from './roneApi.js';
+import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch, fetchPlayerOverview } from './roneApi.js';
 import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
 
 const INACTIVITY_MS = 15 * 60 * 1000;
@@ -191,25 +191,56 @@ function savedStats(rows) {
   return {games,wins,losses,totals,rate:games ? (100*wins/games).toFixed(1) : '0.0'};
 }
 async function sendPlayerStats(sock,jid,player) {
-  if (!player) return sendText(sock,jid,'🔐 Cadastre seu nick com !cadastrar para consultar seus dados.');
+  if (!player?.jwt) return sendText(sock,jid,'🔐 Cadastre seu nick com !cadastrar para consultar seus dados.');
   const key = String(player.roleId) + ':' + String(player.zoneId);
+  const overview = await fetchPlayerOverview(player.jwt);
+  let imported = 0;
+  if (overview.matches.length) {
+    const all = await loadBattles();
+    const rows = Array.isArray(all[key]) ? all[key] : [];
+    const ids = new Set(rows.map(row => String(row.battleId)));
+    for (const match of overview.matches) {
+      if (ids.has(match.battleId)) continue;
+      rows.push({ ...match, playerName: player.name, verifiedAt: new Date().toISOString(), via: 'rone_api_history', jidAlias: jid });
+      ids.add(match.battleId);
+      imported++;
+    }
+    if (imported) {
+      all[key] = rows.slice(-500);
+      await writeJson(battlesFile,all);
+    }
+  }
   const all = await loadBattles();
   const rows = Array.isArray(all[key]) ? all[key] : [];
   const st = savedStats(rows);
-  const lines = ['📊 *MEUS STATS — ' + player.name + '*', '', '📁 *Histórico salvo no SEGA*'];
-  if (st.games) lines.push('⚔️ Partidas: '+st.games,'🏆 Vitórias: '+st.wins,'💀 Derrotas: '+st.losses,'📈 Win rate: '+st.rate+'%','👑 MVPs: '+st.totals.mvp,'🎯 K/D/A total: '+st.totals.k+'/'+st.totals.d+'/'+st.totals.a);
-  else lines.push('Nenhuma partida salva ainda.','Envie !battle <ID> para tentar registrar uma partida.');
+  const lines = ['📊 *MEUS STATS — ' + player.name + '*', ''];
+  if (overview.stats) {
+    const api = overview.stats;
+    lines.push('🌐 *ESTATÍSTICAS DO JOGO*');
+    if (api.tc != null) lines.push('⚔️ Partidas totais: ' + api.tc);
+    if (api.wc != null) lines.push('🏆 Vitórias totais: ' + api.wc);
+    if (Number(api.tc) > 0 && api.wc != null) lines.push('📈 Win rate geral: ' + (100 * Number(api.wc) / Number(api.tc)).toFixed(1) + '%');
+    if (api.mvpc != null) lines.push('👑 MVPs totais: ' + api.mvpc);
+    if (api.wsc != null) lines.push('🔥 Maior sequência: ' + api.wsc);
+    if (api.as != null) lines.push('⭐ Nota média: ' + (Number(api.as) / 100).toFixed(2));
+    lines.push('');
+  }
+  lines.push('📁 *HISTÓRICO SALVO NO SEGA*');
+  if (st.games) lines.push('⚔️ Partidas: '+st.games,'🏆 Vitórias: '+st.wins,'💀 Derrotas: '+st.losses,'📈 Win rate: '+st.rate+'%','👑 MVPs: '+st.totals.mvp,'🎯 K/D/A: '+st.totals.k+'/'+st.totals.d+'/'+st.totals.a);
+  else lines.push('Ainda não há partidas verificadas salvas.');
+  if(imported) lines.push('🆕 '+imported+' partidas novas sincronizadas.');
   try {
     const res = await apiFetch('/user/info?lang=pt',{headers:{Authorization:'Bearer '+player.jwt}});
     const body = await res.json().catch(()=>({}));
     if(res.ok && isApiSuccess(body) && body.data) {
-      lines.push('', '🎮 *Perfil no jogo*');
+      lines.push('', '🎮 *PERFIL*');
       if(body.data.level != null) lines.push('⭐ Nível: '+body.data.level);
-      if(body.data.rank_level != null) lines.push('🏅 Rank (valor da API): '+body.data.rank_level);
-      if(body.data.history_rank_level != null) lines.push('🥇 Melhor rank (valor da API): '+body.data.history_rank_level);
-    } else lines.push('','⚠️ Perfil ao vivo indisponível no momento.');
-  } catch { lines.push('','⚠️ Perfil ao vivo indisponível no momento.'); }
-  lines.push('','ℹ️ Histórico local e perfil da API são fontes diferentes.');
+      if(body.data.rank_level != null) lines.push('🏅 Rank (código): '+body.data.rank_level);
+      if(body.data.history_rank_level != null) lines.push('🥇 Melhor rank (código): '+body.data.history_rank_level);
+    }
+  } catch { /* perfil é complementar */ }
+  if (overview.errors.length) lines.push('','⚠️ API parcialmente indisponível ('+overview.errors.join(', ')+').');
+  lines.push('','ℹ️ Total da API e histórico salvo podem cobrir períodos diferentes.');
   return sendText(sock,jid,lines.join('\n'));
 }
 async function sendSavedRanking(sock,jid) {
