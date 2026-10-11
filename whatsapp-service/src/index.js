@@ -708,6 +708,15 @@ async function warmGroupParticipantNames(sock, groupJid) {
     const metadata = await sock.groupMetadata(groupJid);
     for (const participant of metadata?.participants || []) {
       const aliases = participantJids(participant);
+      if (aliases.length) {
+        console.log('[mention-participant-debug]', JSON.stringify({
+          aliasDomains: aliases.map(jid => String(jid).split('@')[1] || 'unknown'),
+          fields: Object.keys(participant || {}).sort(),
+          hasNotify: Boolean(participant?.notify),
+          hasName: Boolean(participant?.name),
+          hasVerifiedName: Boolean(participant?.verifiedName)
+        }));
+      }
       const knownPlayer = aliases.map(playerForJid).find(Boolean);
       if (knownPlayer?.name) {
         for (const alias of aliases) rememberGroupName(alias, knownPlayer.name);
@@ -747,6 +756,24 @@ async function handleGroup(sock, message) {
   const aliases = aliasesFor(key);
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
   const mentionedNow = mentionIds(message.message);
+  if (mentionedNow.length) {
+    const maskJid = (jid) => {
+      const raw = String(jid || '');
+      const [user = '', domain = ''] = raw.split('@');
+      return (user.length > 4 ? '***' + user.slice(-4) : '***') + (domain ? '@' + domain : '');
+    };
+    console.log('[mention-debug]', JSON.stringify({
+      authorHasPushName: Boolean(key.pushName),
+      authorDomains: aliases.map(jid => String(jid).split('@')[1] || 'unknown'),
+      mentions: mentionedNow.map(jid => ({
+        masked: maskJid(jid),
+        domain: String(jid).split('@')[1] || 'unknown',
+        aliases: jidAliases(jid).map(maskJid),
+        playerFound: Boolean(playerForJid(jid)?.name),
+        cachedNameFound: Boolean(whatsappName(jid, ''))
+      }))
+    }));
+  }
   if (mentionedNow.some(jid => displayPlayer(jid, '') === '')) {
     await warmGroupParticipantNames(sock, groupJid);
   }
