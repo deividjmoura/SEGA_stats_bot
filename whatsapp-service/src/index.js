@@ -178,6 +178,56 @@ async function saveVerifiedBattle(jid, player, verification) {
   await writeJson(battlesFile, all);
   return { duplicate: false, match: normalized };
 }
+function savedStats(rows) {
+  const games = rows.length;
+  const wins = rows.filter(r => r.result === 'win').length;
+  const losses = rows.filter(r => r.result === 'loss').length;
+  const totals = rows.reduce((a,r) => ({
+    k: a.k + Number(r.kda?.kills || 0),
+    d: a.d + Number(r.kda?.deaths || 0),
+    a: a.a + Number(r.kda?.assists || 0),
+    mvp: a.mvp + Number(Boolean(r.mvp))
+  }), {k:0,d:0,a:0,mvp:0});
+  return {games,wins,losses,totals,rate:games ? (100*wins/games).toFixed(1) : '0.0'};
+}
+async function sendPlayerStats(sock,jid,player) {
+  if (!player) return sendText(sock,jid,'🔐 Cadastre seu nick com !cadastrar para consultar seus dados.');
+  const key = String(player.roleId) + ':' + String(player.zoneId);
+  const all = await loadBattles();
+  const rows = Array.isArray(all[key]) ? all[key] : [];
+  const st = savedStats(rows);
+  const lines = ['📊 *MEUS STATS — ' + player.name + '*', '', '📁 *Histórico salvo no SEGA*'];
+  if (st.games) lines.push('⚔️ Partidas: '+st.games,'🏆 Vitórias: '+st.wins,'💀 Derrotas: '+st.losses,'📈 Win rate: '+st.rate+'%','👑 MVPs: '+st.totals.mvp,'🎯 K/D/A total: '+st.totals.k+'/'+st.totals.d+'/'+st.totals.a);
+  else lines.push('Nenhuma partida salva ainda.','Envie !battle <ID> para tentar registrar uma partida.');
+  try {
+    const res = await apiFetch('/user/info?lang=pt',{headers:{Authorization:'Bearer '+player.jwt}});
+    const body = await res.json().catch(()=>({}));
+    if(res.ok && isApiSuccess(body) && body.data) {
+      lines.push('', '🎮 *Perfil no jogo*');
+      if(body.data.level != null) lines.push('⭐ Nível: '+body.data.level);
+      if(body.data.rank_level != null) lines.push('🏅 Rank (valor da API): '+body.data.rank_level);
+      if(body.data.history_rank_level != null) lines.push('🥇 Melhor rank (valor da API): '+body.data.history_rank_level);
+    } else lines.push('','⚠️ Perfil ao vivo indisponível no momento.');
+  } catch { lines.push('','⚠️ Perfil ao vivo indisponível no momento.'); }
+  lines.push('','ℹ️ Histórico local e perfil da API são fontes diferentes.');
+  return sendText(sock,jid,lines.join('\n'));
+}
+async function sendSavedRanking(sock,jid) {
+  const all = await loadBattles();
+  const entries = [];
+  for(const [key,rows] of Object.entries(all)) {
+    if(!Array.isArray(rows)||!rows.length) continue;
+    const st=savedStats(rows);
+    const name=rows.at(-1)?.playerName || 'Jogador';
+    entries.push({key,name,...st});
+  }
+  if(!entries.length) return sendText(sock,jid,'🏆 *RANKING SEGA*\n\nAinda não há partidas verificadas salvas.\nEnvie !battle <ID> no privado para tentar registrar uma.');
+  entries.sort((a,b)=>b.wins-a.wins || Number(b.rate)-Number(a.rate) || b.games-a.games);
+  const lines=['🏆 *RANKING SEGA*','📁 Baseado somente nas partidas salvas e verificadas.',''];
+  for(const [i,p] of entries.slice(0,10).entries()) lines.push((i+1)+'º *'+p.name+'* — '+p.wins+'V / '+p.losses+'D ('+p.rate+'%)');
+  return sendText(sock,jid,lines.join('\n'));
+}
+
 function matchSummary(match) {
   const k = match?.kda || {};
   const result = match?.result === 'win' ? '🏆 Vitória' : match?.result === 'loss' ? '💀 Derrota' : '⚔️ Resultado';
@@ -201,6 +251,15 @@ async function handleRegistration(sock, message) {
   }
   if (command === '!ajuda') {
     await sendText(sock, jid, '🎮 SEGA — AJUDA\n\nDigite !sega para abrir o menu.\n⚔️ Battle ID: consulta uma partida pelo ID.\n📊 Meus Stats: mostra seus dados salvos.\n🏆 Ranking: mostra o ranking disponível.\n🎮 Cadastro: vincula sua conta com segurança no PV.');
+    return true;
+  }
+  if (['!stats','/stats'].includes(command)) {
+    const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
+    await sendPlayerStats(sock,jid,p);
+    return true;
+  }
+  if (['!ranking','/ranking'].includes(command)) {
+    await sendSavedRanking(sock,jid);
     return true;
   }
   if (command === '!battle') {
@@ -575,6 +634,10 @@ async function handleGroup(sock, message) {
   }
   if (/^!ajuda$/i.test(text)) {
     await sendText(sock, groupJid, '🎮 Use !sega para abrir o menu principal do SEGA.');
+    return;
+  }
+  if (/^[!/]ranking$/i.test(text)) {
+    await sendSavedRanking(sock,groupJid);
     return;
   }
   const mentioned = mentionIds(message.message);
