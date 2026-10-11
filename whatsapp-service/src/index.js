@@ -189,6 +189,123 @@ async function handleRegistration(sock, message) {
   return false;
 }
 
+const geekTemplates = [
+  '{nick} saiu do modo AFK e resolveu digitar:',
+  '⚠️ Evento raro: {nick} teve uma ideia e decidiu compartilhar:',
+  '{nick} reiniciou o cérebro em modo seguro e mandou:',
+  '🤖 {nick} passou no CAPTCHA. Provavelmente não é bot. Disse:',
+  '{nick} encontrou o teclado depois de 15 minutos e escreveu:',
+  '📡 Sinal detectado de {nick}. A transmissão diz:',
+  '{nick} compilou o pensamento sem erros. Resultado:',
+  '🎮 {nick} apertou o botão de falar em vez do recall:',
+  '{nick} desbloqueou a habilidade passiva “mandar mensagem”:',
+  '🧠 CPU de {nick} chegou a 12% de uso. Saiu isso:',
+  '{nick} voltou do respawn social e declarou:',
+  '👾 {nick} escapou da matrix por alguns segundos para dizer:',
+  '{nick} atualizou o firmware e agora aparentemente fala:',
+  '🕹️ NPC {nick} recebeu uma nova linha de diálogo:',
+  '🚨 Alerta no servidor: {nick} resolveu se manifestar:',
+  '{nick} gastou 3 de mana para escrever:',
+  '💾 {nick} carregou um pensamento do HD. Lá vem:',
+  '{nick} ativou o modo multiplayer e digitou:',
+  '🔧 Depois de uma manutenção não programada, {nick} disse:',
+  '{nick} venceu o boss “preguiça de digitar” e mandou:',
+  '🤖 Diagnóstico: {nick} é 51% humano. Mensagem encontrada:',
+  '{nick} descongelou depois de 15 minutos. Primeiras palavras:',
+  '📟 O servidor recebeu um pacote suspeito de {nick}:',
+  '{nick} saiu do modo economia de energia para escrever:',
+  '🎲 {nick} rolou um D20 para comunicação. Resultado:',
+  '{nick} abriu uma side quest chamada “conversar no grupo”:',
+  '🧙 {nick} conjurou Mensagem Nv. 1:',
+  '{nick} aparentemente tem internet. Evidência:',
+  '👽 Interceptamos uma transmissão de {nick}:',
+  '{nick} terminou de renderizar a frase. Finalmente:',
+  '⚙️ Processando {nick}... 100%. Saída:',
+  '{nick} não é bot, segundo fontes extremamente duvidosas. Disse:',
+  '🏆 Achievement desbloqueado por {nick}: falar no grupo. Mensagem:',
+  '{nick} acordou o servidor com:',
+  '📢 Patch notes: {nick} agora suporta comunicação por texto:',
+  '{nick} usou Comunicação. Foi super efetivo:',
+  '🐛 Encontramos um bug: {nick} está falando:',
+  '{nick} saiu da moita e digitou:',
+  '🔋 Bateria social de {nick}: 1%. Mesmo assim mandou:',
+  '{nick} terminou o tutorial de WhatsApp e escreveu:',
+  '🛰️ Telemetria confirma atividade de {nick}:',
+  '{nick} spawnou no chat e soltou:',
+  '💻 localhost/{nick}/pensamento retornou 200 OK:',
+  '{nick} passou pela tela de loading e disse:',
+  '🧪 Experimento concluído: {nick} consegue escrever. Prova:',
+  '{nick} desativou o modo avião mental por alguns segundos:',
+  '🎯 {nick} errou tudo no jogo, mas acertou o botão de enviar:',
+  '{nick} pediu buff de comunicação e recebeu:',
+  '🤖 beep boop... {nick} insiste que é humano. Mensagem:',
+  '{nick} fez login no próprio cérebro e escreveu:',
+  '🧬 Cientistas confirmam: {nick} possui pelo menos um neurônio online. Ele disse:',
+  '{nick} interrompeu a farm para um pronunciamento histórico:',
+  '📦 Novo pacote recebido de {nick}:',
+  '{nick} ativou o chat global. Que Deus nos ajude:',
+  '🎮 {nick} parou de culpar o ping por 3 segundos para dizer:',
+  '{nick} saiu do lobby da existência e entrou no chat:',
+  '🛠️ Sistema de fala de {nick} restaurado com sucesso:',
+  '{nick} encontrou Wi-Fi na caverna e mandou:',
+  '👨‍💻 git commit -m “{nick} resolveu falar”:',
+  '{nick} executou sudo falar-no-grupo:',
+  '🧠 RAM liberada em {nick}. Uma frase conseguiu sair:',
+  '{nick} atualizou de NPC para NPC Premium e ganhou uma fala:',
+  '🚀 Houston, temos uma mensagem de {nick}:',
+  '{nick} zerou a missão “ficar quieto” e iniciou outra:',
+  '🤓 Segundo meus cálculos, {nick} está tentando se comunicar:',
+  '{nick} venceu o cooldown social. Próxima habilidade:',
+  '📱 Até o WhatsApp ficou surpreso: {nick} escreveu:',
+  '{nick} voltou do multiverso com esta informação:',
+  '🦾 Protocolo {nick}.exe iniciado. Output:',
+  '{nick} desbloqueou diálogo secreto:',
+  '⚡ Pico de atividade detectado em {nick}:',
+  '{nick} apertou Enter sem querer e aconteceu isso:',
+  '🎰 Giramos a roleta do chat e caiu em {nick}:',
+  '{nick} finalmente saiu do tutorial. Fala desbloqueada:',
+  '🧟 {nick} voltou dos mortos digitais para dizer:',
+  '{nick} mandou um pacote UDP: pode chegar sem sentido:',
+  '🔮 A bola de cristal previu que {nick} falaria. Acertou:',
+  '{nick} trocou XP por uma frase:',
+  '🛸 O radar do SEGA detectou {nick} se aproximando do chat:',
+  '{nick} saiu do modo espectador e participou:',
+  '🏴‍☠️ {nick} pirateou alguns neurônios e produziu:',
+  '{nick} tem algo a dizer. O servidor pediu desculpas antecipadamente:',
+  '🎮 Quest atualizada: ouvir o que {nick} inventou agora:',
+  '{nick} ativou o microfone textual:',
+  '🤖 CAPTCHA aprovado. {nick} pode continuar fingindo que é humano:',
+  '{nick} abriu uma exceção no silêncio:',
+  '🧩 Encontramos a peça que faltava: era {nick} falando:',
+  '{nick} enviou isso antes que o cérebro pudesse cancelar:',
+  '💿 Inserindo disco “Opiniões de {nick}”... leitura iniciada:',
+  '{nick} deu alt-tab na vida real e veio para o grupo:',
+  '🧠 Neurônio 1 chamou neurônio 2. {nick} conseguiu escrever:',
+  '{nick} aparentemente sobreviveu ao último match. Relatório:',
+  '🎤 Senhoras e senhores, infelizmente {nick} está com a palavra:',
+  '{nick} ativou a ultimate: Opinião Não Solicitada:',
+  '📶 {nick} pegou duas barrinhas de sinal e aproveitou:',
+  '{nick} saiu do cooldown. Lá vem:',
+  '🗿 Após eras em silêncio, {nick} pronunciou:',
+  '{nick} clicou em “aceito os termos” sem ler e agora pode falar:',
+  '👾 Boss secreto {nick} iniciou diálogo:',
+  '{nick} descobriu que o grupo não é modo somente leitura:',
+  '🔌 Conectamos {nick} na tomada. Funcionou:',
+  '{nick} instalou o DLC “Comunicação” e mandou:',
+  '🎮 O matchmaking colocou {nick} contra o português. Resultado:',
+  '{nick} foi promovido de bot para beta tester humano. Disse:'
+];
+
+function geekLine(nick, senderKey, now = Date.now()) {
+  // Há 653 combinações estáveis: 101 frases-base × variações de abertura.
+  const seed = [...String(senderKey) + ':' + Math.floor(now / INACTIVITY_MS)]
+    .reduce((sum, ch) => (sum * 31 + ch.codePointAt(0)) >>> 0, 2166136261);
+  const base = geekTemplates[seed % geekTemplates.length];
+  const prefixes = ['', '🎮 ', '⚡ ', '👾 ', '🤖 ', '🕹️ ', '💾 '];
+  const prefix = prefixes[Math.floor(seed / geekTemplates.length) % prefixes.length];
+  return prefix + base.replaceAll('{nick}', nick);
+}
+
 async function handleGroup(sock, message) {
   const key = message.key || {};
   const groupJid = key.remoteJid;
@@ -208,7 +325,7 @@ async function handleGroup(sock, message) {
   const previous = lastMessageBySender.get(timerKey);
   lastMessageBySender.set(timerKey, now);
   if (previous !== undefined && now - previous < INACTIVITY_MS) return;
-  await sendText(sock, groupJid, player.name + ' disse:');
+  await sendText(sock, groupJid, geekLine(player.name, senderKey, now));
 }
 
 async function connect() {
