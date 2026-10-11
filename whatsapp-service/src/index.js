@@ -144,7 +144,7 @@ async function handleRegistration(sock, message) {
     return true;
   }
 
-  const battleMatch = command.match(/^(?:!|\/)?battle(?:\s+|$)(\d{10,18})$/i) || command.match(/^(\d{10,18})$/);
+  const battleMatch = command.match(/^(?:!|\/)battle\s+(\d{10,18})$/i);
   if (battleMatch) {
     const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
     if (!p?.jwt) {
@@ -459,8 +459,15 @@ function mentionIds(message) {
   const m = message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
   return [...new Set(m.filter(Boolean))];
 }
+function whatsappName(jid, fallback = 'jogador') {
+  return groupNames.get(jid) || fallback;
+}
 function displayPlayer(jid, fallback = 'jogador') {
-  return players.get(jid)?.name || (jid === ownJid ? players.get('self')?.name : null) || groupNames.get(jid) || fallback;
+  return players.get(jid)?.name || (jid === ownJid ? players.get('self')?.name : null) || whatsappName(jid, fallback);
+}
+function registrationLink() {
+  const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('!cadastrar') : null;
 }
 function roastFor(author, target, key) {
   const seed = [...String(key || '')].reduce((n, ch) => (n * 33 + ch.codePointAt(0)) >>> 0, 5381);
@@ -474,12 +481,19 @@ async function handleGroup(sock, message) {
   const text = messageText(message.message);
   const aliases = aliasesFor(key);
   if (key.pushName) for (const alias of aliases) groupNames.set(alias, key.pushName);
+  for (const jid of mentionIds(message.message)) {
+    try {
+      const contact = await sock.onWhatsApp(jid).catch(() => null);
+      const name = contact?.[0]?.notify || contact?.[0]?.name;
+      if (name) groupNames.set(jid, name);
+    } catch {}
+  }
   const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
   const mentioned = mentionIds(message.message);
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
-    const author = authorPlayer?.name || 'alguém';
-    const target = displayPlayer(targetJid, 'você aí');
+    const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
+    const target = displayPlayer(targetJid, targetJid?.split('@')[0] || 'jogador');
     await sendText(sock, groupJid, roastFor(author, target, key.id));
     return;
   }
@@ -503,19 +517,23 @@ async function handleGroup(sock, message) {
     return;
   }
   if (/^[!/]?cadastrar$/i.test(text)) {
-    if (!key.fromMe) await sendText(sock, groupJid, '🔐 O cadastro é privado. Chame este bot no WhatsApp e envie !cadastrar para vincular sua conta com segurança.');
+    if (!key.fromMe) {
+      const link = registrationLink();
+      await sendText(sock, groupJid, link
+        ? '🔐 O cadastro é privado. Toque no link e envie a mensagem que já vai pronta:\n' + link
+        : '🔐 O cadastro é privado. Abra meu PV e envie !cadastrar para vincular sua conta com segurança.');
+    }
     return;
   }
   if (!enabled || botSentMessageIds.has(key.id)) return;
-  const player = authorPlayer;
-  if (!player?.name) return;
-  const senderKey = aliases[0];
+  const senderKey = aliases[0] || key.participant || key.remoteJid;
+  const senderName = authorPlayer?.name || key.pushName || whatsappName(senderKey, senderKey?.split('@')[0] || 'jogador');
   const now = Date.now();
   const timerKey = groupJid + ':' + senderKey;
   const previous = lastMessageBySender.get(timerKey);
   lastMessageBySender.set(timerKey, now);
   if (previous !== undefined && now - previous < INACTIVITY_MS) return;
-  await sendText(sock, groupJid, geekLine(player.name, senderKey, now));
+  await sendText(sock, groupJid, geekLine(senderName, senderKey, now));
 }
 
 async function connect() {
