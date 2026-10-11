@@ -26,6 +26,8 @@ const registrations = new Map();
 const lastMessageBySender = new Map();
 const botSentMessageIds = new Set();
 const groupNames = new Map();
+const menuSessions = new Map();
+const MENU_TTL_MS = 5 * 60 * 1000;
 let ownJid = null;
 
 async function readJson(path, fallback) {
@@ -133,7 +135,8 @@ async function sendSegaMenu(sock, jid) {
     '   `!ajuda`',
     '',
     '━━━━━━━━━━━━━━━━',
-    '💡 Você pode digitar os comandos diretamente.'
+    '👆 *Se o botão aparecer, toque para escolher.*',
+    '⌨️ *Ou digite 1 a 5 ou o comando diretamente.*'
   ].join('\n');
   try {
     const interactive = proto.Message.InteractiveMessage.create({
@@ -150,6 +153,7 @@ async function sendSegaMenu(sock, jid) {
     const msg = generateWAMessageFromContent(jid, {
       viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage: interactive } }
     }, { userJid: sock.user?.id });
+    menuSessions.set(jid, Date.now() + MENU_TTL_MS);
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
     if (msg.key.id) botSentMessageIds.add(msg.key.id);
 
@@ -161,6 +165,7 @@ async function sendSegaMenu(sock, jid) {
     return msg;
   } catch (error) {
     console.error('Menu SEGA interativo falhou; enviando comandos em texto:', error?.message);
+    menuSessions.set(jid, Date.now() + MENU_TTL_MS);
     return sendText(sock, jid, fallback);
   }
 }
@@ -274,7 +279,12 @@ async function handleRegistration(sock, message) {
   if (!jid || jid.endsWith('@g.us') || botSentMessageIds.has(key.id)) return false;
   const text = messageText(message.message);
   if (!text) return false;
-  const command = text.toLowerCase();
+  let command = text.toLowerCase();
+  const menuUntil = menuSessions.get(jid) || 0;
+  if (menuUntil > Date.now() && /^[1-5]$/.test(command) && !registrations.has(jid)) {
+    menuSessions.delete(jid);
+    command = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[command];
+  } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
 
   if (['!sega','/sega'].includes(command)) {
     await sendSegaMenu(sock, jid);
@@ -648,7 +658,13 @@ async function handleGroup(sock, message) {
   const key = message.key || {};
   const groupJid = key.remoteJid;
   if (!groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
-  const text = messageText(message.message);
+  let text = messageText(message.message);
+  const menuKey = groupJid + ':' + (key.participant || key.participantAlt || key.remoteJid);
+  const until = menuSessions.get(menuKey) || 0;
+  if (until > Date.now() && /^[1-5]$/.test(text)) {
+    menuSessions.delete(menuKey);
+    text = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[text];
+  } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
   const aliases = aliasesFor(key);
   if (key.pushName) for (const alias of aliases) groupNames.set(alias, key.pushName);
   for (const jid of mentionIds(message.message)) {
@@ -661,6 +677,14 @@ async function handleGroup(sock, message) {
   const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
   if (/^[!\/]sega$/i.test(text)) {
     await sendSegaMenu(sock, groupJid);
+    return;
+  }
+  if (/^!battle$/i.test(text)) {
+    await sendText(sock,groupJid,'⚔️ Para consultar uma batalha, abra meu privado e envie !battle <ID>.');
+    return;
+  }
+  if (/^!stats$/i.test(text)) {
+    await sendText(sock,groupJid,'📊 Para consultar seus stats, abra meu privado e envie !stats.');
     return;
   }
   if (/^!ajuda$/i.test(text)) {
