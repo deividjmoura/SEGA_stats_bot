@@ -633,6 +633,26 @@ const mentionRoasts = [
   '{target}, {author} solicitou suporte técnico. Erro identificado entre a cadeira e o celular.',
   '🧠 {target}, cuidado ao responder {author}: burrice em grupo pode ser contagiosa.',
   '{target}, {author} chamou. Não sei quem está mais ferrado: quem perguntou ou quem vai responder.'
+  '{target}, o {author} te marcou porque passar vergonha sozinho já não tava sendo suficiente. 😂',
+  '🧠 {target}, o {author} pediu ajuda. Parece que o neurônio da firma entrou de férias.',
+  '{target}, responde o {author}. Ele já tentou pensar sozinho e olha no que deu. 💀',
+  '🚨 {target}, o {author} te convocou. A comissão de decisões ruins atingiu o quórum.',
+  '{target}, {author} te marcou. Dois adultos, zero supervisão e nenhuma perspectiva de dar certo. 😂',
+  '🤡 {target}, seu parceiro {author} abriu o circo. Falta só você entrar no picadeiro.',
+  '{target}, {author} pediu reforço. Pelo histórico, reforço de inteligência seria mais útil. 🧠',
+  '⚰️ {target}, {author} te chamou. A dignidade de vocês pediu pra não ser envolvida.',
+  '{target}, o {author} tá te procurando. Até agora ninguém conseguiu explicar por quê e nem vale a pena investigar.',
+  '📉 {target}, {author} te marcou e o QI médio do grupo pediu transferência. 😂',
+  '{target}, vem buscar o {author}. Ele escapou da supervisão de novo.',
+  '💀 {target}, o {author} te chamou. Se sair alguma ideia boa daí, eu mesmo peço desculpa.',
+  '{target}, {author} quer conversar. O bom senso viu a notificação e saiu do grupo.',
+  '🧯 {target}, corre aqui: {author} teve uma ideia. Já chamei os bombeiros.',
+  '{target}, {author} te marcou. É tipo dupla de ranked: separados já dá medo, juntos dá denúncia. 😂',
+  '🚑 {target}, atende o {author}. Não é emergência, ele é assim mesmo.',
+  '{target}, o {author} pediu sua opinião. Finalmente alguém encontrou um jeito de piorar a situação.',
+  '🎪 {target}, {author} te chamou pra reunião executiva da firma Dois Neurônios Ltda.',
+  '{target}, {author} marcou você. A ciência ainda não sabe por quê, mas já desistiu de descobrir.',
+  '☠️ {target}, responde o {author} antes que ele tente resolver sozinho e vire ocorrência.',
 ];
 
 function mentionIds(message) {
@@ -649,9 +669,13 @@ function registrationLink() {
   const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('!cadastrar') : null;
 }
+let lastRoastIndex = -1;
 function roastFor(author, target, key) {
-  const seed = [...String(key || '')].reduce((n, ch) => (n * 33 + ch.codePointAt(0)) >>> 0, 5381);
-  return mentionRoasts[seed % mentionRoasts.length].replaceAll('{author}', author).replaceAll('{target}', target);
+  const entropy = crypto.randomBytes(4).readUInt32BE(0);
+  let index = entropy % mentionRoasts.length;
+  if (mentionRoasts.length > 1 && index === lastRoastIndex) index = (index + 1 + (entropy % (mentionRoasts.length - 1))) % mentionRoasts.length;
+  lastRoastIndex = index;
+  return mentionRoasts[index].replaceAll('{author}', author).replaceAll('{target}', target);
 }
 
 async function handleGroup(sock, message) {
