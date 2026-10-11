@@ -291,7 +291,37 @@ async function handleRegistration(sock, message) {
     return true;
   }
   if (command === '!ajuda') {
-    await sendText(sock, jid, '🎮 SEGA — AJUDA\n\nDigite !sega para abrir o menu.\n⚔️ Battle ID: consulta uma partida pelo ID.\n📊 Meus Stats: mostra seus dados salvos.\n🏆 Ranking: mostra o ranking disponível.\n🎮 Cadastro: vincula sua conta com segurança no PV.');
+    await sendText(sock, jid, [
+      '🎮 *SEGA — AJUDA*',
+      '━━━━━━━━━━━━━━━━',
+      '',
+      'Você pode usar o menu ou digitar os comandos manualmente.',
+      '📋 Para abrir o menu: *!sega*',
+      '',
+      '⚔️ *CONSULTAR BATALHA*',
+      'Digite: *!battle <ID da batalha>*',
+      'Exemplo: *!battle 123456789012*',
+      'Consulta a Battle ID e tenta registrar os dados da partida.',
+      '',
+      '📊 *MEUS STATS*',
+      'Digite: *!stats*',
+      'Mostra suas estatísticas com base nos dados/partidas salvos.',
+      '',
+      '🏆 *RANKING*',
+      'Digite: *!ranking*',
+      'Mostra o ranking montado com as partidas verificadas salvas.',
+      '',
+      '🎮 *CADASTRO*',
+      'No privado do bot, digite: *!cadastrar*',
+      'Depois siga as perguntas para vincular seu jogador.',
+      '🔒 O cadastro é feito somente no privado.',
+      '',
+      '❓ *AJUDA*',
+      'Digite: *!ajuda* para ver estas instruções novamente.',
+      '',
+      '━━━━━━━━━━━━━━━━',
+      '💡 *Dica:* abriu o !sega? Você pode escolher uma opção do menu, digitar *1 a 5* enquanto ele estiver aberto ou escrever o comando diretamente.'
+    ].join('\\n'));
     return true;
   }
   if (['!stats','/stats'].includes(command)) {
