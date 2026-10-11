@@ -912,6 +912,10 @@ async function handleGroup(sock, message) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
     const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
     const target = displayPlayer(targetJid, 'jogador');
+    // A menção já conta como a resposta automática desta atividade.
+    // Atualiza o cooldown do autor para não disparar também a mensagem de retorno/AFK logo em seguida.
+    const activitySender = aliases[0] || key.participant || key.remoteJid;
+    if (activitySender) lastMessageBySender.set(groupJid + ':' + activitySender, Date.now());
     await sendText(sock, groupJid, roastFor(author, target, key.id));
     return;
   }
