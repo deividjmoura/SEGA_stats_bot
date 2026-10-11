@@ -8,6 +8,8 @@ import { nickMatches } from './ocr.js';
 import { escapeHtml, renderRanking, renderPlayerStats } from './render.js';
 import { logQuestion, getQuestionReport } from './questionLog.js';
 import { readJson, writeJson, quarantineJson } from './storage/jsonStore.js';
+import { writeNickSnapshot } from './whatsapp/nickSnapshot.js';
+import { startNickApi } from './whatsapp/nickApi.js';
 import {
   apiFetch,
   apiJson,
@@ -23,6 +25,7 @@ const token = process.env.BOT_TOKEN;
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 const HAS_PERSISTENT_VOLUME = Boolean(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
 const SESSION_FILE = process.env.SESSION_FILE || (DATA_DIR + '/sessions.json');
+const WHATSAPP_NICKS_FILE = process.env.WHATSAPP_NICKS_FILE || (DATA_DIR + '/whatsapp-nicks.json');
 const REGISTRATION_FILE = process.env.REGISTRATION_FILE || (DATA_DIR + '/registrations.json');
 const KNOWLEDGE_ADMIN_IDS = new Set(String(process.env.KNOWLEDGE_ADMIN_IDS || '').split(',').map(v => v.trim()).filter(Boolean));
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
@@ -77,6 +80,18 @@ const bot = new Telegraf(token);
 
 const registration = new Map();
 const authenticatedPlayers = new Map();
+
+async function saveWhatsAppNickSnapshot() {
+  const players = [...authenticatedPlayers.values()]
+    .filter((player) => player?.nameVerified && player?.name)
+    .map((player) => ({ name: player.name }));
+
+  try {
+    await writeNickSnapshot(WHATSAPP_NICKS_FILE, players);
+  } catch (error) {
+    console.warn('⚠️ Falha ao atualizar o snapshot público de nicks:', error?.message || error);
+  }
+}
 
 async function refreshPlayerName(telegramId) {
   const player = authenticatedPlayers.get(Number(telegramId));
@@ -305,6 +320,7 @@ async function saveSessions() {
     };
   }
   await writeJson(SESSION_FILE, stored);
+  await saveWhatsAppNickSnapshot();
 }
 
 async function restoreSessions() {
@@ -1399,6 +1415,7 @@ if (process.env.RAILWAY_ENVIRONMENT && PERSISTENCE_REQUIRED && !persistenceIsAva
 }
 
 await restoreSessions();
+await saveWhatsAppNickSnapshot();
 await restoreRegistrations();
 await restoreGroupBanters(bot.telegram);
 await cleanupScreenshots();
@@ -1409,6 +1426,10 @@ if (!HAS_PERSISTENT_VOLUME && process.env.RAILWAY_ENVIRONMENT) {
   console.warn('⚠️ Railway sem volume persistente detectado. Cadastros, prints e estatísticas serão perdidos em um redeploy. Anexe um Volume e monte em /app/data ou /data.');
 }
 
+const nickApiServer = startNickApi({
+  getPlayers: () => [...authenticatedPlayers.values()]
+});
+
 bot.launch(() => {
   console.log('🎮 SEGA Stats Bot online!');
 }).catch((error) => {
@@ -1416,5 +1437,11 @@ bot.launch(() => {
   process.exitCode = 1;
 });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => {
+  nickApiServer?.close();
+  bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+  nickApiServer?.close();
+  bot.stop('SIGTERM');
+});
