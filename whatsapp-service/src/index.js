@@ -107,67 +107,30 @@ async function sendText(sock, jid, text) {
   return sent;
 }
 async function sendSegaMenu(sock, jid) {
-  // O formato antigo de listMessage envia só o texto em clientes atuais.
-  const rows = [
-    { title: '⚔️ Battle ID', description: 'Consultar uma batalha', id: '!battle' },
-    { title: '📊 Meus Stats', description: 'Estatísticas salvas', id: '!stats' },
-    { title: '🏆 Ranking', description: 'Ranking disponível', id: '!ranking' },
-    { title: '🎮 Cadastro', description: 'Vincular conta no privado', id: '!cadastrar' },
-    { title: '❓ Ajuda', description: 'Comandos e instruções', id: '!ajuda' }
-  ];
-  const fallback = [
+  const menu = [
     '🎮 *SEGA STATS*',
     '━━━━━━━━━━━━━━━━',
     '',
-    '⚔️ *BATTLE ID*',
+    '1️⃣ ⚔️ *BATTLE ID*',
     '   `!battle <ID>`',
     '',
-    '📊 *MEUS STATS*',
+    '2️⃣ 📊 *MEUS STATS*',
     '   `!stats`',
     '',
-    '🏆 *RANKING*',
+    '3️⃣ 🏆 *RANKING*',
     '   `!ranking`',
     '',
-    '🎮 *CADASTRO*',
+    '4️⃣ 🎮 *CADASTRO*',
     '   `!cadastrar`  _(somente no privado)_',
     '',
-    '❓ *AJUDA*',
+    '5️⃣ ❓ *AJUDA*',
     '   `!ajuda`',
     '',
     '━━━━━━━━━━━━━━━━',
-    '👆 *Se o botão aparecer, toque para escolher.*',
-    '⌨️ *Ou digite 1 a 5 ou o comando diretamente.*'
+    '⌨️ *Digite 1 a 5 ou escreva o comando diretamente.*'
   ].join('\n');
-  try {
-    const interactive = proto.Message.InteractiveMessage.create({
-      header: proto.Message.InteractiveMessage.Header.create({ title: '🎮 SEGA Stats', hasMediaAttachment: false }),
-      body: proto.Message.InteractiveMessage.Body.create({ text: 'Escolha uma opção no botão abaixo.' }),
-      footer: proto.Message.InteractiveMessage.Footer.create({ text: 'Ou digite !ajuda para ver os comandos.' }),
-      nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-        buttons: [{
-          name: 'single_select',
-          buttonParamsJson: JSON.stringify({ title: 'Abrir menu', sections: [{ title: 'SEGA Stats', rows }] })
-        }]
-      })
-    });
-    const msg = generateWAMessageFromContent(jid, {
-      viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage: interactive } }
-    }, { userJid: sock.user?.id });
-    menuSessions.set(jid, Date.now() + MENU_TTL_MS);
-    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-    if (msg.key.id) botSentMessageIds.add(msg.key.id);
-
-    // relayMessage confirmar o envio do pacote não garante que o cliente atual
-    // do WhatsApp renderizou Native Flow. Entregamos o fallback também para
-    // que !sega nunca fique sem resposta visível.
-    await sendText(sock, jid, fallback);
-    console.log('Menu SEGA enviado com fallback visível:', jid.endsWith('@g.us') ? 'grupo' : 'PV');
-    return msg;
-  } catch (error) {
-    console.error('Menu SEGA interativo falhou; enviando comandos em texto:', error?.message);
-    menuSessions.set(jid, Date.now() + MENU_TTL_MS);
-    return sendText(sock, jid, fallback);
-  }
+  menuSessions.set(jid, Date.now() + MENU_TTL_MS);
+  return sendText(sock, jid, menu);
 }
 
 async function loadBattles() { return readJson(battlesFile, {}); }
@@ -321,7 +284,7 @@ async function handleRegistration(sock, message) {
       '',
       '━━━━━━━━━━━━━━━━',
       '💡 *Dica:* abriu o !sega? Você pode escolher uma opção do menu, digitar *1 a 5* enquanto ele estiver aberto ou escrever o comando diretamente.'
-    ].join('\\n'));
+    ].join('\n'));
     return true;
   }
   if (['!stats','/stats'].includes(command)) {
