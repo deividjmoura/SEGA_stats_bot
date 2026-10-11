@@ -59,10 +59,15 @@ async function connect() {
     }
   });
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' || !enabled || !targetGroup) return;
+    if (type !== 'notify' || !targetGroup) return;
     for (const message of messages || []) {
       const groupJid = message.key?.remoteJid, senderJid = message.key?.participant;
-      if (groupJid !== targetGroup || !senderJid || message.key?.fromMe || !message.message) continue;
+      if (groupJid !== targetGroup || !senderJid || !message.message) continue;
+      if (!enabled) {
+        console.log('PARTICIPANTE_TESTE:' + senderJid + ':fromMe=' + Boolean(message.key?.fromMe));
+        continue;
+      }
+      if (message.key?.fromMe) continue;
       try {
         await announcer.handle({ groupJid, senderJid, message,
           sendReply: async ({ text }) => sock.sendMessage(groupJid, { text }) });
