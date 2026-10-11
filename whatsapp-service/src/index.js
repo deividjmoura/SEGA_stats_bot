@@ -307,11 +307,86 @@ function geekLine(nick, senderKey, now = Date.now()) {
   return prefix + base.replaceAll('{nick}', nick);
 }
 
+const mentionRoasts = [
+  '{target}, cê tá de ladaia pro lado do {author}? 😂',
+  '{target}, o {author} te marcou. Eu no seu lugar fingia queda de internet. 👀',
+  '🚨 {target}, atenção: {author} invocou você. Geralmente boss aparece depois disso.',
+  '{target}, {author} te chamou. Não sei o motivo, mas já separa um advogado. 😂',
+  '📡 {target}, detectei uma tentativa de contato de {author}. Deseja bloquear ou sofrer?',
+  '{target}, olha quem lembrou de você: {author}. Meus pêsames. 🤖',
+  '⚠️ {target}, {author} te marcou. A treta recebeu atualização de firmware.',
+  '{target}, corre que {author} tá te procurando. Eu não vi nada. 🏃',
+  '🎮 {target}, missão secundária desbloqueada: responder {author} sem perder a amizade.',
+  '{target}, {author} solicitou sua presença. O RH do clã já foi avisado. 😂',
+  '👾 {target}, você foi summonado por {author}. Cooldown para fugir: zero.',
+  '{target}, {author} te marcou e o clima ficou igual lobby depois de derrota. 👀',
+  '🤖 {target}, protocolo de emergência: {author} quer falar com você.',
+  '{target}, se eu fosse você não respondia {author} sem salvar o jogo antes. 😂',
+  '🧠 {target}, {author} gastou o último neurônio disponível pra te marcar. Valorize.',
+  '{target}, parabéns: {author} selecionou você como próximo problema do dia. 🏆',
+  '📢 {target}, compareça ao chat. {author} abriu um chamado e não informou a gravidade.',
+  '{target}, {author} está te chamando. Minha análise técnica recomenda cautela e capacete.',
+  '🕹️ {target}, NPC {author} iniciou diálogo com você. Pular cutscene?',
+  '{target}, o radar detectou {author} na sua cola. Boa sorte, soldado. 🫡',
+  '💀 {target}, {author} te marcou. Foi bom conhecer você.',
+  '{target}, {author} quer sua atenção. Isso nunca termina em coisa produtiva. 😂',
+  '🚨 {target}, ameaça detectada: uma notificação de {author}. Nível de perigo: fofoca.',
+  '{target}, {author} te convocou. O tribunal do SEGA está oficialmente em sessão. ⚖️',
+  '👀 {target}, eu vi {author} te marcando. Não vou me meter... ainda.',
+  '{target}, {author} usou “Marcar Jogador”. Foi super efetivo. 🎮',
+  '🧙 {target}, {author} lançou Invocação Nv. 5. Você apareceu contra a sua vontade.',
+  '{target}, cuidado: {author} digitou seu nome com intenção. Isso é preocupante. 😂',
+  '📞 {target}, ligação a cobrar de {author}. Para aceitar, responda e arque com as consequências.',
+  '{target}, {author} te chamou. Backup feito? Testamento atualizado? Então pode responder. 💀',
+  '🤡 {target}, {author} pediu sua presença no circo. Seu camarim já está pronto.',
+  '{target}, aparentemente {author} precisa de você. Ou de terapia. Ainda estou calculando. 🤖',
+  '⚔️ {target}, duelo solicitado por {author}. Recusar custa 10 pontos de honra imaginários.',
+  '{target}, {author} te marcou. O algoritmo classificou como “potencialmente suspeito”.',
+  '🛸 {target}, transmissão alienígena interceptada: {author} está tentando contato.',
+  '{target}, {author} acabou de puxar sua ficha no chat. Recomendo silêncio estratégico. 😂',
+  '📦 {target}, chegou uma encomenda de {author}: contém cobrança e possível resenha.',
+  '{target}, {author} ativou sua passiva “encher o saco dos outros”. Você foi o escolhido. 😂',
+  '🔮 {target}, consultei a bola de cristal: responder {author} pode gerar 37 mensagens adicionais.',
+  '{target}, {author} abriu uma side quest envolvendo você. Recompensa: absolutamente nada.',
+  '🧯 {target}, {author} te marcou. Extintor localizado à esquerda caso a conversa esquente.',
+  '{target}, aviso do sistema: {author} está solicitando atenção humana. Isso é raro.',
+  '🎲 {target}, {author} rolou um D20 e caiu em “perturbar {target}”.',
+  '{target}, {author} chamou. Você tem 5 segundos antes que ele mande “??”. 😂',
+  '🧟 {target}, levanta daí: {author} invocou você dos mortos digitais.',
+  '{target}, {author} quer falar contigo. O SEGA Stats não se responsabiliza por danos emocionais.',
+  '🔋 {target}, economize bateria: talvez responder {author} não valha os elétrons.',
+  '{target}, {author} te encontrou no mapa. Bush não funciona mais. 🌿',
+  '🏴‍☠️ {target}, {author} embarcou no navio da resenha e te colocou na tripulação.',
+  '{target}, {author} iniciou uma reunião que poderia ter sido absolutamente nada. 😂'
+];
+
+function mentionIds(message) {
+  const m = message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  return [...new Set(m.filter(Boolean))];
+}
+function displayPlayer(jid, fallback = 'jogador') {
+  return players.get(jid)?.name || (jid === ownJid ? players.get('self')?.name : null) || fallback;
+}
+function roastFor(author, target, key) {
+  const seed = [...String(key || '')].reduce((n, ch) => (n * 33 + ch.codePointAt(0)) >>> 0, 5381);
+  return mentionRoasts[seed % mentionRoasts.length].replaceAll('{author}', author).replaceAll('{target}', target);
+}
+
 async function handleGroup(sock, message) {
   const key = message.key || {};
   const groupJid = key.remoteJid;
   if (!groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
   const text = messageText(message.message);
+  const aliases = aliasesFor(key);
+  const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
+  const mentioned = mentionIds(message.message);
+  if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
+    const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
+    const author = authorPlayer?.name || 'alguém';
+    const target = displayPlayer(targetJid, 'você aí');
+    await sendText(sock, groupJid, roastFor(author, target, key.id));
+    return;
+  }
   const segaMention = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(text);
   if (segaMention) {
     const question = text.replace(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/ig, '').trim();
@@ -336,8 +411,7 @@ async function handleGroup(sock, message) {
     return;
   }
   if (!enabled || botSentMessageIds.has(key.id)) return;
-  const aliases = aliasesFor(key);
-  const player = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
+  const player = authorPlayer;
   if (!player?.name) return;
   const senderKey = aliases[0];
   const now = Date.now();
