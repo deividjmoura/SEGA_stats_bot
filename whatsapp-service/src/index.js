@@ -665,11 +665,34 @@ function mentionIds(message) {
 
   return [...new Set(ids.filter(Boolean))];
 }
+function jidAliases(jid) {
+  const raw = String(jid || '');
+  if (!raw) return [];
+  const user = raw.split('@')[0];
+  const bare = user.split(':')[0];
+  const domains = ['@s.whatsapp.net', '@lid'];
+  return [...new Set([raw, ...domains.map(domain => bare + domain)])];
+}
+function rememberGroupName(jid, name) {
+  if (!name || /^\d{8,}$/.test(String(name).replace(/\D/g, ''))) return;
+  for (const alias of jidAliases(jid)) groupNames.set(alias, name);
+}
+function playerForJid(jid) {
+  for (const alias of jidAliases(jid)) {
+    const player = players.get(alias);
+    if (player?.name) return player;
+  }
+  return null;
+}
 function whatsappName(jid, fallback = 'jogador') {
-  return groupNames.get(jid) || fallback;
+  for (const alias of jidAliases(jid)) {
+    const name = groupNames.get(alias);
+    if (name) return name;
+  }
+  return fallback;
 }
 function displayPlayer(jid, fallback = 'jogador') {
-  return players.get(jid)?.name || (jid === ownJid ? players.get('self')?.name : null) || whatsappName(jid, fallback);
+  return playerForJid(jid)?.name || (jidAliases(jid).includes(ownJid) ? players.get('self')?.name : null) || whatsappName(jid, fallback);
 }
 function registrationLink() {
   const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
@@ -696,12 +719,12 @@ async function handleGroup(sock, message) {
     text = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[text];
   } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
   const aliases = aliasesFor(key);
-  if (key.pushName) for (const alias of aliases) groupNames.set(alias, key.pushName);
+  if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
   for (const jid of mentionIds(message.message)) {
     try {
       const contact = await sock.onWhatsApp(jid).catch(() => null);
       const name = contact?.[0]?.notify || contact?.[0]?.name;
-      if (name) groupNames.set(jid, name);
+      if (name) rememberGroupName(jid, name);
     } catch {}
   }
   const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
