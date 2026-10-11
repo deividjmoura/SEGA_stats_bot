@@ -744,7 +744,9 @@ async function warmGroupParticipantNames(sock, groupJid) {
           fields: Object.keys(participant || {}).sort(),
           hasNotify: Boolean(participant?.notify),
           hasName: Boolean(participant?.name),
-          hasVerifiedName: Boolean(participant?.verifiedName)
+          hasVerifiedName: Boolean(participant?.verifiedName),
+          usernameType: typeof participant?.username,
+          usernameValue: participant?.username == null ? null : String(participant.username).slice(0, 80)
         }));
       }
       const knownPlayer = aliases.map(playerForJid).find(Boolean);
