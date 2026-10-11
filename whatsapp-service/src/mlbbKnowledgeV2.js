@@ -1,0 +1,713 @@
+import knowledge from './mlbb-knowledge.json' with { type: 'json' };
+
+const KNOWN_HEROES = [
+  "Aamon",
+  "Akai",
+  "Aldous",
+  "Alice",
+  "Alpha",
+  "Alucard",
+  "Angela",
+  "Argus",
+  "Arlott",
+  "Atlas",
+  "Aulus",
+  "Aurora",
+  "Badang",
+  "Balmond",
+  "Bane",
+  "Barats",
+  "Baxia",
+  "Beatrix",
+  "Belerick",
+  "Benedetta",
+  "Brody",
+  "Bruno",
+  "Carmilla",
+  "Cecilion",
+  "Chang'e",
+  "Chip",
+  "Chou",
+  "Cici",
+  "Claude",
+  "Clint",
+  "Cyclops",
+  "Diggie",
+  "Dyrroth",
+  "Edith",
+  "Esmeralda",
+  "Estes",
+  "Eudora",
+  "Fanny",
+  "Faramis",
+  "Floryn",
+  "Franco",
+  "Fredrinn",
+  "Freya",
+  "Gatotkaca",
+  "Gloo",
+  "Gord",
+  "Granger",
+  "Grock",
+  "Guinevere",
+  "Gusion",
+  "Hanabi",
+  "Hanzo",
+  "Harith",
+  "Harley",
+  "Hayabusa",
+  "Helcurt",
+  "Hilda",
+  "Hirara",
+  "Hylos",
+  "Irithel",
+  "Ixia",
+  "Jawhead",
+  "Johnson",
+  "Joy",
+  "Julian",
+  "Kadita",
+  "Kagura",
+  "Kaja",
+  "Kalea",
+  "Karina",
+  "Karrie",
+  "Khaleed",
+  "Khufra",
+  "Kimmy",
+  "Lancelot",
+  "Lapu-Lapu",
+  "Layla",
+  "Leomord",
+  "Lesley",
+  "Ling",
+  "Lolita",
+  "Lukas",
+  "Lunox",
+  "Luo Yi",
+  "Lylia",
+  "Marcel",
+  "Martis",
+  "Masha",
+  "Mathilda",
+  "Melissa",
+  "Minotaur",
+  "Minsitthar",
+  "Miya",
+  "Moskov",
+  "Nana",
+  "Natalia",
+  "Natan",
+  "Nolan",
+  "Novaria",
+  "Obsidia",
+  "Odette",
+  "Paquito",
+  "Pharsa",
+  "Phoveus",
+  "Popol e Kupa",
+  "Rafaela",
+  "Roger",
+  "Ruby",
+  "Saber",
+  "Selena",
+  "Silvanna",
+  "Sora",
+  "Sun",
+  "Suyou",
+  "Terizla",
+  "Thamuz",
+  "Tigreal",
+  "Uranus",
+  "Vale",
+  "Valentina",
+  "Valir",
+  "Vexana",
+  "Wanwan",
+  "X.Borg",
+  "Xavier",
+  "Yi Sun-shin",
+  "Yin",
+  "Yu Zhong",
+  "Yve",
+  "Zetian",
+  "Zhask",
+  "Zhuxin",
+  "Zilong"
+];
+
+const compact = (value) => String(value || '')
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+function findHero(text) {
+  const source = compact(text);
+
+  // Primeiro procura na base detalhada (counters, itens, dicas etc.).
+  for (const [key, hero] of Object.entries(knowledge.heroes)) {
+    const names = [key, hero.pt, hero.en, ...(hero.aliases || [])];
+    if (names.some(name => {
+      const n = compact(name);
+      return n && (source === n || source.includes(' ' + n + ' ') || source.startsWith(n + ' ') || source.endsWith(' ' + n));
+    })) return { key, ...hero, detailed: true };
+  }
+
+  // Depois reconhece todo o roster atual. Isso impede que heróis fora da
+  // base detalhada caiam como "herói não identificado".
+  const exact = KNOWN_HEROES.find(name => {
+    const n = compact(name);
+    return n && (source === n || source.includes(' ' + n + ' ') || source.startsWith(n + ' ') || source.endsWith(' ' + n));
+  });
+  if (exact) return { key: compact(exact), pt: exact, en: exact, counters: [], items: [], tips: [], detailed: false };
+
+  return null;
+}
+
+function levenshtein(a, b) {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) => i);
+  for (let j = 1; j <= b.length; j += 1) {
+    let prev = rows[0];
+    rows[0] = j;
+    for (let i = 1; i <= a.length; i += 1) {
+      const saved = rows[i];
+      rows[i] = Math.min(
+        rows[i] + 1,
+        rows[i - 1] + 1,
+        prev + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      prev = saved;
+    }
+  }
+  return rows[a.length];
+}
+
+function suggestHero(text) {
+  const source = compact(text);
+  const candidates = [];
+  for (const name of KNOWN_HEROES) {
+    const n = compact(name);
+    if (!n) continue;
+    const distance = levenshtein(source, n);
+    const threshold = n.length <= 5 ? 1 : n.length <= 8 ? 2 : 3;
+    if (distance <= threshold) candidates.push({ name, distance });
+  }
+
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates[0]?.name || null;
+}
+
+const RONE_API = 'https://arena.rone.dev/api';
+const LIVE_HEROES_URL = 'https://arda.ozyurt.tr/mlbb/data/heroes.min.json';
+const LIVE_MATRIX_URL = 'https://arda.ozyurt.tr/mlbb/data/matrix.json';
+
+const ACADEMY_API = 'https://arena.rone.dev/api';
+const academyCache = new Map();
+
+async function academyFetch(path, params = {}) {
+  const url = new URL(ACADEMY_API + path);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Academy API HTTP ' + response.status);
+
+  const body = await response.json();
+  if (body?.code !== 0) throw new Error(body?.message || 'Academy API error');
+  return body;
+}
+
+async function academyCached(key, loader, ttl = 30 * 60 * 1000) {
+  const cached = academyCache.get(key);
+  if (cached && Date.now() - cached.at < ttl) return cached.value;
+
+  const value = await loader();
+  if (value) academyCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+async function loadAcademyCatalog() {
+  return academyCached('catalog', async () => {
+    const body = await academyFetch('/academy/heroes/catalog', { size: 200, lang: 'pt' });
+    return body?.data?.records || [];
+  }, 60 * 60 * 1000);
+}
+
+async function loadAcademyEquipment() {
+  return academyCached('equipment', async () => {
+    const body = await academyFetch('/academy/equipment', { size: 250, lang: 'pt' });
+    return body?.data?.records || [];
+  }, 60 * 60 * 1000);
+}
+
+function academyHeroIdMap(records) {
+  const map = new Map();
+  for (const record of records || []) {
+    const data = record?.data || {};
+    const name = data?.hero?.data?.name;
+    if (name && data.hero_id != null) map.set(String(data.hero_id), name);
+  }
+  return map;
+}
+
+async function getAcademyCounters(heroName) {
+  try {
+    const body = await academyFetch(
+      '/academy/heroes/' + encodeURIComponent(heroName) + '/counters',
+      { rank: 'all', size: 20, lang: 'en' }
+    );
+    const record = body?.data?.records?.[0]?.data;
+    if (!record?.sub_hero?.length) return null;
+
+    const catalog = await loadAcademyCatalog();
+    const names = academyHeroIdMap(catalog);
+
+    return record.sub_hero
+      .slice()
+      .sort((a, b) => Number(b.increase_win_rate || 0) - Number(a.increase_win_rate || 0))
+      .map(row => names.get(String(row.heroid)))
+      .filter(Boolean)
+      .slice(0, 5);
+  } catch (error) {
+    console.warn('⚠️ Counters da Academy indisponíveis:', error?.message || error);
+    return null;
+  }
+}
+
+async function getAcademyBuild(heroName) {
+  try {
+    const catalog = await loadAcademyCatalog();
+    const target = catalog.find(record => compact(record?.data?.hero?.data?.name) === compact(heroName));
+    const lanes = target?.data?.hero?.data?.roadsort || [];
+    const laneTitles = lanes
+      .map(item => item?.data?.road_sort_title || item?.road_sort_title)
+      .filter(Boolean)
+      .map(title => compact(title));
+    const laneMap = [
+      ['gold', 'gold'],
+      ['gold lane', 'gold'],
+      ['exp', 'exp'],
+      ['exp lane', 'exp'],
+      ['mid', 'mid'],
+      ['mid lane', 'mid'],
+      ['jungle', 'jungle'],
+      ['roam', 'roam'],
+      ['roam lane', 'roam']
+    ];
+    const lane = laneMap.find(([label]) => laneTitles.includes(label))?.[1];
+
+    const body = await academyFetch(
+      '/academy/heroes/' + encodeURIComponent(heroName) + '/builds',
+      { rank: 'all', lane, size: 10, lang: 'pt' }
+    );
+    const records = body?.data?.records || [];
+    const candidates = [];
+
+    for (const record of records) {
+      const data = record?.data || {};
+      for (const build of data.build || []) {
+        candidates.push({
+          heroName: data.hero_name || heroName,
+          laneId: data.real_road,
+          items: Array.isArray(build.equipid) ? build.equipid : [],
+          emblem: build?.emblem?.data?.emblemname || build?.emblem?.emblemname || null,
+          emblemAttr: build?.emblem?.data?.emblemattr?.emblemattr || build?.emblem?.emblemattr || null,
+          spell: build?.battleskill?.data?.skillname || build?.battleskill?.skillname || null,
+          winRate: Number(build.build_win_rate || 0),
+          pickRate: Number(build.build_pick_rate || 0)
+        });
+      }
+    }
+
+    if (!candidates.length) return null;
+
+    candidates.sort((a, b) => {
+      const winDiff = b.winRate - a.winRate;
+      if (Math.abs(winDiff) > 0.0001) return winDiff;
+      return b.pickRate - a.pickRate;
+    });
+
+    const best = candidates[0];
+    const equipment = await loadAcademyEquipment();
+    const itemNames = new Map();
+
+    for (const record of equipment) {
+      const data = record?.data || {};
+      if (data.equipid != null && data.equipname) itemNames.set(String(data.equipid), data.equipname);
+    }
+
+    return {
+      ...best,
+      items: best.items.map(id => itemNames.get(String(id)) || ('Item #' + id)).filter(Boolean)
+    };
+  } catch (error) {
+    console.warn('⚠️ Build da Academy indisponível:', error?.message || error);
+    return null;
+  }
+}
+
+async function getAcademyStats(heroName) {
+  try {
+    const body = await academyFetch(
+      '/academy/heroes/' + encodeURIComponent(heroName) + '/stats',
+      { rank: 'all', size: 10, lang: 'pt' }
+    );
+    const data = body?.data?.records?.[0]?.data;
+    if (!data) return null;
+
+    return {
+      winRate: Number(data.main_hero_win_rate),
+      pickRate: Number(data.main_hero_pick_rate),
+      banRate: Number(data.main_hero_ban_rate)
+    };
+  } catch (error) {
+    console.warn('⚠️ Stats da Academy indisponíveis:', error?.message || error);
+    return null;
+  }
+}
+
+let liveDataCache = null;
+let liveDataFetchedAt = 0;
+let liveDataPromise = null;
+
+async function loadLiveMatchups() {
+  const now = Date.now();
+  if (liveDataCache && now - liveDataFetchedAt < 10 * 60 * 1000) return liveDataCache;
+  if (liveDataPromise) return liveDataPromise;
+
+  liveDataPromise = (async () => {
+    try {
+      const [heroesResponse, matrixResponse] = await Promise.all([
+        fetch(LIVE_HEROES_URL),
+        fetch(LIVE_MATRIX_URL)
+      ]);
+
+      if (!heroesResponse.ok || !matrixResponse.ok) {
+        throw new Error('fonte de matchup indisponível');
+      }
+
+      const heroes = await heroesResponse.json();
+      const matrix = await matrixResponse.json();
+
+      if (!Array.isArray(heroes) || !matrix?.counters) {
+        throw new Error('formato de matchup inválido');
+      }
+
+      liveDataCache = { heroes, matrix };
+      liveDataFetchedAt = Date.now();
+      return liveDataCache;
+    } catch (error) {
+      console.warn('⚠️ Base live de counters indisponível:', error?.message || error);
+      return liveDataCache;
+    } finally {
+      liveDataPromise = null;
+    }
+  })();
+
+  return liveDataPromise;
+}
+
+function liveHeroByName(name, heroes) {
+  const target = compact(name);
+  return heroes.find(hero => compact(hero.n) === target);
+}
+
+async function getLiveCounters(heroName) {
+  // Preferimos a fonte Academy/Rone, que expõe counters por rank e patch.
+  const academyCounters = await getAcademyCounters(heroName);
+  if (academyCounters?.length) return academyCounters;
+
+  // Fallback para a matriz live legada.
+  const live = await loadLiveMatchups();
+  if (!live) return null;
+
+  const target = liveHeroByName(heroName, live.heroes);
+  if (!target) return null;
+
+  const counters = live.matrix.counters;
+  const rows = [];
+
+  for (const [attackerId, matchups] of Object.entries(counters)) {
+    const edge = Number(matchups?.[String(target.i)] ?? matchups?.[target.i]);
+    if (!Number.isFinite(edge) || edge <= 0) continue;
+
+    const attacker = live.heroes.find(hero => String(hero.i) === String(attackerId));
+    if (!attacker) continue;
+
+    rows.push({ name: attacker.n, edge });
+  }
+
+  rows.sort((x, y) => y.edge - x.edge);
+  return rows.slice(0, 5).map(row => row.name);
+}
+
+function canonicalHeroName(name) {
+  const target = compact(name);
+  for (const hero of Object.values(knowledge.heroes)) {
+    const names = [hero.pt, hero.en, ...(hero.aliases || [])];
+    if (names.some(n => compact(n) === target)) return hero.pt + ' (' + hero.en + ')';
+  }
+  return name;
+}
+
+function intentOf(text) {
+  const source = compact(text);
+  const against = '(?:contra|conta|cotra|conra|counter|couter)';
+
+  // Aceita erros de digitação comuns sem perder a intenção da pergunta.
+  if (new RegExp('(?:counter|couter|countera|counteram|counterado|counterada|ganha|vence|bom\\s+' + against + '|forte\\s+' + against + ')').test(source)) return 'counter';
+  if (new RegExp('(?:item|itens|equipamento|equipamentos).*' + against + '|' + against + '.*(?:item|itens|equipamento|equipamentos)').test(source)) return 'items';
+  if (new RegExp('(?:como jogar|como luto|como enfrentar|dica|dicas).*' + against + '|como jogar\\s+' + against).test(source)) return 'tips';
+  if (/(?:build|buildar|montar|montagem)(?:.*(?:de|do|da)\b|\s+[a-z0-9áàâãéêíóôõúçü' -]+$)/.test(source)) return 'build';
+  if (/(funcao|lane|rota|papel|role|quem e|quem eh|qual heroi)/.test(source)) return 'hero';
+  if (new RegExp('(?:counter|couter|' + against + '|build|item|equipamento|heroi)').test(source)) return 'unknown_mlbb';
+  return 'unknown';
+}
+
+const buildKnowledge = {
+  argus: {
+    name: 'Argus',
+    role: 'Lutador',
+    lane: 'EXP',
+    items: ['Swift Boots', 'Corrosion Scythe', 'Demon Hunter Sword', 'Golden Staff', "Haas's Claws", 'Malefic Roar'],
+    emblem: 'Emblema de Atirador',
+    spell: 'Flicker',
+    note: 'Linha de ataque contínuo/efeitos de ataque. Os dois primeiros picos são Corrosion Scythe + Demon Hunter Sword; adapte os dois últimos slots à armadura, sustain ou burst mágico do adversário.',
+    sourceLabel: 'build curada e builds da comunidade',
+    patch: '2.2.16'
+  },
+  harley: {
+    name: 'Harley',
+    role: 'Assassino/Mago',
+    lane: 'Jungle/Mid',
+    items: ['Arcane Boots', 'Genius Wand', 'Starlium Scythe', 'Holy Crystal', 'Divine Glaive', 'Winter Crown'],
+    emblem: 'Emblema de Mago',
+    spell: 'Retribution',
+    note: 'Foco em burst mágico e pickoff. Ajuste a penetração e a defesa conforme a composição inimiga.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  },
+  gusion: {
+    name: 'Gusion',
+    role: 'Assassino',
+    lane: 'Jungle',
+    items: ['Arcane Boots', 'Genius Wand', 'Holy Crystal', 'Divine Glaive', 'Blood Wings', 'Winter Crown'],
+    emblem: 'Emblema de Assassino',
+    spell: 'Retribution',
+    note: 'Build de burst mágico. A prioridade é penetração + poder mágico para finalizar o alvo rapidamente.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  },
+  silvanna: {
+    name: 'Silvanna',
+    role: 'Lutadora',
+    lane: 'EXP',
+    items: ['Tough Boots', 'Genius Wand', 'Concentrated Energy', 'Glowing Wand', 'Antique Cuirass', 'Immortality'],
+    emblem: 'Emblema de Mago',
+    spell: 'Flicker',
+    note: 'Linha de pickoff/bruiser. A defesa final deve responder ao tipo de dano e controle do inimigo.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  },
+  fanny: {
+    name: 'Fanny',
+    role: 'Assassina',
+    lane: 'Jungle',
+    items: ['Tough Boots', 'Blade of the Heptaseas', 'Malefic Roar', 'Hunter Strike', 'Blade of Despair', 'Immortality'],
+    emblem: 'Emblema de Assassino',
+    spell: 'Retribution',
+    note: 'Linha de pickoff para snowball. Immortality pode virar item situacional quando o risco de shutdown aumenta.',
+    sourceLabel: 'build curada',
+    patch: '2.2.16'
+  }
+};
+
+function buildForHero(hero) {
+  const key = compact(hero?.en || hero?.pt || '');
+  return buildKnowledge[key] || null;
+}
+
+const liveProfileCache = new Map();
+
+async function getLiveHeroProfile(heroName) {
+  const key = compact(heroName);
+  const cached = liveProfileCache.get(key);
+  if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.value;
+
+  try {
+    const response = await fetch(
+      RONE_API + '/heroes/' + encodeURIComponent(heroName) + '?lang=pt&size=1'
+    );
+    if (!response.ok) throw new Error('hero profile HTTP ' + response.status);
+
+    const body = await response.json();
+    const record = body?.data?.records?.[0];
+    const data = record?.data?.hero?.data || record?.data || {};
+    const sort = data.sortid;
+    const role = Array.isArray(sort)
+      ? sort.map(item => item?.sort_title).filter(Boolean).join('/')
+      : sort?.sort_title || null;
+
+    const roads = Array.isArray(data.roadsort)
+      ? data.roadsort.map(item => item?.data?.road_sort_title || item?.road_sort_title).filter(Boolean)
+      : [];
+    const lane = data?.story?.road_sort_title || data?.road_sort_title || roads[0] || null;
+
+    const value = { name: data.name || heroName, role, lane };
+    liveProfileCache.set(key, { at: Date.now(), value });
+    return value;
+  } catch (error) {
+    console.warn('⚠️ Perfil live do herói indisponível:', error?.message || error);
+    return null;
+  }
+}
+
+export function listKnowledgeExamples() {
+  return [
+    'quem countera Harley?',
+    'quem é bom contra Gusion?',
+    'qual item faço contra Silvanna?',
+    'como jogar contra Fanny?',
+    'qual a função do Khufra?',
+    'qual build faço de Harley?',
+    'qual a melhor rota para Bruno?',
+    'quais heróis combinam com Angela?'
+  ];
+}
+
+export function knowledgeSummary() {
+  return {
+    heroes: KNOWN_HEROES.length,
+    detailedHeroes: Object.keys(knowledge.heroes).length,
+    liveRoster: KNOWN_HEROES.length,
+    liveKnowledgeSource: 'Rone Arena / Academy API',
+    items: Object.keys(knowledge.items).length,
+    version: knowledge.version,
+    updatedAt: knowledge.updatedAt
+  };
+}
+
+export async function answerMlbbQuestion(text) {
+  const hero = findHero(text);
+  const intent = intentOf(text);
+
+  if (!hero) {
+    if (intent === 'counter' || intent === 'items' || intent === 'tips' || intent === 'hero' || intent === 'build') {
+      const suggestion = suggestHero(text.replace(/.*(?:countera|counter|contra|sobre|do|da|de)\\s+/i, ''));
+      return '🎮 <b>Não identifiquei esse herói.</b>\n\n' +
+        (suggestion
+          ? '🤔 Você quis dizer <b>' + suggestion + '</b>?\n\nEnvie a pergunta novamente usando esse nome.'
+          : 'Tente escrever o nome completo em português ou inglês.') +
+        '\n\nEx.: <code>quem countera Harley?</code>';
+    }
+    return null;
+  }
+
+  const title = hero.pt + ' (' + hero.en + ')';
+
+  if (intent === 'counter') {
+    // A fonte live cobre o roster completo. A base local continua como fallback
+    // para quando a fonte externa estiver indisponível.
+    const liveCounters = await getLiveCounters(hero.pt);
+    const counters = liveCounters?.length ? liveCounters : hero.counters;
+
+    if (!counters?.length) {
+      return '🎮 <b>' + title + '</b> foi identificado corretamente.\n\n' +
+        '⚠️ Não consegui carregar os dados de matchup agora. Tente novamente em alguns segundos.';
+    }
+
+    return '⚔️ <b>COUNTERS DE ' + title.toUpperCase() + '</b>\n\n' +
+      counters.map(name => '• ' + canonicalHeroName(name)).join('\n') +
+      '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Dados de matchup atualizados para o SEGA Stats.';
+  }
+
+  if (intent === 'items') {
+    if (!Array.isArray(hero.items) || !hero.items.length) {
+      return '🛡️ <b>ITENS CONTRA ' + title.toUpperCase() + '</b>\n\n' +
+        'Ainda não tenho uma recomendação local de itens confiável para esse herói. ' +
+        'Prefiro não inventar uma build. Você pode perguntar pelos counters atualizados enquanto essa parte da base é ampliada.';
+    }
+
+    return '🛡️ <b>ITENS CONTRA ' + title.toUpperCase() + '</b>\n\n' +
+      hero.items.map(item => {
+        const found = Object.values(knowledge.items).find(i => compact(i.pt) === compact(item) || compact(i.en) === compact(item));
+        return '• ' + (found ? found.pt + ' (' + found.en + ')' : item);
+      }).join('\n') +
+      '\n\n💡 A escolha depende do tipo de dano, controle e composição.';
+  }
+
+  if (intent === 'tips') {
+    if (!Array.isArray(hero.tips) || !hero.tips.length) {
+      return '🧠 <b>COMO JOGAR CONTRA ' + title.toUpperCase() + '</b>\n\n' +
+        'Ainda não tenho dicas detalhadas cadastradas para esse herói. ' +
+        'Posso reconhecer o herói e consultar matchups, mas não vou preencher a resposta com informação inventada.';
+    }
+
+    return '🧠 <b>COMO JOGAR CONTRA ' + title.toUpperCase() + '</b>\n\n' +
+      hero.tips.map(tip => '• ' + tip).join('\n') +
+      '\n\n⚔️ Adapte a decisão à sua rota e à composição.';
+  }
+
+  if (intent === 'hero') {
+    const liveProfile = (!hero.role || !hero.lane)
+      ? await getLiveHeroProfile(hero.pt)
+      : null;
+    const role = hero.role || liveProfile?.role || 'ainda não disponível';
+    const lane = hero.lane || liveProfile?.lane || 'ainda não disponível';
+    const counters = Array.isArray(hero.counters) && hero.counters.length
+      ? hero.counters.slice(0, 3).map(canonicalHeroName).join(', ')
+      : 'pergunte “quem countera ' + hero.pt + '?” para consultar o matchup atualizado';
+
+    return '🎮 <b>' + title + '</b>\n\n' +
+      '🎭 Função: <b>' + role + '</b>\n' +
+      '🗺️ Rota comum: <b>' + lane + '</b>\n' +
+      '⚔️ Counters: <b>' + counters + '</b>';
+  }
+
+  if (intent === 'build') {
+    // A build dinâmica cobre o roster inteiro. A fonte é a Academy/Rone,
+    // com taxa de vitória/uso do conjunto, em vez de manter só alguns heróis hardcoded.
+    const liveBuild = await getAcademyBuild(hero.pt);
+
+    if (!liveBuild) {
+      const fallback = buildForHero(hero);
+      if (!fallback) {
+        const liveProfile = await getLiveHeroProfile(hero.pt);
+        return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
+          (liveProfile
+            ? '🎯 Função: <b>' + (liveProfile.role || 'não disponível') + '</b> • Rota: <b>' + (liveProfile.lane || 'não disponível') + '</b>\\n\\n'
+            : '') +
+          '⚠️ A base live de builds está indisponível neste momento. Não vou inventar seis itens. Tente novamente em alguns segundos.';
+      }
+
+      return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
+        '🛒 <b>Ordem sugerida:</b>\\n' +
+        fallback.items.map((item, index) => (index + 1) + '. ' + item).join('\\n') + '\\n\\n' +
+        '🧿 Emblema: <b>' + fallback.emblem + '</b>\\n' +
+        '✨ Feitiço: <b>' + fallback.spell + '</b>\\n\\n' +
+        '💡 ' + fallback.note + '\\n\\n' +
+        '📚 Fallback local; a fonte live de builds não respondeu.';
+    }
+
+    const wr = Number.isFinite(liveBuild.winRate) && liveBuild.winRate > 0
+      ? '\\n📈 WR da build: <b>' + (liveBuild.winRate * 100).toFixed(1) + '%</b>'
+      : '';
+    const pr = Number.isFinite(liveBuild.pickRate) && liveBuild.pickRate > 0
+      ? '\\n📌 Uso da build: <b>' + (liveBuild.pickRate * 100).toFixed(2) + '%</b>'
+      : '';
+
+    return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
+      '🛒 <b>Itens recomendados:</b>\\n' +
+      liveBuild.items.map((item, index) => (index + 1) + '. ' + item).join('\\n') + '\\n\\n' +
+      '🧿 Emblema: <b>' + (liveBuild.emblem || 'não informado') + '</b>' +
+      (liveBuild.emblemAttr ? '\\n📐 ' + liveBuild.emblemAttr.replace(/\\n/g, ' • ').trim() : '') + '\\n' +
+      '✨ Feitiço: <b>' + (liveBuild.spell || 'não informado') + '</b>' +
+      wr + pr + '\\n\\n' +
+      '📚 Fonte live: <b>Rone Arena / Academy</b>. A build é uma referência estatística; ajuste botas, defesa, penetração e itens situacionais conforme a composição inimiga.';
+  }
+
+  return '🎮 <b>' + title + '</b> foi reconhecido.\n\nTente perguntar:\n• quem countera ' + hero.pt + '?\n• qual item faço contra ' + hero.pt + '?\n• como jogar contra ' + hero.pt + '?';
+}
