@@ -41,7 +41,15 @@ async function connect() {
     }, 10000);
   }
   sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-    if (connection === 'open') console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
+    if (connection === 'open') {
+      console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
+      if (!targetGroup) {
+        try {
+          const groups = await sock.groupFetchAllParticipating();
+          for (const [jid, group] of Object.entries(groups)) console.log('GRUPO_DISPONIVEL:' + jid + ':' + group.subject);
+        } catch (error) { console.error('Falha ao listar grupos:', error?.message); }
+      }
+    }
     if (connection === 'close') {
       closed = true;
       console.error('WhatsApp socket fechado. Status:', lastDisconnect?.error?.output?.statusCode, 'Motivo:', lastDisconnect?.error?.message);
