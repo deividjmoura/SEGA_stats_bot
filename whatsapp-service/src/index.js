@@ -106,7 +106,7 @@ async function sendText(sock, jid, text) {
   if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
   return sent;
 }
-async function sendSegaMenu(sock, jid) {
+async function sendSegaMenu(sock, jid, sessionKey = jid) {
   const menu = [
     '🎮 *SEGA STATS*',
     '━━━━━━━━━━━━━━━━',
@@ -129,7 +129,7 @@ async function sendSegaMenu(sock, jid) {
     '━━━━━━━━━━━━━━━━',
     '⌨️ *Digite 1 a 5 ou escreva o comando diretamente.*'
   ].join('\n');
-  menuSessions.set(jid, Date.now() + MENU_TTL_MS);
+  menuSessions.set(sessionKey, Date.now() + MENU_TTL_MS);
   return sendText(sock, jid, menu);
 }
 
@@ -706,7 +706,7 @@ async function handleGroup(sock, message) {
   }
   const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
   if (/^[!\/]sega$/i.test(text)) {
-    await sendSegaMenu(sock, groupJid);
+    await sendSegaMenu(sock, groupJid, menuKey);
     return;
   }
   if (/^!battle$/i.test(text)) {
