@@ -36,7 +36,7 @@ async function connect() {
     setTimeout(async () => {
       try {
         const code = await sock.requestPairingCode(pairPhone);
-        console.log('PAIRING_CODE_ONCE:' + code);
+        console.log('Código de pareamento solicitado com sucesso.');
       } catch (error) { console.error('Falha ao solicitar pareamento:', error?.message); }
     }, 10000);
   }
