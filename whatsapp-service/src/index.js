@@ -91,7 +91,7 @@ async function sendText(sock, jid, text) { await sock.sendMessage(jid, { text })
 async function handleRegistration(sock, message) {
   const key = message.key || {};
   const jid = key.remoteJid;
-  if (!jid || jid.endsWith('@g.us') || key.fromMe) return false;
+  if (!jid || jid.endsWith('@g.us')) return false;
   const text = messageText(message.message);
   if (!text) return false;
   const command = text.toLowerCase();
