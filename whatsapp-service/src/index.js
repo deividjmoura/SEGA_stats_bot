@@ -97,13 +97,33 @@ async function restoreRegistrations() {
     if (['role_id','zone_id','verification_code'].includes(state?.step) && Number.isFinite(updated) && now - updated < REGISTRATION_TTL_MS) registrations.set(jid, state);
   }
 }
+function unwrapMessage(message) {
+  let current = message || {};
+  for (let i = 0; i < 6; i += 1) {
+    const next =
+      current?.ephemeralMessage?.message ||
+      current?.viewOnceMessage?.message ||
+      current?.viewOnceMessageV2?.message ||
+      current?.viewOnceMessageV2Extension?.message ||
+      current?.documentWithCaptionMessage?.message ||
+      current?.editedMessage?.message?.protocolMessage?.editedMessage ||
+      current?.protocolMessage?.editedMessage;
+    if (!next) break;
+    current = next;
+  }
+  return current;
+}
 function messageText(message) {
+  const m = unwrapMessage(message);
   return String(
-    message?.conversation ||
-    message?.extendedTextMessage?.text ||
-    message?.buttonsResponseMessage?.selectedButtonId ||
-    message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    (() => { try { return JSON.parse(message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson || '{}').id || ''; } catch { return ''; } })() ||
+    m?.conversation ||
+    m?.extendedTextMessage?.text ||
+    m?.imageMessage?.caption ||
+    m?.videoMessage?.caption ||
+    m?.documentMessage?.caption ||
+    m?.buttonsResponseMessage?.selectedButtonId ||
+    m?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    (() => { try { return JSON.parse(m?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson || '{}').id || ''; } catch { return ''; } })() ||
     ''
   ).trim();
 }
