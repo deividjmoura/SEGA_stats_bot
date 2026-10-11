@@ -3,7 +3,7 @@ import pino from 'pino';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
-import { apiFetch, isApiSuccess, apiErrorMessage, profileName } from './roneApi.js';
+import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch } from './roneApi.js';
 import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
 
 const INACTIVITY_MS = 15 * 60 * 1000;
@@ -13,6 +13,7 @@ const authDir = process.env.WHATSAPP_AUTH_DIR || '/app/data/whatsapp-auth-v2';
 const dataDir = process.env.WHATSAPP_DATA_DIR || '/app/data';
 const sessionsFile = dataDir + '/whatsapp-players.json';
 const registrationsFile = dataDir + '/whatsapp-registrations.json';
+const battlesFile = dataDir + '/whatsapp-battles.json';
 const targetGroup = process.env.WHATSAPP_GROUP_JID || null;
 const pairPhone = process.env.WHATSAPP_PAIR_PHONE?.replace(/\D/g, '');
 const enabled = process.env.WHATSAPP_REPLY_ENABLED === 'true';
@@ -97,6 +98,28 @@ async function sendText(sock, jid, text) {
   return sent;
 }
 
+async function loadBattles() { return readJson(battlesFile, {}); }
+async function saveVerifiedBattle(jid, player, verification) {
+  const all = await loadBattles();
+  const owner = verification.match || {};
+  const normalized = normalizeVerifiedMatch(owner, verification.matchId, {});
+  const playerKey = String(player.roleId) + ':' + String(player.zoneId);
+  const rows = Array.isArray(all[playerKey]) ? all[playerKey] : [];
+  if (rows.some(row => String(row.battleId) === String(normalized.battleId))) return { duplicate: true, match: normalized };
+  rows.push({ ...normalized, playerName: player.name, verifiedAt: new Date().toISOString(), via: 'whatsapp', jidAlias: jid });
+  all[playerKey] = rows.slice(-500);
+  await writeJson(battlesFile, all);
+  return { duplicate: false, match: normalized };
+}
+function matchSummary(match) {
+  const k = match?.kda || {};
+  const result = match?.result === 'win' ? '🏆 Vitória' : match?.result === 'loss' ? '💀 Derrota' : '⚔️ Resultado';
+  return result + '\n🎮 Herói: ' + (match?.hero || 'não informado') +
+    '\n📊 K/D/A: ' + Number(k.kills || 0) + '/' + Number(k.deaths || 0) + '/' + Number(k.assists || 0) +
+    (Number.isFinite(match?.score) ? '\n⭐ Nota: ' + match.score : '') +
+    (match?.mvp ? '\n👑 MVP' : '');
+}
+
 async function handleRegistration(sock, message) {
   const key = message.key || {};
   const jid = key.remoteJid;
@@ -118,6 +141,27 @@ async function handleRegistration(sock, message) {
   if (['!cadastrar','/cadastrar','cadastrar'].includes(command)) {
     await setRegistration(jid, { step: 'role_id' });
     await sendText(sock, jid, '📝 CADASTRO SEGA\n\nMe envie somente o Role ID do Mobile Legends.\nExemplo: 123456789');
+    return true;
+  }
+
+  const battleMatch = command.match(/^(?:!|\/)?battle(?:\s+|$)(\d{10,18})$/i) || command.match(/^(\d{10,18})$/);
+  if (battleMatch) {
+    const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
+    if (!p?.jwt) {
+      await sendText(sock, jid, '🔐 Primeiro faça seu cadastro enviando !cadastrar.');
+      return true;
+    }
+    const battleId = battleMatch[1];
+    await sendText(sock, jid, '🔎 Consultando esse Battle ID e conferindo se a partida pertence à sua conta...');
+    const verification = await battleBelongsToPlayer(p.jwt, p.roleId, p.zoneId, battleId);
+    if (!verification.verified) {
+      await sendText(sock, jid, '⚠️ A API não conseguiu confirmar essa batalha na sua conta.\n\nMotivo técnico: ' + verification.reason + '\n\nSe continuar assim, vamos usar o print da tela final como fonte do histórico.');
+      return true;
+    }
+    const saved = await saveVerifiedBattle(jid, p, verification);
+    await sendText(sock, jid, saved.duplicate
+      ? '♻️ Essa batalha já estava salva. Não contei duas vezes.\n\n' + matchSummary(saved.match)
+      : '✅ PARTIDA CONFIRMADA E SALVA!\n\n' + matchSummary(saved.match) + '\n\n🔢 Battle ID: ' + saved.match.battleId);
     return true;
   }
 
