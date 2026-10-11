@@ -646,6 +646,36 @@ const mentionRoasts = [
   '🎪 {target}, {author} te chamou pra reunião executiva da firma Dois Neurônios Ltda.',
   '{target}, {author} marcou você. A ciência ainda não sabe por quê, mas já desistiu de descobrir.',
   '☠️ {target}, responde o {author} antes que ele tente resolver sozinho e vire ocorrência.',
+  '{target}, o {author} te marcou. Se burrice desse dano crítico, vocês dois já tinham levado Savage. 💀',
+  '🧠 {target}, atende o {author}. O último neurônio dele pediu demissão e deixou você como contato de emergência.',
+  '{target}, {author} quer sua ajuda. É tipo dois cegos procurando Wi-Fi no escuro. 😂',
+  '🚨 {target}, o {author} te chamou. Já avisei a defesa civil porque ideia dele costuma virar calamidade.',
+  '{target}, responde o {author}. Ele tá há cinco minutos tentando pensar e o celular já começou a esquentar.',
+  '🤡 {target}, {author} te marcou. Parabéns, a dupla sertaneja Falta de Noção & Ausência de Vergonha voltou.',
+  '{target}, o {author} pediu reforço. Manda um cérebro pelo Sedex porque conversa não vai resolver. 🧠',
+  '⚰️ {target}, se o {author} chamou pra ranked, atualiza o testamento antes de responder.',
+  '{target}, {author} te marcou. O algoritmo classificou isso como tentativa de homicídio da inteligência coletiva.',
+  '🗑️ {target}, chegou mensagem do {author}. O filtro de spam pediu demissão por excesso de trabalho.',
+  '{target}, responde aí. O {author} tá sozinho com uma ideia e isso representa risco pra sociedade. 😂',
+  '💀 {target}, {author} te convocou. Juntos vocês têm aproximadamente meio plano e três decisões ruins.',
+  '🧯 {target}, vem rápido: {author} começou a raciocinar sem equipamento de proteção.',
+  '{target}, o {author} te chamou. Se sair algo inteligente dessa conversa, vou abrir chamado de incidente.',
+  '🐒 {target}, {author} mandou sinal. Ainda estamos traduzindo do primata para português.',
+  '{target}, atende o {author}. O hospício do Land of Dawn confirmou que hoje é dia de visita. 😂',
+  '📉 {target}, desde que {author} te marcou, o grupo perdeu pontos de QI que nem tinha.',
+  '{target}, {author} precisa de você. Aparentemente fazer merda sozinho já não oferece desafio suficiente.',
+  '🚑 {target}, responde o {author}. Não é urgência médica, mas o bom senso dele segue desaparecido.',
+  '{target}, o {author} chamou. Dois especialistas em decisão ruim entrando numa conversa: o que poderia dar errado? Tudo. 😂',
+  '🎪 {target}, {author} abriu mais uma sessão extraordinária do Conselho Federal dos Sem Noção.',
+  '{target}, {author} te marcou. A dignidade viu os dois online e ativou o modo avião.',
+  '☠️ {target}, responde logo o {author}; cada minuto sem supervisão aumenta a chance dele inventar outra merda.',
+  '{target}, {author} pediu sua opinião. É bonito ver gente sem solução trabalhando em equipe. 😂',
+  '🧠 {target}, traz giz de cera. O {author} vai tentar explicar uma ideia e palavras talvez sejam avançadas demais.',
+  '{target}, {author} te chamou. A conversa ainda nem começou e já tem cheiro de boletim de ocorrência.',
+  '🤡 {target}, o {author} pediu ajuda. O circo está completo; só faltava o especialista.',
+  '{target}, responde o {author}. Ele tá tentando conectar dois pensamentos e o servidor entrou em timeout. 💀',
+  '🔥 {target}, {author} teve uma ideia. Eu esconderia os fósforos antes de perguntar qual.',
+  '{target}, {author} te marcou. Isso não é uma conversa, é um teste de resistência psicológica. 😂',
 ];
 
 function mentionIds(message) {
@@ -722,7 +752,7 @@ async function warmGroupParticipantNames(sock, groupJid) {
         for (const alias of aliases) rememberGroupName(alias, knownPlayer.name);
         continue;
       }
-      const name = participant?.notify || participant?.name || participant?.verifiedName;
+      const name = participant?.notify || participant?.name || participant?.verifiedName || participant?.username;
       if (name) for (const alias of aliases) rememberGroupName(alias, name);
     }
   } catch (error) {
