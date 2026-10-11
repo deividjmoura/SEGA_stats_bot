@@ -835,7 +835,7 @@ async function handleGroup(sock, message) {
     try {
       const answer = await answerMlbbQuestion(question);
       const plain = answer
-        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
         : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
       await sendText(sock, groupJid, plain);
     } catch (error) {
@@ -932,7 +932,7 @@ async function handleGroup(sock, message) {
     try {
       const answer = await answerMlbbQuestion(question);
       const plain = answer
-        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
         : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
       await sendText(sock, groupJid, plain);
     } catch (error) {
