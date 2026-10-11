@@ -804,6 +804,26 @@ async function handleGroup(sock, message) {
   linkIdentities([key.participant, key.participantAlt].filter(Boolean));
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
   const mentionedNow = mentionIds(message.message);
+  const earlyKnowledge = segaKnowledgeQuery(text);
+  if (earlyKnowledge.textual) {
+    const question = earlyKnowledge.cleaned.replace(/@\d{5,}/g, '').trim();
+    console.log('[sega-knowledge-hit]', JSON.stringify({ fromMe: Boolean(key.fromMe), question: question.slice(0, 120) }));
+    if (!question) {
+      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @SEGA quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
+      return;
+    }
+    try {
+      const answer = await answerMlbbQuestion(question);
+      const plain = answer
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
+      await sendText(sock, groupJid, plain);
+    } catch (error) {
+      console.error('Falha no conhecimento WhatsApp:', error?.message);
+      await sendText(sock, groupJid, '⚠️ Não consegui consultar o conhecimento agora. Tente novamente em alguns segundos.');
+    }
+    return;
+  }
   for (const lid of mentionedNow.filter(jid => String(jid).endsWith('@lid'))) {
     try {
       const pn = await sock.signalRepository?.lidMapping?.getPNForLID(lid);
@@ -864,10 +884,17 @@ async function handleGroup(sock, message) {
   const knowledge = segaKnowledgeQuery(text);
   const botWasMentioned = mentioned.some(isOwnMention);
   const segaMention = knowledge.textual || botWasMentioned;
+  console.log('[sega-knowledge-debug]', JSON.stringify({ textual: knowledge.textual, botWasMentioned, fromMe: Boolean(key.fromMe), text: text.slice(0, 120), mentionCount: mentioned.length }));
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length && !segaMention) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
     const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
-    const target = displayPlayer(targetJid, 'jogador');
+    let target = displayPlayer(targetJid, '');
+    // Some group participants expose no WhatsApp profile name at all. In that case,
+    // prefer the visible @mention label from the message text before using a generic fallback.
+    if (!target) {
+      const visibleMention = text.match(/@([^\s]{2,40})/u)?.[1]?.trim();
+      target = visibleMention && !/^\d+$/.test(visibleMention) ? visibleMention : 'jogador';
+    }
     const activitySender = aliases[0] || key.participant || key.remoteJid;
     if (activitySender) {
       const activityNow = Date.now();
