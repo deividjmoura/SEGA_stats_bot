@@ -729,7 +729,7 @@ async function handleGroup(sock, message) {
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
     const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
-    const target = displayPlayer(targetJid, targetJid?.split('@')[0] || 'jogador');
+    const target = displayPlayer(targetJid, 'jogador');
     await sendText(sock, groupJid, roastFor(author, target, key.id));
     return;
   }
