@@ -82,7 +82,13 @@ async function restoreRegistrations() {
   }
 }
 function messageText(message) {
-  return String(message?.conversation || message?.extendedTextMessage?.text || '').trim();
+  return String(
+    message?.conversation ||
+    message?.extendedTextMessage?.text ||
+    message?.buttonsResponseMessage?.selectedButtonId ||
+    message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    ''
+  ).trim();
 }
 function aliasesFor(key) {
   return [...new Set([key?.participant, key?.participantAlt, key?.remoteJid].filter(Boolean))];
@@ -96,6 +102,33 @@ async function sendText(sock, jid, text) {
   const sent = await sock.sendMessage(jid, { text });
   if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
   return sent;
+}
+async function sendSegaMenu(sock, jid) {
+  const menu = {
+    title: '🎮 SEGA',
+    text: 'Escolha uma opção. Você não precisa decorar os comandos.',
+    footer: 'SEGA Stats • toque em uma opção abaixo',
+    buttonText: 'Abrir menu',
+    sections: [{
+      title: 'SEGA Stats',
+      rows: [
+        { title: '⚔️ Battle ID', description: 'Consultar e salvar uma batalha', rowId: '!battle' },
+        { title: '📊 Meus Stats', description: 'Ver suas estatísticas salvas', rowId: '!stats' },
+        { title: '🏆 Ranking', description: 'Ver o ranking do grupo', rowId: '!ranking' },
+        { title: '🎮 Cadastro', description: 'Vincular sua conta no privado', rowId: '!cadastrar' },
+        { title: '❓ Ajuda', description: 'Ver como usar cada função', rowId: '!ajuda' }
+      ]
+    }]
+  };
+  try {
+    const sent = await sock.sendMessage(jid, menu);
+    if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
+    return sent;
+  } catch (error) {
+    console.error('Menu interativo indisponível:', error?.message);
+    return sendText(sock, jid,
+      '🎮 SEGA\n\n⚔️ Battle ID — !battle <ID>\n📊 Meus Stats — !stats\n🏆 Ranking — !ranking\n🎮 Cadastro — !cadastrar\n❓ Ajuda — !ajuda');
+  }
 }
 
 async function loadBattles() { return readJson(battlesFile, {}); }
@@ -127,6 +160,19 @@ async function handleRegistration(sock, message) {
   const text = messageText(message.message);
   if (!text) return false;
   const command = text.toLowerCase();
+
+  if (['!sega','/sega'].includes(command)) {
+    await sendSegaMenu(sock, jid);
+    return true;
+  }
+  if (command === '!ajuda') {
+    await sendText(sock, jid, '🎮 SEGA — AJUDA\n\nDigite !sega para abrir o menu.\n⚔️ Battle ID: consulta uma partida pelo ID.\n📊 Meus Stats: mostra seus dados salvos.\n🏆 Ranking: mostra o ranking disponível.\n🎮 Cadastro: vincula sua conta com segurança no PV.');
+    return true;
+  }
+  if (command === '!battle') {
+    await sendText(sock, jid, '⚔️ Envie !battle seguido de um espaço e da Battle ID.\nExemplo: !battle 123456789012');
+    return true;
+  }
 
   if (['!cancelar','/cancelar','cancelar'].includes(command)) {
     await deleteRegistration(jid);
@@ -489,6 +535,14 @@ async function handleGroup(sock, message) {
     } catch {}
   }
   const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
+  if (/^[!\/]sega$/i.test(text)) {
+    await sendSegaMenu(sock, groupJid);
+    return;
+  }
+  if (/^!ajuda$/i.test(text)) {
+    await sendText(sock, groupJid, '🎮 Use !sega para abrir o menu principal do SEGA.');
+    return;
+  }
   const mentioned = mentionIds(message.message);
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
