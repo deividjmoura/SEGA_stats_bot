@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers } from '@whiskeysockets/baileys';
 import pino from 'pino';
 const DEFAULT_INACTIVITY_MS = 15 * 60 * 1000;
 function createNickAnnouncer({ lookupNick, inactivityMs = DEFAULT_INACTIVITY_MS, now = Date.now } = {}) {
@@ -29,8 +29,7 @@ try {
 const announcer = createNickAnnouncer({ lookupNick: async (sender) => mapping[sender] || null });
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestWaWebVersion();
-  const sock = makeWASocket({ auth: state, logger, version, browser: Browsers.windows('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
+  const sock = makeWASocket({ auth: state, logger, browser: Browsers.ubuntu('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
   sock.ev.on('creds.update', saveCreds);
   let closed = false;
   if (!state.creds.registered && pairPhone) {
