@@ -718,7 +718,22 @@ async function handleGroup(sock, message) {
     return;
   }
   if (/^!ajuda$/i.test(text)) {
-    await sendText(sock, groupJid, '🎮 Use !sega para abrir o menu principal do SEGA.');
+    await sendText(sock, groupJid, [
+      '🎮 *SEGA — AJUDA*',
+      '━━━━━━━━━━━━━━━━',
+      '',
+      '📋 Menu principal: *!sega*',
+      '',
+      '⚔️ *BATTLE ID* — no privado: *!battle <ID>*',
+      '📊 *MEUS STATS* — no privado: *!stats*',
+      '🏆 *RANKING* — no grupo: *!ranking*',
+      '🎮 *CADASTRO* — no privado: *!cadastrar*',
+      '',
+      '🧠 *DÚVIDAS SOBRE MLBB*',
+      'No grupo, marque *@SEGA* junto da pergunta para perguntar sobre heróis, counters, builds, itens, rotas e matchups.',
+      '',
+      '💡 Abra *!sega* e digite *1 a 5* para escolher uma opção.'
+    ].join('\n'));
     return;
   }
   if (/^[!/]ranking$/i.test(text)) {
