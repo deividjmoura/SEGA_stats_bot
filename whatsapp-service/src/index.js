@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { apiFetch, isApiSuccess, apiErrorMessage, profileName } from './roneApi.js';
+import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
 
 const INACTIVITY_MS = 15 * 60 * 1000;
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
@@ -311,6 +312,25 @@ async function handleGroup(sock, message) {
   const groupJid = key.remoteJid;
   if (!groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
   const text = messageText(message.message);
+  const segaMention = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(text);
+  if (segaMention) {
+    const question = text.replace(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/ig, '').trim();
+    if (!question) {
+      await sendText(sock, groupJid, '🎮 Tô na escuta. Pergunte, por exemplo: @SEGA quem countera Harley?');
+      return;
+    }
+    try {
+      const answer = await answerMlbbQuestion(question);
+      const plain = answer
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+        : '🧠 Ainda não entendi essa pergunta. Tente algo como:\n' + listKnowledgeExamples().slice(0, 5).map(x => '• @SEGA ' + x).join('\n');
+      await sendText(sock, groupJid, plain);
+    } catch (error) {
+      console.error('Falha no conhecimento WhatsApp:', error?.message);
+      await sendText(sock, groupJid, '⚠️ Meu cérebro geek tropeçou num cabo. Tente a pergunta novamente em alguns segundos.');
+    }
+    return;
+  }
   if (/^[!/]?cadastrar$/i.test(text)) {
     if (!key.fromMe) await sendText(sock, groupJid, '🔐 O cadastro é privado. Chame este bot no WhatsApp e envie !cadastrar para vincular sua conta com segurança.');
     return;
