@@ -915,7 +915,10 @@ async function handleGroup(sock, message) {
     // A menção já conta como a resposta automática desta atividade.
     // Atualiza o cooldown do autor para não disparar também a mensagem de retorno/AFK logo em seguida.
     const activitySender = aliases[0] || key.participant || key.remoteJid;
-    if (activitySender) lastMessageBySender.set(groupJid + ':' + activitySender, Date.now());
+    if (activitySender) {
+      const activityNow = Date.now();
+      for (const jid of linkedAliases(activitySender)) lastMessageBySender.set(groupJid + ':' + jid, activityNow);
+    }
     await sendText(sock, groupJid, roastFor(author, target, key.id));
     return;
   }
@@ -951,11 +954,23 @@ async function handleGroup(sock, message) {
   const senderKey = aliases[0] || key.participant || key.remoteJid;
   const senderName = authorPlayer?.name || key.pushName || whatsappName(senderKey, 'jogador');
   const now = Date.now();
-  const timerKey = groupJid + ':' + senderKey;
-  const previous = lastMessageBySender.get(timerKey);
-  lastMessageBySender.set(timerKey, now);
-  if (previous !== undefined && now - previous < INACTIVITY_MS) return;
-  await sendText(sock, groupJid, geekLine(senderName, senderKey, now));
+  // Use a canonical identity for cooldowns. WhatsApp may alternate the same person
+  // between LID and phone-number JIDs, which previously made one user look like
+  // multiple inactive users and triggered false AFK replies.
+  const linked = linkedAliases(senderKey);
+  const timerIdentity = linked.find(jid => String(jid).endsWith('@s.whatsapp.net'))
+    || linked.find(jid => String(jid).endsWith('@lid'))
+    || senderKey;
+  const timerKey = groupJid + ':' + timerIdentity;
+  const previousTimes = linked
+    .map(jid => lastMessageBySender.get(groupJid + ':' + jid))
+    .filter(value => Number.isFinite(value));
+  const previous = previousTimes.length ? Math.max(...previousTimes) : lastMessageBySender.get(timerKey);
+  for (const jid of [...new Set([timerIdentity, ...linked])]) lastMessageBySender.set(groupJid + ':' + jid, now);
+  // First observation after startup establishes presence; it must not be treated as
+  // a 15-minute absence. Only a known sender returning after the full cooldown gets an AFK line.
+  if (previous === undefined || now - previous < INACTIVITY_MS) return;
+  await sendText(sock, groupJid, geekLine(senderName, timerIdentity, now));
 }
 
 async function connect() {
