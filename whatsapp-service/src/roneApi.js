@@ -144,7 +144,7 @@ export async function battleBelongsToPlayer(jwt, roleId, zoneId, battleId) {
 }
 
 export function normalizeVerifiedMatch(owner, battleId, ocrParsed) {
-  const result = Number(owner?.res);
+  const result = Number(owner?.res ?? owner?.fw);
   const scoreRaw = Number(owner?.s);
   const hero = owner?.hid_e?.n || owner?.hid_e?.name || null;
 
