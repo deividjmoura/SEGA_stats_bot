@@ -999,9 +999,20 @@ async function connect() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+    // Messages sent by the linked WhatsApp account can arrive as "append"
+    // instead of "notify". They are still real commands and must be processed.
+    if (!['notify', 'append'].includes(type)) return;
     for (const message of messages || []) {
       try {
+        const key = message?.key || {};
+        const raw = message?.message || {};
+        console.log('[incoming-debug]', JSON.stringify({
+          type,
+          fromMe: Boolean(key.fromMe),
+          group: String(key.remoteJid || '').endsWith('@g.us'),
+          messageTypes: Object.keys(raw),
+          parsedText: messageText(raw).slice(0, 160)
+        }));
         if (await handleRegistration(sock, message)) continue;
         await handleGroup(sock, message);
       } catch (e) { console.error('Falha ao processar mensagem WhatsApp:', e?.message); }
