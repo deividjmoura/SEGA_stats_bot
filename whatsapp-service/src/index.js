@@ -26,6 +26,20 @@ const registrations = new Map();
 const lastMessageBySender = new Map();
 const botSentMessageIds = new Set();
 const groupNames = new Map();
+const identityAliases = new Map();
+function linkIdentities(jids) {
+  const all = [...new Set(jids.filter(Boolean).flatMap(jidAliases))];
+  for (const jid of all) {
+    const known = identityAliases.get(jid) || [];
+    identityAliases.set(jid, [...new Set([...known, ...all])]);
+  }
+  const name = all.map(jid => groupNames.get(jid)).find(Boolean);
+  if (name) for (const jid of all) groupNames.set(jid, name);
+}
+function linkedAliases(jid) {
+  const base = jidAliases(jid);
+  return [...new Set([...base, ...base.flatMap(x => identityAliases.get(x) || [])])];
+}
 const menuSessions = new Map();
 const MENU_TTL_MS = 5 * 60 * 1000;
 let ownJid = null;
@@ -705,17 +719,17 @@ function jidAliases(jid) {
 }
 function rememberGroupName(jid, name) {
   if (!name || /^\d{8,}$/.test(String(name).replace(/\D/g, ''))) return;
-  for (const alias of jidAliases(jid)) groupNames.set(alias, name);
+  for (const alias of linkedAliases(jid)) groupNames.set(alias, name);
 }
 function playerForJid(jid) {
-  for (const alias of jidAliases(jid)) {
+  for (const alias of linkedAliases(jid)) {
     const player = players.get(alias);
     if (player?.name) return player;
   }
   return null;
 }
 function whatsappName(jid, fallback = 'jogador') {
-  for (const alias of jidAliases(jid)) {
+  for (const alias of linkedAliases(jid)) {
     const name = groupNames.get(alias);
     if (name) return name;
   }
@@ -738,6 +752,7 @@ async function warmGroupParticipantNames(sock, groupJid) {
     const metadata = await sock.groupMetadata(groupJid);
     for (const participant of metadata?.participants || []) {
       const aliases = participantJids(participant);
+      linkIdentities(aliases);
       if (aliases.length) {
         console.log('[mention-participant-debug]', JSON.stringify({
           aliasDomains: aliases.map(jid => String(jid).split('@')[1] || 'unknown'),
@@ -786,8 +801,15 @@ async function handleGroup(sock, message) {
     text = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[text];
   } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
   const aliases = aliasesFor(key);
+  linkIdentities([key.participant, key.participantAlt].filter(Boolean));
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
   const mentionedNow = mentionIds(message.message);
+  for (const lid of mentionedNow.filter(jid => String(jid).endsWith('@lid'))) {
+    try {
+      const pn = await sock.signalRepository?.lidMapping?.getPNForLID(lid);
+      if (pn) linkIdentities([lid, pn]);
+    } catch (error) { console.warn('LID mapping unavailable:', error?.message); }
+  }
   if (mentionedNow.length) {
     const maskJid = (jid) => {
       const raw = String(jid || '');
@@ -923,7 +945,7 @@ async function handleGroup(sock, message) {
   }
   if (!enabled || botSentMessageIds.has(key.id)) return;
   const senderKey = aliases[0] || key.participant || key.remoteJid;
-  const senderName = authorPlayer?.name || key.pushName || whatsappName(senderKey, senderKey?.split('@')[0] || 'jogador');
+  const senderName = authorPlayer?.name || key.pushName || whatsappName(senderKey, 'jogador');
   const now = Date.now();
   const timerKey = groupJid + ':' + senderKey;
   const previous = lastMessageBySender.get(timerKey);
@@ -937,6 +959,8 @@ async function connect() {
   await restoreRegistrations();
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const sock = makeWASocket({ auth: state, logger, browser: Browsers.ubuntu('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
+  sock.ev.on('contacts.upsert', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
+  sock.ev.on('contacts.update', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
   sock.ev.on('creds.update', saveCreds);
   if (!state.creds.registered && pairPhone) setTimeout(async () => {
     try { await sock.requestPairingCode(pairPhone); console.log('Código de pareamento solicitado com sucesso.'); }
