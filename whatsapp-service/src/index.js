@@ -134,7 +134,7 @@ async function sendSegaMenu(sock, jid) {
     '',
     '━━━━━━━━━━━━━━━━',
     '💡 Você pode digitar os comandos diretamente.'
-  ].join('\\n');
+  ].join('\n');
   try {
     const interactive = proto.Message.InteractiveMessage.create({
       header: proto.Message.InteractiveMessage.Header.create({ title: '🎮 SEGA Stats', hasMediaAttachment: false }),
