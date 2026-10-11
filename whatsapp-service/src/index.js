@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -87,6 +87,7 @@ function messageText(message) {
     message?.extendedTextMessage?.text ||
     message?.buttonsResponseMessage?.selectedButtonId ||
     message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    (() => { try { return JSON.parse(message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson || '{}').id || ''; } catch { return ''; } })() ||
     ''
   ).trim();
 }
@@ -104,30 +105,43 @@ async function sendText(sock, jid, text) {
   return sent;
 }
 async function sendSegaMenu(sock, jid) {
-  const menu = {
-    title: '🎮 SEGA',
-    text: 'Escolha uma opção. Você não precisa decorar os comandos.',
-    footer: 'SEGA Stats • toque em uma opção abaixo',
-    buttonText: 'Abrir menu',
-    sections: [{
-      title: 'SEGA Stats',
-      rows: [
-        { title: '⚔️ Battle ID', description: 'Consultar e salvar uma batalha', rowId: '!battle' },
-        { title: '📊 Meus Stats', description: 'Ver suas estatísticas salvas', rowId: '!stats' },
-        { title: '🏆 Ranking', description: 'Ver o ranking do grupo', rowId: '!ranking' },
-        { title: '🎮 Cadastro', description: 'Vincular sua conta no privado', rowId: '!cadastrar' },
-        { title: '❓ Ajuda', description: 'Ver como usar cada função', rowId: '!ajuda' }
-      ]
-    }]
-  };
+  // O formato antigo de listMessage envia só o texto em clientes atuais.
+  const rows = [
+    { title: '⚔️ Battle ID', description: 'Consultar uma batalha', id: '!battle' },
+    { title: '📊 Meus Stats', description: 'Estatísticas salvas', id: '!stats' },
+    { title: '🏆 Ranking', description: 'Ranking disponível', id: '!ranking' },
+    { title: '🎮 Cadastro', description: 'Vincular conta no privado', id: '!cadastrar' },
+    { title: '❓ Ajuda', description: 'Comandos e instruções', id: '!ajuda' }
+  ];
+  const fallback = '🎮 *SEGA — MENU*\\n\\n' +
+    '1️⃣ Battle ID: !battle <ID>\\n' +
+    '2️⃣ Meus Stats: !stats\\n' +
+    '3️⃣ Ranking: !ranking\\n' +
+    '4️⃣ Cadastro: !cadastrar (no privado)\\n' +
+    '5️⃣ Ajuda: !ajuda\\n\\n' +
+    'Você também pode digitar os comandos diretamente.';
   try {
-    const sent = await sock.sendMessage(jid, menu);
-    if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
-    return sent;
+    const interactive = proto.Message.InteractiveMessage.create({
+      header: proto.Message.InteractiveMessage.Header.create({ title: '🎮 SEGA Stats', hasMediaAttachment: false }),
+      body: proto.Message.InteractiveMessage.Body.create({ text: 'Escolha uma opção no botão abaixo.' }),
+      footer: proto.Message.InteractiveMessage.Footer.create({ text: 'Ou digite !ajuda para ver os comandos.' }),
+      nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+        buttons: [{
+          name: 'single_select',
+          buttonParamsJson: JSON.stringify({ title: 'Abrir menu', sections: [{ title: 'SEGA Stats', rows }] })
+        }]
+      })
+    });
+    const msg = generateWAMessageFromContent(jid, {
+      viewOnceMessage: { message: { messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 }, interactiveMessage: interactive } }
+    }, { userJid: sock.user?.id });
+    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+    if (msg.key.id) botSentMessageIds.add(msg.key.id);
+    console.log('Menu SEGA interativo enviado:', jid.endsWith('@g.us') ? 'grupo' : 'PV');
+    return msg;
   } catch (error) {
-    console.error('Menu interativo indisponível:', error?.message);
-    return sendText(sock, jid,
-      '🎮 SEGA\n\n⚔️ Battle ID — !battle <ID>\n📊 Meus Stats — !stats\n🏆 Ranking — !ranking\n🎮 Cadastro — !cadastrar\n❓ Ajuda — !ajuda');
+    console.error('Menu SEGA interativo falhou; enviando comandos em texto:', error?.message);
+    return sendText(sock, jid, fallback);
   }
 }
 
