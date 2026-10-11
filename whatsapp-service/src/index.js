@@ -137,7 +137,12 @@ async function sendSegaMenu(sock, jid) {
     }, { userJid: sock.user?.id });
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
     if (msg.key.id) botSentMessageIds.add(msg.key.id);
-    console.log('Menu SEGA interativo enviado:', jid.endsWith('@g.us') ? 'grupo' : 'PV');
+
+    // relayMessage confirmar o envio do pacote não garante que o cliente atual
+    // do WhatsApp renderizou Native Flow. Entregamos o fallback também para
+    // que !sega nunca fique sem resposta visível.
+    await sendText(sock, jid, fallback);
+    console.log('Menu SEGA enviado com fallback visível:', jid.endsWith('@g.us') ? 'grupo' : 'PV');
     return msg;
   } catch (error) {
     console.error('Menu SEGA interativo falhou; enviando comandos em texto:', error?.message);
