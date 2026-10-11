@@ -163,3 +163,45 @@ export function normalizeVerifiedMatch(owner, battleId, ocrParsed) {
     hero
   };
 }
+
+export async function fetchPlayerOverview(jwt) {
+  const result = { stats: null, matches: [], errors: [] };
+  const headers = authHeaders(jwt);
+  try {
+    const response = await apiJson('/user/stats?lang=pt', { headers });
+    if (response.response.ok && isApiSuccess(response.body) && response.body.data) result.stats = response.body.data;
+    else result.errors.push('stats_http_' + response.response.status);
+  } catch (error) { result.errors.push('stats_' + (error?.name || 'error')); }
+  try {
+    const seasons = await apiJson('/user/season?lang=pt', { headers });
+    const sids = seasons.body?.data?.sids;
+    if (!seasons.response.ok || !isApiSuccess(seasons.body) || !Array.isArray(sids) || !sids.length) {
+      result.errors.push('seasons_unavailable');
+      return result;
+    }
+    for (const sid of sids.slice(0, 2)) {
+      let cursor = '';
+      for (let page = 0; page < 2; page++) {
+        const path = '/user/matches?sid=' + encodeURIComponent(sid) + '&limit=50&lang=pt' +
+          (cursor ? '&last_cursor=' + encodeURIComponent(cursor) : '');
+        const response = await apiJson(path, { headers });
+        if (!response.response.ok || !isApiSuccess(response.body)) {
+          result.errors.push('matches_http_' + response.response.status);
+          break;
+        }
+        const rows = response.body?.data?.result;
+        if (!Array.isArray(rows)) break;
+        for (const row of rows) {
+          // IDs de batalha têm mais de 15 dígitos: jamais converter bid_s em Number.
+          const battleId = String(row?.bid_s || '');
+          if (!/^\d{10,20}$/.test(battleId)) continue;
+          result.matches.push(normalizeVerifiedMatch(row, battleId, {}));
+        }
+        const info = response.body?.data?.pageInfo;
+        if (!info?.hasNext || !info?.nextCursor || String(info.nextCursor) === cursor) break;
+        cursor = String(info.nextCursor);
+      }
+    }
+  } catch (error) { result.errors.push('matches_' + (error?.name || 'error')); }
+  return result;
+}
