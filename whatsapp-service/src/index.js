@@ -113,13 +113,28 @@ async function sendSegaMenu(sock, jid) {
     { title: '🎮 Cadastro', description: 'Vincular conta no privado', id: '!cadastrar' },
     { title: '❓ Ajuda', description: 'Comandos e instruções', id: '!ajuda' }
   ];
-  const fallback = '🎮 *SEGA — MENU*\\n\\n' +
-    '1️⃣ Battle ID: !battle <ID>\\n' +
-    '2️⃣ Meus Stats: !stats\\n' +
-    '3️⃣ Ranking: !ranking\\n' +
-    '4️⃣ Cadastro: !cadastrar (no privado)\\n' +
-    '5️⃣ Ajuda: !ajuda\\n\\n' +
-    'Você também pode digitar os comandos diretamente.';
+  const fallback = [
+    '🎮 *SEGA STATS*',
+    '━━━━━━━━━━━━━━━━',
+    '',
+    '⚔️ *BATTLE ID*',
+    '   `!battle <ID>`',
+    '',
+    '📊 *MEUS STATS*',
+    '   `!stats`',
+    '',
+    '🏆 *RANKING*',
+    '   `!ranking`',
+    '',
+    '🎮 *CADASTRO*',
+    '   `!cadastrar`  _(somente no privado)_',
+    '',
+    '❓ *AJUDA*',
+    '   `!ajuda`',
+    '',
+    '━━━━━━━━━━━━━━━━',
+    '💡 Você pode digitar os comandos diretamente.'
+  ].join('\\n');
   try {
     const interactive = proto.Message.InteractiveMessage.create({
       header: proto.Message.InteractiveMessage.Header.create({ title: '🎮 SEGA Stats', hasMediaAttachment: false }),
