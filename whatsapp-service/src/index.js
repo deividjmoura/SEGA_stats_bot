@@ -269,35 +269,15 @@ async function handleRegistration(sock, message) {
   }
   if (command === '!ajuda') {
     await sendText(sock, jid, [
-      '🎮 *SEGA — AJUDA*',
-      '━━━━━━━━━━━━━━━━',
-      '',
-      'Você pode usar o menu ou digitar os comandos manualmente.',
-      '📋 Para abrir o menu: *!sega*',
-      '',
-      '⚔️ *CONSULTAR BATALHA*',
-      'Digite: *!battle <ID da batalha>*',
-      'Exemplo: *!battle 123456789012*',
-      'Consulta a Battle ID e tenta registrar os dados da partida.',
-      '',
-      '📊 *MEUS STATS*',
-      'Digite: *!stats*',
-      'Mostra suas estatísticas com base nos dados/partidas salvos.',
-      '',
-      '🏆 *RANKING*',
-      'Digite: *!ranking*',
-      'Mostra o ranking montado com as partidas verificadas salvas.',
-      '',
-      '🎮 *CADASTRO*',
-      'No privado do bot, digite: *!cadastrar*',
-      'Depois siga as perguntas para vincular seu jogador.',
-      '🔒 O cadastro é feito somente no privado.',
-      '',
-      '❓ *AJUDA*',
-      'Digite: *!ajuda* para ver estas instruções novamente.',
-      '',
-      '━━━━━━━━━━━━━━━━',
-      '💡 *Dica:* abriu o !sega? Você pode escolher uma opção do menu, digitar *1 a 5* enquanto ele estiver aberto ou escrever o comando diretamente.'
+      '🎮 *SEGA STATS — AJUDA COMPLETA*','━━━━━━━━━━━━━━━━','',
+      '📋 *MENU PRINCIPAL*','Digite *!sega* para abrir o menu. Você também pode digitar os comandos diretamente.','','🔐 *PRIMEIRO ACESSO / CADASTRO*',
+      '1. Envie *!cadastrar* no privado.','2. Informe seu *Role ID* e depois o *Zone ID*.','3. O código de verificação chegará no correio interno do Mobile Legends.','4. Envie o código ao bot dentro do prazo.','Depois da confirmação, seu jogador/nick fica vinculado ao WhatsApp.','',
+      '⚔️ *BATTLE ID / PARTIDAS*','Use *!battle <ID da batalha>* no privado.','Exemplo: *!battle 123456789012*','O bot tenta consultar, confirmar e salvar os dados disponíveis da partida.','',
+      '📊 *MEUS STATS*','Use *!stats* no privado para consultar os dados disponíveis e o histórico salvo pelo SEGA.','',
+      '🏆 *RANKING*','Use *!ranking*. O ranking é baseado nas partidas verificadas e salvas.','',
+      '🧠 *PERGUNTAS SOBRE MOBILE LEGENDS*','No grupo, escreva *@SEGA* junto da pergunta.','Exemplo: *@SEGA quem countera Harley?*','Você pode perguntar sobre heróis, counters, builds, itens, emblemas, rotas, matchups e funções.','',
+      '😂 *MENÇÕES E ZOEIRAS*','No grupo, ao mencionar alguém, o SEGA pode entrar na conversa com uma zoeira. Quando possível usa o nick cadastrado ou o nome conhecido, sem expor IDs internos.','',
+      '🤖 *IMPORTANTE*','O bot funciona conectado ao número do Deivid; mensagens automáticas aparecem enviadas por esse número.','','━━━━━━━━━━━━━━━━','💡 *Resumo:* *!sega* abre o menu. Cadastro, Battle ID e stats: privado. Ranking e perguntas com *@SEGA*: grupo.'
     ].join('\n'));
     return true;
   }
@@ -915,7 +895,8 @@ async function handleGroup(sock, message) {
     return;
   }
   const mentioned = mentionedNow;
-  if (enabled && !botSentMessageIds.has(key.id) && mentioned.length) {
+  const segaMention = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(text);
+  if (enabled && !botSentMessageIds.has(key.id) && mentioned.length && !segaMention) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
     const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
     const target = displayPlayer(targetJid, 'jogador');
@@ -929,7 +910,6 @@ async function handleGroup(sock, message) {
     await sendText(sock, groupJid, roastFor(author, target, key.id));
     return;
   }
-  const segaMention = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(text);
   if (segaMention) {
     const question = text.replace(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/ig, '').trim();
     if (!question) {
