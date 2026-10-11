@@ -656,8 +656,21 @@ const mentionRoasts = [
 ];
 
 function mentionIds(message) {
-  const m = message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  return [...new Set(m.filter(Boolean))];
+  if (!message) return [];
+  const ids = [];
+  const seen = new Set();
+
+  // Baileys/WhatsApp can place contextInfo in different message wrappers.
+  const visit = (value) => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    const mentioned = value?.contextInfo?.mentionedJid;
+    if (Array.isArray(mentioned)) ids.push(...mentioned);
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(message);
+
+  return [...new Set(ids.filter(Boolean))];
 }
 function whatsappName(jid, fallback = 'jogador') {
   return groupNames.get(jid) || fallback;
