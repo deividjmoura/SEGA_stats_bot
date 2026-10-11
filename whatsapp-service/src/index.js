@@ -662,7 +662,7 @@ const mentionRoasts = [
   '🔥 {target}, {author} te marcou. O incêndio ainda não começou, mas trouxe gasolina por garantia.',
   '{target}, {author} solicitou suporte técnico. Erro identificado entre a cadeira e o celular.',
   '🧠 {target}, cuidado ao responder {author}: burrice em grupo pode ser contagiosa.',
-  '{target}, {author} chamou. Não sei quem está mais ferrado: quem perguntou ou quem vai responder.'
+  '{target}, {author} chamou. Não sei quem está mais ferrado: quem perguntou ou quem vai responder.',
   '{target}, o {author} te marcou porque passar vergonha sozinho já não tava sendo suficiente. 😂',
   '🧠 {target}, o {author} pediu ajuda. Parece que o neurônio da firma entrou de férias.',
   '{target}, responde o {author}. Ele já tentou pensar sozinho e olha no que deu. 💀',
