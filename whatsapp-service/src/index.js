@@ -23,6 +23,7 @@ const players = new Map();
 const registrations = new Map();
 const lastMessageBySender = new Map();
 const botSentMessageIds = new Set();
+let ownJid = null;
 
 async function readJson(path, fallback) {
   try { return JSON.parse(await fs.readFile(path, 'utf8')); }
@@ -85,6 +86,7 @@ function aliasesFor(key) {
 }
 function findPlayer(aliases) {
   for (const jid of aliases) if (players.has(jid)) return players.get(jid);
+  if (aliases.some(jid => jid === ownJid) && players.has('self')) return players.get('self');
   return null;
 }
 async function sendText(sock, jid, text) {
@@ -174,6 +176,7 @@ async function handleRegistration(sock, message) {
       const player = { jwt, roleId, zoneId, name, nameVerified: true, savedAt: new Date().toISOString() };
       for (const alias of aliasesFor(key)) players.set(alias, player);
       players.set(jid, player);
+      if (key.fromMe) players.set('self', player);
       await savePlayers();
       await deleteRegistration(jid);
       await sendText(sock, jid, '✅ CONTA VERIFICADA!\n\n🎮 Nick confirmado: ' + name + '\n🆔 ID: ' + roleId + '\n🌐 Zone: ' + zoneId + '\n\nSeu WhatsApp agora está vinculado ao SEGA Stats.');
@@ -195,9 +198,9 @@ async function handleGroup(sock, message) {
     if (!key.fromMe) await sendText(sock, groupJid, '🔐 O cadastro é privado. Chame este bot no WhatsApp e envie !cadastrar para vincular sua conta com segurança.');
     return;
   }
-  if (!enabled || key.fromMe) return;
+  if (!enabled || botSentMessageIds.has(key.id)) return;
   const aliases = aliasesFor(key);
-  const player = findPlayer(aliases);
+  const player = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
   if (!player?.name) return;
   const senderKey = aliases[0];
   const now = Date.now();
@@ -220,7 +223,10 @@ async function connect() {
   }, 10000);
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
-    if (connection === 'open') console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
+    if (connection === 'open') {
+      ownJid = sock.user?.id || null;
+      console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
+    }
     if (connection === 'close') {
       const status = lastDisconnect?.error?.output?.statusCode;
       console.error('WhatsApp socket fechado. Status:', status, 'Motivo:', lastDisconnect?.error?.message);
