@@ -2,6 +2,7 @@ import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto,
 import pino from 'pino';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost } from './announcementRouting.js';
 import { shouldProcessPrivateMessage } from './privateChatRouting.js';
+import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
@@ -1051,12 +1052,14 @@ async function connect() {
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
-      // An old persistent volume must never silently link a different WhatsApp account.
-      const connectedPhone = String(sock.user?.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-      if (pairPhone && connectedPhone !== pairPhone) {
+      // Verify only authenticated phone-number JIDs. Brazilian accounts may use
+      // either the 9-digit mobile form or the legacy 8-digit phone-number JID.
+      const identityJids = [sock.user?.id, sock.user?.phoneNumber, state.creds.me?.id, state.creds.me?.phoneNumber];
+      if (pairPhone && !ownerIdentityMatchesPhone(identityJids, pairPhone)) {
         connectionIdentityRejected = true;
-        console.error('Segurança WhatsApp: sessão antiga pertence a outro número. Conexão bloqueada.');
-        sock.end(new Error('WhatsApp vinculado ao número errado'));
+        const kinds = identityJids.filter(Boolean).map(jid => String(jid).split('@')[1] || 'unknown');
+        console.error('Segurança WhatsApp: telefone da sessão não confirmado; conexão bloqueada. Tipos de ID:', kinds.join(','));
+        sock.end(new Error('WhatsApp sem confirmação de identidade'));
         return;
       }
       connectionIdentityVerified = true;
