@@ -271,59 +271,92 @@ function savedStats(rows) {
   }), {k:0,d:0,a:0,mvp:0});
   return {games,wins,losses,totals,rate:games ? (100*wins/games).toFixed(1) : '0.0'};
 }
-async function sendPlayerStats(sock,jid,player) {
-  if (!player?.jwt) return sendText(sock,jid,'🔐 Cadastre seu nick com !cadastrar para consultar seus dados.');
-  const key = String(player.roleId) + ':' + String(player.zoneId);
-  const overview = await fetchPlayerOverview(player.jwt);
-  let imported = 0;
-  if (overview.matches.length) {
-    const all = await loadBattles();
-    const rows = Array.isArray(all[key]) ? all[key] : [];
-    const ids = new Set(rows.map(row => String(row.battleId)));
-    for (const match of overview.matches) {
-      if (ids.has(match.battleId)) continue;
-      rows.push({ ...match, playerName: player.name, verifiedAt: new Date().toISOString(), via: 'rone_api_history', jidAlias: jid });
-      ids.add(match.battleId);
-      imported++;
-    }
-    if (imported) {
-      all[key] = rows.slice(-500);
-      await writeJson(battlesFile,all);
-    }
-  }
-  const all = await loadBattles();
-  const rows = Array.isArray(all[key]) ? all[key] : [];
-  const st = savedStats(rows);
-  const lines = ['📊 *MEUS STATS — ' + player.name + '*', ''];
-  if (overview.stats) {
-    const api = overview.stats;
-    lines.push('🌐 *ESTATÍSTICAS DO JOGO*');
-    if (api.tc != null) lines.push('⚔️ Partidas totais: ' + api.tc);
-    if (api.wc != null) lines.push('🏆 Vitórias totais: ' + api.wc);
-    if (Number(api.tc) > 0 && api.wc != null) lines.push('📈 Win rate geral: ' + (100 * Number(api.wc) / Number(api.tc)).toFixed(1) + '%');
-    if (api.mvpc != null) lines.push('👑 MVPs totais: ' + api.mvpc);
-    if (api.wsc != null) lines.push('🔥 Maior sequência: ' + api.wsc);
-    if (api.as != null) lines.push('⭐ Nota média: ' + (Number(api.as) / 100).toFixed(2));
-    lines.push('');
-  }
-  lines.push('📁 *HISTÓRICO SALVO NO SEGA*');
-  if (st.games) lines.push('⚔️ Partidas: '+st.games,'🏆 Vitórias: '+st.wins,'💀 Derrotas: '+st.losses,'📈 Win rate: '+st.rate+'%','👑 MVPs: '+st.totals.mvp,'🎯 K/D/A: '+st.totals.k+'/'+st.totals.d+'/'+st.totals.a);
-  else lines.push('Ainda não há partidas verificadas salvas.');
-  if(imported) lines.push('🆕 '+imported+' partidas novas sincronizadas.');
+let cachedRankRecords = [];
+let rankRecordsCachedUntil = 0;
+async function getRankRecords() {
+  if (cachedRankRecords.length && Date.now() < rankRecordsCachedUntil) return cachedRankRecords;
   try {
-    const res = await apiFetch('/user/info?lang=pt',{headers:{Authorization:'Bearer '+player.jwt}});
-    const body = await res.json().catch(()=>({}));
-    if(res.ok && isApiSuccess(body) && body.data) {
-      lines.push('', '🎮 *PERFIL*');
-      if(body.data.level != null) lines.push('⭐ Nível: '+body.data.level);
-      if(body.data.rank_level != null) lines.push('🏅 Rank (código): '+body.data.rank_level);
-      if(body.data.history_rank_level != null) lines.push('🥇 Melhor rank (código): '+body.data.history_rank_level);
+    const response = await apiFetch('/academy/ranks?size=100&index=1&lang=en');
+    const body = await response.json().catch(() => ({}));
+    const records = body?.data?.records;
+    if (response.ok && isApiSuccess(body) && Array.isArray(records) && records.length) {
+      cachedRankRecords = records;
+      rankRecordsCachedUntil = Date.now() + 6 * 60 * 60 * 1000;
     }
-  } catch { /* perfil é complementar */ }
-  if (overview.errors.length) lines.push('','⚠️ API parcialmente indisponível ('+overview.errors.join(', ')+').');
-  lines.push('','ℹ️ Total da API e histórico salvo podem cobrir períodos diferentes.');
-  return sendText(sock,jid,lines.join('\n'));
+  } catch (error) { console.warn('Patentes indisponíveis:', error?.message); }
+  return cachedRankRecords;
 }
+function portugueseRankName(name) {
+  const text = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/immortal|imortal|不朽/.test(text)) return 'Mítico Imortal';
+  if (/glory|gloria|荣耀/.test(text)) return 'Mítico Glória';
+  if (/honor|honour|honra|荣誉/.test(text)) return 'Mítico Honra';
+  if (/mythic|mitico|神话/.test(text)) return 'Mítico';
+  if (/grand.?master|grao.?mestre|宗师/.test(text)) return 'Grão-Mestre';
+  if (/legend|lenda|传奇/.test(text)) return 'Lenda';
+  if (/epic|epico|史诗/.test(text)) return 'Épico';
+  if (/master|mestre|大师/.test(text)) return 'Mestre';
+  if (/elite|精英/.test(text)) return 'Elite';
+  if (/warrior|guerreiro|勇士/.test(text)) return 'Guerreiro';
+  return null;
+}
+function displayRankFromApi(code, records) {
+  const rank = Number(code);
+  if (!Number.isFinite(rank)) return 'Não disponível';
+  const found = records.find(entry => {
+    const data = entry?.data || {};
+    return rank >= Number(data.rankid_start) && rank <= Number(data.rankid_end);
+  });
+  if (!found) return 'Patente não identificada';
+  const data = found.data || {};
+  const name = portugueseRankName(data.bigrank_name) || portugueseRankName(found.caption);
+  if (!name) return 'Patente não identificada';
+  // Internal rank IDs are not stars. Only append a division if the API names one.
+  const roman = String(data.minrank_name || '').trim();
+  return !name.startsWith('Mítico') && /^[IVXⅠⅡⅢⅣⅤⅥ]+$/i.test(roman)
+    ? name + ' ' + roman : name;
+}
+async function sendPlayerStats(sock, jid, player) {
+  if (!player?.jwt) return sendText(sock, jid, '🔐 Cadastre seu nick com !cadastrar para consultar seus dados.');
+  const headers = { Authorization: 'Bearer ' + player.jwt };
+  const lines = ['📊 *MEUS STATS — ' + player.name + '*'];
+  let profile = null;
+  let stats = null;
+  try {
+    const response = await apiFetch('/user/info?lang=pt', { headers });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok && isApiSuccess(body)) profile = body.data || null;
+  } catch (error) { console.warn('Perfil indisponível:', error?.message); }
+  try {
+    const response = await apiFetch('/user/stats?lang=pt', { headers });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok && isApiSuccess(body)) stats = body.data || null;
+  } catch (error) { console.warn('Estatísticas indisponíveis:', error?.message); }
+  if (profile) {
+    lines.push('', '🎮 *PERFIL*');
+    if (profile.level != null) lines.push('⭐ Nível: ' + profile.level);
+    if (profile.rank_level != null || profile.history_rank_level != null) {
+      const rankRecords = await getRankRecords();
+      if (profile.rank_level != null) lines.push('🏅 Patente atual: ' + displayRankFromApi(profile.rank_level, rankRecords));
+      if (profile.history_rank_level != null) lines.push('🥇 Melhor patente: ' + displayRankFromApi(profile.history_rank_level, rankRecords));
+    }
+  }
+  if (stats) {
+    const rows = [];
+    if (stats.tc != null) rows.push('⚔️ Partidas totais: ' + stats.tc);
+    if (stats.wc != null) rows.push('🏆 Vitórias totais: ' + stats.wc);
+    if (Number(stats.tc) > 0 && stats.wc != null)
+      rows.push('📈 Taxa de vitórias: ' + (100 * Number(stats.wc) / Number(stats.tc)).toFixed(1).replace('.', ',') + '%');
+    if (stats.mvpc != null) rows.push('👑 MVPs totais: ' + stats.mvpc);
+    if (stats.wsc != null) rows.push('🔥 Maior sequência: ' + stats.wsc);
+    if (stats.as != null) rows.push('⭐ Nota média: ' + (Number(stats.as) / 100).toFixed(2).replace('.', ','));
+    if (rows.length) lines.push('', '📊 *ESTATÍSTICAS DO JOGO*', ...rows);
+  }
+  if (!profile && !stats) lines.push('', '⚠️ Não consegui consultar seus dados agora. Tente novamente mais tarde.');
+  // Keep technical errors in server logs, never expose them in the player card.
+  return sendText(sock, jid, lines.join('\n'));
+}
+
 async function sendSavedRanking(sock, jid) {
   // Clã ranking stays paused until we can compare equally complete API
   // periods for every verified member. Never use manually selected matches.
