@@ -289,8 +289,8 @@ async function getRankRecords() {
 function portugueseRankName(name) {
   const text = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (/immortal|imortal|不朽/.test(text)) return 'Mítico Imortal';
-  if (/glory|gloria|荣耀/.test(text)) return 'Mítico Glória';
-  if (/honor|honour|honra|荣誉/.test(text)) return 'Mítico Honra';
+  if (/glory|gloria|荣耀/.test(text)) return 'Glória Mítica';
+  if (/honor|honour|honra|荣誉/.test(text)) return 'Honra Mítica';
   if (/mythic|mitico|神话/.test(text)) return 'Mítico';
   if (/grand.?master|grao.?mestre|宗师/.test(text)) return 'Grão-Mestre';
   if (/legend|lenda|传奇/.test(text)) return 'Lenda';
@@ -309,11 +309,18 @@ function displayRankFromApi(code, records) {
   });
   if (!found) return 'Patente não identificada';
   const data = found.data || {};
-  const name = portugueseRankName(data.bigrank_name) || portugueseRankName(found.caption);
+  // Rone sometimes gives a broad major rank and a more specific caption.
+  // Prefer Honra, Glória or Imortal explicitly named by the API.
+  const names = [data.bigrank_name, data.minrank_name, found.caption]
+    .map(portugueseRankName).filter(Boolean);
+  const name = names.find(rankName => ['Honra Mítica', 'Glória Mítica', 'Mítico Imortal'].includes(rankName))
+    || names[0];
   if (!name) return 'Patente não identificada';
-  // Internal rank IDs are not stars. Only append a division if the API names one.
+  // Rank IDs must never be treated as star counts. Imortal is not inferred
+  // from a generic Glória record (Rone may group rank 236..9999 together).
   const roman = String(data.minrank_name || '').trim();
-  return !name.startsWith('Mítico') && /^[IVXⅠⅡⅢⅣⅤⅥ]+$/i.test(roman)
+  return !['Mítico', 'Honra Mítica', 'Glória Mítica', 'Mítico Imortal'].includes(name) &&
+    /^[IVXⅠⅡⅢⅣⅤⅥ]+$/i.test(roman)
     ? name + ' ' + roman : name;
 }
 async function sendPlayerStats(sock, jid, player) {
