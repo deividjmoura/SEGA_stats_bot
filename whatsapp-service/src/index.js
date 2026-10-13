@@ -338,7 +338,7 @@ async function handleRegistration(sock, message) {
   const jid = key.remoteJid;
   // Only the owner's explicit self-chat is eligible for private automation.
   // Ordinary chats with family, friends and customers must never be inspected or answered.
-  if (!shouldProcessPrivateMessage(message, ownerAccountJids)) return false;
+  if (!enabled || !shouldProcessPrivateMessage(message, ownerAccountJids)) return false;
   if (!jid || jid.endsWith('@g.us') || botSentMessageIds.has(key.id)) return false;
   const text = messageText(message.message);
   if (!text) return false;
@@ -855,7 +855,7 @@ function roastFor(author, target, key) {
 async function handleGroup(sock, message) {
   const key = message.key || {};
   const groupJid = key.remoteJid;
-  if (!groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
+  if (!enabled || !groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
   let text = messageText(message.message);
   const menuKey = groupJid + ':' + (key.participant || key.participantAlt || key.remoteJid);
   const until = menuSessions.get(menuKey) || 0;
