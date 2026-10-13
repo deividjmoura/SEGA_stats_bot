@@ -8,6 +8,7 @@ import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch, fetchPlayerOverview } from './roneApi.js';
 import { loadSeasonStats, formatSeasonStats } from './seasonStats.js';
+import { sendStatsWithOptionalSeason } from './statsReplyFlow.js';
 import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
 import { createOutgoingEchoGuard, ownerKnowledgeQuestion } from './messageSafety.js';
 
@@ -408,18 +409,16 @@ async function sendPlayerStats(sock, jid, player) {
     if (stats.as != null) rows.push('⭐ Nota média: ' + (Number(stats.as) / 100).toFixed(2).replace('.', ','));
     if (rows.length) lines.push('', '📊 *ESTATÍSTICAS DO JOGO*', ...rows);
   }
-  // Temporada é opcional; falhas na API não apagam a ficha já existente.
-  // Uma variável permite voltar ao layout original sem desfazer o restante do bot.
-  if (process.env.WHATSAPP_SEASON_STATS_ENABLED === 'true') {
-    try {
-      lines.push(...formatSeasonStats(await loadSeasonStats(player.jwt)));
-    } catch (error) {
-      console.warn('Resumo de temporada indisponível:', error?.name || 'error');
-    }
-  }
   if (!profile && !stats) lines.push('', '⚠️ Não consegui consultar seus dados agora. Tente novamente mais tarde.');
-  // Keep technical errors in server logs, never expose them in the player card.
-  return sendText(sock, jid, lines.join('\n'));
+  // Nunca deixe as consultas opcionais atrasarem a ficha que já funciona.
+  return sendStatsWithOptionalSeason(
+    () => sendText(sock, jid, lines.join('\n')),
+    process.env.WHATSAPP_SEASON_STATS_ENABLED === 'true'
+      ? async () => formatSeasonStats(await loadSeasonStats(player.jwt))
+      : null,
+    extraLines => sendText(sock, jid, extraLines.join('\n').trim()),
+    error => console.warn('Resumo de temporada indisponível:', error?.name || 'error')
+  );
 }
 
 async function sendSavedRanking(sock, jid) {
