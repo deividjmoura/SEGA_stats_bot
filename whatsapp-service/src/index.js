@@ -1,6 +1,6 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { ANNOUNCEMENT_NOTICE, isAnnouncementPost } from './announcementRouting.js';
+import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup } from './announcementRouting.js';
 import { shouldProcessPrivateMessage } from './privateChatRouting.js';
 import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
 import crypto from 'node:crypto';
@@ -20,7 +20,8 @@ const registrationsFile = dataDir + '/whatsapp-registrations.json';
 const battlesFile = dataDir + '/whatsapp-battles.json';
 const announcementsFile = dataDir + '/whatsapp-announcement-deliveries.json';
 const targetGroup = process.env.WHATSAPP_GROUP_JID || null;
-const announcementsGroup = process.env.WHATSAPP_ANNOUNCEMENTS_GROUP_JID || null;
+const configuredAnnouncementsGroup = process.env.WHATSAPP_ANNOUNCEMENTS_GROUP_JID || null;
+let announcementsGroup = null; // Activated only after checking community metadata.
 const announcementsEnabled = process.env.WHATSAPP_ANNOUNCEMENTS_ENABLED === 'true';
 const pairPhone = process.env.WHATSAPP_PAIR_PHONE?.replace(/\D/g, '');
 const enabled = process.env.WHATSAPP_REPLY_ENABLED === 'true';
@@ -147,6 +148,28 @@ function findPlayer(aliases) {
   if (aliases.some(jid => jid === ownJid) && players.has('self')) return players.get('self');
   return null;
 }
+async function discoverAnnouncementsGroup(sock) {
+  if (!announcementsEnabled || !targetGroup) return;
+  announcementsGroup = null; // Keep notifications off while verifying identity.
+  try {
+    const generalMetadata = await sock.groupMetadata(targetGroup);
+    const groups = await sock.groupFetchAllParticipating();
+    const found = selectCommunityAnnouncementsGroup(groups, generalMetadata);
+    if (!found) {
+      console.warn('Avisos SEGA desativados: canal oficial da mesma comunidade não identificado sem ambiguidade.');
+      return;
+    }
+    if (configuredAnnouncementsGroup && configuredAnnouncementsGroup !== found) {
+      console.error('Avisos SEGA desativados: o ID configurado não corresponde ao canal oficial da comunidade.');
+      return;
+    }
+    announcementsGroup = found;
+    console.log('Avisos SEGA: canal oficial da comunidade verificado:', found);
+  } catch (error) {
+    console.error('Avisos SEGA desativados: falha ao confirmar canal oficial:', error?.message);
+  }
+}
+
 async function notifyAnnouncement(sock, message, type) {
   if (!announcementsEnabled || !announcementsGroup || !targetGroup ||
       announcementsGroup === targetGroup ||
@@ -377,7 +400,10 @@ async function handleRegistration(sock, message) {
       } else {
         const lines = ['🔐 *GRUPOS SEGA — SOMENTE PARA O DONO*', '', 'Copie o ID do 🎮 SEGA Geral e envie no ChatGPT.', ''];
         for (const group of matches) {
-          lines.push('• *' + String(group.subject).slice(0, 95) + '*', 'ID: ' + group.id, '');
+          const label = group.isCommunityAnnounce ? ' 📢 *(AVISOS OFICIAIS)*'
+            : group.isCommunity ? ' 🏠 *(COMUNIDADE)*'
+            : group.id === targetGroup ? ' 🎮 *(GERAL)*' : '';
+          lines.push('• *' + String(group.subject).slice(0, 95) + '*' + label, 'ID: ' + group.id, '');
         }
         await sendText(sock, jid, lines.join('\n'));
       }
@@ -1115,6 +1141,7 @@ async function connect() {
       ownerAccountJids = [sock.user?.id, sock.user?.lid, sock.user?.phoneNumber]
         .filter(value => typeof value === 'string' && value.includes('@'));
       console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
+      void discoverAnnouncementsGroup(sock);
     }
     if (connection === 'close') {
       const status = lastDisconnect?.error?.output?.statusCode;
