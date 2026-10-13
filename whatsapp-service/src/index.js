@@ -1091,4 +1091,12 @@ async function connect() {
   });
 }
 
-connect().catch(e => { console.error('WhatsApp não iniciou:', e?.message); process.exitCode = 1; });
+// Never open a socket merely because the Railway service was deployed.
+// A previously authenticated volume could otherwise reconnect to the owner's account.
+if (process.env.WHATSAPP_CONNECT_ENABLED === 'true') {
+  connect().catch(e => { console.error('WhatsApp não iniciou:', e?.message); process.exitCode = 1; });
+} else {
+  console.log('WhatsApp desconectado: WHATSAPP_CONNECT_ENABLED não está habilitado.');
+  // Railway needs a running process while the service is safely parked.
+  setInterval(() => {}, 60_000);
+}
