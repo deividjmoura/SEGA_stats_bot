@@ -43,30 +43,28 @@ test('only the official announcement child of the Geral community is selected', 
 });
 
 
-test('new official notices mention every Geral member using real WhatsApp JIDs', () => {
+test('official notice uses WhatsApp native @all, not a fixed list of member IDs', () => {
   const metadata = {
     id: 'geral@g.us',
-    participants: [
-      { id: '5511999999999@s.whatsapp.net' },
-      { id: '123456789@lid' },
-      { id: '5511999999999@s.whatsapp.net' }
-    ]
+    participants: [{ id: '5511999999999@s.whatsapp.net' }, { id: '123456789@lid' }]
   };
-  const message = buildAnnouncementMentionMessage(metadata, 'geral@g.us');
-  assert.deepEqual(message.mentions, ['5511999999999@s.whatsapp.net', '123456789@lid']);
-  assert.ok(message.text.includes(ANNOUNCEMENT_NOTICE));
-  assert.ok(message.text.includes('@5511999999999'));
-  assert.ok(message.text.includes('@123456789'));
+  const notice = buildAnnouncementMentionMessage(metadata, 'geral@g.us');
+  assert.equal(notice.mentionAll, true);
+  assert.match(notice.text, /@all/);
+  assert.ok(notice.text.includes(ANNOUNCEMENT_NOTICE));
+  assert.ok(!notice.text.includes('5511999999999'));
+  assert.ok(!('mentions' in notice));
 });
 
-test('cannot tag an incomplete or incorrect community member list', () => {
+test('future membership changes require no changes to the native @all payload', () => {
+  const first = { id: 'geral@g.us', participants: [{ id: '1@lid' }] };
+  const updated = { id: 'geral@g.us', participants: [{ id: '1@lid' }, { id: '2@lid' }] };
+  assert.deepEqual(buildAnnouncementMentionMessage(first, 'geral@g.us'), buildAnnouncementMentionMessage(updated, 'geral@g.us'));
+});
+
+test('fail closed if destination group identity or membership cannot be verified', () => {
   assert.equal(buildAnnouncementMentionMessage({ id: 'other@g.us', participants: [{ id: '1@lid' }] }, 'geral@g.us'), null);
   assert.equal(buildAnnouncementMentionMessage({ id: 'geral@g.us', participants: [] }, 'geral@g.us'), null);
-  assert.equal(buildAnnouncementMentionMessage({ id: 'geral@g.us', participants: [{ id: '1@lid' }, {}] }, 'geral@g.us'), null);
-  assert.equal(buildAnnouncementMentionMessage({ id: 'geral@g.us', participants: [{ id: 'another@g.us' }] }, 'geral@g.us'), null);
-});
-
-test('device-addressed entries are normalized before using as mentions', () => {
-  const metadata = { id:'geral@g.us', participants:[{ id:'5511888888888:2@s.whatsapp.net' }] };
-  assert.deepEqual(buildAnnouncementMentionMessage(metadata, 'geral@g.us').mentions, ['5511888888888@s.whatsapp.net']);
+  assert.equal(buildAnnouncementMentionMessage({ id: 'geral@g.us' }, 'geral@g.us'), null);
+  assert.equal(buildAnnouncementMentionMessage({ id: 'geral@g.us', participants: [{ id: '1@lid' }] }, 'notgroup'), null);
 });
