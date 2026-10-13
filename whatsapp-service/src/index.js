@@ -224,17 +224,17 @@ async function sendSegaMenu(sock, jid, sessionKey = jid) {
     '🎮 *SEGA STATS*',
     '━━━━━━━━━━━━━━━━',
     '',
-    '1️⃣ ⚔️ *BATTLE ID*',
-    '   `!battle <ID>`',
-    '',
-    '2️⃣ 📊 *MEUS STATS*',
+    '1️⃣ 📊 *MEUS STATS*',
     '   `!stats`',
     '',
-    '3️⃣ 🏆 *RANKING*',
-    '   `!ranking`',
+    '2️⃣ 🏆 *RANKING DO CLÃ*',
+    '   `!ranking` _(em desenvolvimento)_',
+    '',
+    '3️⃣ 🌟 *HIGHLIGHTS*',
+    '   `!highlights` _(em desenvolvimento)_',
     '',
     '4️⃣ 🎮 *CADASTRO*',
-    '   `!cadastrar`  _(somente no privado)_',
+    '   `!cadastrar` _(somente no privado)_',
     '',
     '5️⃣ ❓ *AJUDA*',
     '   `!ajuda`',
@@ -324,20 +324,13 @@ async function sendPlayerStats(sock,jid,player) {
   lines.push('','ℹ️ Total da API e histórico salvo podem cobrir períodos diferentes.');
   return sendText(sock,jid,lines.join('\n'));
 }
-async function sendSavedRanking(sock,jid) {
-  const all = await loadBattles();
-  const entries = [];
-  for(const [key,rows] of Object.entries(all)) {
-    if(!Array.isArray(rows)||!rows.length) continue;
-    const st=savedStats(rows);
-    const name=rows.at(-1)?.playerName || 'Jogador';
-    entries.push({key,name,...st});
-  }
-  if(!entries.length) return sendText(sock,jid,'🏆 *RANKING SEGA*\n\nAinda não há partidas verificadas salvas.\nEnvie !battle <ID> no privado para tentar registrar uma.');
-  entries.sort((a,b)=>b.wins-a.wins || Number(b.rate)-Number(a.rate) || b.games-a.games);
-  const lines=['🏆 *RANKING SEGA*','📁 Baseado somente nas partidas salvas e verificadas.',''];
-  for(const [i,p] of entries.slice(0,10).entries()) lines.push((i+1)+'º *'+p.name+'* — '+p.wins+'V / '+p.losses+'D ('+p.rate+'%)');
-  return sendText(sock,jid,lines.join('\n'));
+async function sendSavedRanking(sock, jid) {
+  // Clã ranking stays paused until we can compare equally complete API
+  // periods for every verified member. Never use manually selected matches.
+  return sendText(sock, jid, '🏆 *RANKING DO CLÃ*\n\n⏳ Em desenvolvimento. O ranking oficial será baseado em dados confiáveis do jogo, sem prints ou partidas escolhidas pelos jogadores.');
+}
+async function sendHighlights(sock, jid) {
+  return sendText(sock, jid, '🌟 *HIGHLIGHTS SEGA*\n\n⏳ Em desenvolvimento. Os destaques serão liberados quando conseguirmos consultar os dados necessários com segurança.');
 }
 
 function matchSummary(match) {
@@ -363,12 +356,28 @@ function isOwnMention(jid) {
 function fullHelpLines() {
   const examples = listKnowledgeExamples().slice(0, 12);
   return [
-    '🎮 *SEGA STATS — AJUDA COMPLETA*','━━━━━━━━━━━━━━━━','',
-    '📋 *MENU PRINCIPAL*','Digite *!sega*. Com o menu aberto, responda *1 a 5* ou use o comando diretamente.','','1️⃣ ⚔️ *BATTLE ID* — !battle <ID>','2️⃣ 📊 *MEUS STATS* — !stats','3️⃣ 🏆 *RANKING* — !ranking','4️⃣ 🎮 *CADASTRO* — !cadastrar no privado','5️⃣ ❓ *AJUDA* — !ajuda','',
-    '🔐 *CADASTRO*','No privado: *!cadastrar* → Role ID → Zone ID → código recebido no correio interno do Mobile Legends. Depois da validação, o nick fica vinculado ao WhatsApp.','','⚔️ *PARTIDAS / BATTLE ID*','No privado: *!battle <ID da batalha>*. O bot tenta confirmar e salvar os dados disponíveis.','','📊 *STATS E RANKING*','*!stats* consulta seus dados disponíveis e o histórico salvo. *!ranking* monta a classificação usando partidas verificadas/salvas.','','🧠 *CONHECIMENTO DE MOBILE LEGENDS*','No grupo, escreva *@SEGA* + a pergunta. A menção real ao número do bot também é aceita.','Pode perguntar sobre *counters, builds, itens contra heróis, dicas de matchup, função/role e rota/lane*.','','💬 *EXEMPLOS DE PERGUNTAS*',
-    ...examples.map(x => '• *@SEGA ' + x + '*'),
-    '• *@SEGA quem countera Harley?*','• *@SEGA qual item faço contra Argus?*','• *@SEGA como jogar contra Fanny?*','• *@SEGA qual a função do Khufra?*','• *@SEGA qual build faço de Gusion?*','',
-    '😂 *MENÇÕES E ZOEIRAS*','Ao mencionar outra pessoa, o SEGA pode entrar na conversa com uma zoeira. Ele tenta usar nick cadastrado/nome conhecido e nunca deve expor LID ou número interno.','','🤖 *IMPORTANTE*','O bot funciona conectado ao número do Deivid; mensagens automáticas aparecem enviadas por esse número.','','━━━━━━━━━━━━━━━━','💡 *Resumo:* *!sega* abre o menu. Cadastro/Battle ID/stats: privado. Ranking e *@SEGA + pergunta*: grupo.'
+    '🎮 *SEGA STATS — AJUDA COMPLETA*', '━━━━━━━━━━━━━━━━', '',
+    '📋 *MENU PRINCIPAL*', 'Digite *!sega*. Escolha uma opção de 1 a 5 ou use o comando diretamente.', '',
+    '1️⃣ 📊 *MEUS STATS* — !stats',
+    '2️⃣ 🏆 *RANKING DO CLÃ* — !ranking _(em desenvolvimento)_',
+    '3️⃣ 🌟 *HIGHLIGHTS* — !highlights _(em desenvolvimento)_',
+    '4️⃣ 🎮 *CADASTRO* — !cadastrar no privado',
+    '5️⃣ ❓ *AJUDA* — !ajuda', '',
+    '🔐 *CADASTRO*',
+    'No privado: *!cadastrar* → Role ID → Zone ID → código recebido no correio interno do Mobile Legends. O bot confirma o nick vinculado à conta.', '',
+    '📊 *SEUS STATS*',
+    '*!stats* consulta os dados disponíveis diretamente na Rone Arena. Não é necessário enviar prints ou Battle ID.', '',
+    '🏆 *RANKING E HIGHLIGHTS*',
+    'Ainda em desenvolvimento: precisamos de dados consistentes da API para evitar classificações injustas.', '',
+    '🧠 *CONHECIMENTO DE MOBILE LEGENDS*',
+    'No Geral, escreva *@SEGA* com uma pergunta sobre counters, builds, itens, matchup, heróis ou rotas.', '',
+    '💬 *EXEMPLOS DE PERGUNTAS*',
+    ...examples.map(x => '• *@SEGA ' + x + '*'), '',
+    '😂 *MENÇÕES E ZOEIRAS*',
+    'Ao mencionar outra pessoa no Geral, o SEGA pode responder com uma zoeira sem revelar identificadores privados.', '',
+    '🤖 *IMPORTANTE*',
+    'O SEGA está conectado ao número do administrador; respostas automáticas aparecem como mensagens dessa conta.', '',
+    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !sega abre o menu. Cadastro e stats: privado do dono. Conhecimento e zoeiras: SEGA Geral.'
   ];
 }
 
@@ -385,7 +394,7 @@ async function handleRegistration(sock, message) {
   const menuUntil = menuSessions.get(jid) || 0;
   if (menuUntil > Date.now() && /^[1-5]$/.test(command) && !registrations.has(jid)) {
     menuSessions.delete(jid);
-    command = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[command];
+    command = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda' }[command];
   } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
 
   if (['!grupos','/grupos'].includes(command)) {
@@ -430,8 +439,8 @@ async function handleRegistration(sock, message) {
     await sendSavedRanking(sock,jid);
     return true;
   }
-  if (command === '!battle') {
-    await sendText(sock, jid, '⚔️ Envie !battle seguido de um espaço e da Battle ID.\nExemplo: !battle 123456789012');
+  if (['!highlights', '/highlights'].includes(command)) {
+    await sendHighlights(sock, jid);
     return true;
   }
 
@@ -451,24 +460,8 @@ async function handleRegistration(sock, message) {
     return true;
   }
 
-  const battleMatch = command.match(/^(?:!|\/)battle\s+(\d{10,18})$/i);
-  if (battleMatch) {
-    const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
-    if (!p?.jwt) {
-      await sendText(sock, jid, '🔐 Primeiro faça seu cadastro enviando !cadastrar.');
-      return true;
-    }
-    const battleId = battleMatch[1];
-    await sendText(sock, jid, '🔎 Consultando esse Battle ID e conferindo se a partida pertence à sua conta...');
-    const verification = await battleBelongsToPlayer(p.jwt, p.roleId, p.zoneId, battleId);
-    if (!verification.verified) {
-      await sendText(sock, jid, '⚠️ A API não conseguiu confirmar essa batalha na sua conta.\n\nMotivo técnico: ' + verification.reason + '\n\nSe continuar assim, vamos usar o print da tela final como fonte do histórico.');
-      return true;
-    }
-    const saved = await saveVerifiedBattle(jid, p, verification);
-    await sendText(sock, jid, saved.duplicate
-      ? '♻️ Essa batalha já estava salva. Não contei duas vezes.\n\n' + matchSummary(saved.match)
-      : '✅ PARTIDA CONFIRMADA E SALVA!\n\n' + matchSummary(saved.match) + '\n\n🔢 Battle ID: ' + saved.match.battleId);
+  if (/^[!/]battle(?:\s+.*)?$/i.test(command)) {
+    await sendText(sock, jid, 'ℹ️ O Battle ID foi desativado. Use !stats para consultar seus dados do jogo.');
     return true;
   }
 
@@ -942,7 +935,7 @@ async function handleGroup(sock, message) {
   const until = menuSessions.get(menuKey) || 0;
   if (until > Date.now() && /^[1-5]$/.test(text)) {
     menuSessions.delete(menuKey);
-    text = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[text];
+    text = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda' }[text];
   } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
   const aliases = aliasesFor(key);
   linkIdentities([key.participant, key.participantAlt].filter(Boolean));
@@ -1008,8 +1001,8 @@ async function handleGroup(sock, message) {
     await sendSegaMenu(sock, groupJid, menuKey);
     return;
   }
-  if (/^!battle$/i.test(text)) {
-    await sendText(sock,groupJid,'⚔️ Para consultar uma batalha, abra meu privado e envie !battle <ID>.');
+  if (/^[!/]battle(?:\s+.*)?$/i.test(text)) {
+    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no privado para consultar seus dados.');
     return;
   }
   if (/^!stats$/i.test(text)) {
@@ -1022,6 +1015,10 @@ async function handleGroup(sock, message) {
   }
   if (/^[!/]ranking$/i.test(text)) {
     await sendSavedRanking(sock,groupJid);
+    return;
+  }
+  if (/^[!/]highlights$/i.test(text)) {
+    await sendHighlights(sock,groupJid);
     return;
   }
   const mentioned = mentionedNow;
