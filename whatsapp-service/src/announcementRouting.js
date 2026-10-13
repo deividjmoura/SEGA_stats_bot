@@ -42,37 +42,17 @@ export function selectCommunityAnnouncementsGroup(groups, generalMetadata) {
 }
 
 
-// Build real WhatsApp @mentions for every Geral member. Group metadata is
-// fetched fresh before the announcement is sent, never from stale nick caches.
-// Fail closed rather than claiming to alert "everyone" with a partial list.
+// Native WhatsApp @all is resolved by WhatsApp against CURRENT membership,
+// so members added or removed since the last announcement are handled automatically.
+// The library's mentionAll flag is necessary; plain '@all' text won't notify.
+// Metadata is verified to avoid accidentally notifying a different group.
 export function buildAnnouncementMentionMessage(generalMetadata, expectedGroupJid) {
   if (!expectedGroupJid?.endsWith('@g.us') ||
       generalMetadata?.id !== expectedGroupJid ||
       !Array.isArray(generalMetadata?.participants) ||
       generalMetadata.participants.length === 0) return null;
-
-  const mentions = [];
-  const seen = new Set();
-  for (const participant of generalMetadata.participants) {
-    const candidates = [
-      participant?.id, participant?.jid, participant?.lid,
-      participant?.phoneNumberJid
-    ];
-    const jid = candidates.map(value => String(value || '').trim())
-      .find(value => /^\d+(?::\d+)?@(s\.whatsapp\.net|lid)$/.test(value));
-    if (!jid) return null;
-    const normalized = jid.replace(/:\d+@/, '@');
-    if (!seen.has(normalized)) {
-      seen.add(normalized);
-      mentions.push(normalized);
-    }
-  }
-  if (!mentions.length) return null;
-  // Visible @identifiers are paired with the JIDs WhatsApp needs to deliver
-  // genuine mention notifications (plain '@todos' alone does not do this).
-  const tags = mentions.map(jid => '@' + jid.split('@')[0]).join(' ');
   return {
-    text: ANNOUNCEMENT_NOTICE + '\n\n👥 *Atenção, integrantes do Geral:*\n' + tags,
-    mentions
+    text: '@all\n\n' + ANNOUNCEMENT_NOTICE,
+    mentionAll: true
   };
 }
