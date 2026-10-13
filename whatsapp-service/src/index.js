@@ -190,17 +190,17 @@ async function notifyAnnouncement(sock, message, type) {
   if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > 600) return false;
   pendingAnnouncementIds.add(sourceId);
   try {
-    let outgoing = { text: ANNOUNCEMENT_NOTICE, mentions: [] };
+    let outgoing = { text: ANNOUNCEMENT_NOTICE, mentionAll: false };
     if (announcementMentionsEnabled) {
-      // Fail closed if we cannot confirm the full current membership of Geral.
+      // Check that the destination really is Geral; WhatsApp handles current group membership for native @all.
       const metadata = await sock.groupMetadata(targetGroup);
       outgoing = buildAnnouncementMentionMessage(metadata, targetGroup);
       if (!outgoing) {
-        console.warn('Avisos SEGA: lista de participantes do Geral incompleta; ninguém foi mencionado.');
+        console.warn('Avisos SEGA: não foi possível verificar o grupo Geral; @all não enviado.');
         return false;
       }
     }
-    await sendText(sock, targetGroup, outgoing.text, outgoing.mentions);
+    await sendText(sock, targetGroup, outgoing.text, [], outgoing.mentionAll === true);
     announcedIds.add(sourceId);
     const recent = [...announcedIds].slice(-500);
     announcedIds.clear();
@@ -216,11 +216,13 @@ async function notifyAnnouncement(sock, message, type) {
   }
 }
 
-async function sendText(sock, jid, text, mentions = []) {
+async function sendText(sock, jid, text, mentions = [], mentionAll = false) {
   // Reserve before sending, because the echo may arrive before sendMessage returns.
   const cancelReservation = outgoingEchoGuard.reserve(jid, text);
   try {
-    const payload = mentions.length ? { text, mentions } : { text };
+    const payload = { text };
+    if (mentions.length) payload.mentions = mentions;
+    if (mentionAll) payload.mentionAll = true;
     const sent = await sock.sendMessage(jid, payload);
     if (sent?.key?.id) {
       outgoingEchoGuard.rememberId(sent.key.id);
