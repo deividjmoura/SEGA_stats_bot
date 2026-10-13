@@ -1,6 +1,6 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup } from './announcementRouting.js';
+import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
 import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
 import crypto from 'node:crypto';
@@ -23,6 +23,9 @@ const targetGroup = process.env.WHATSAPP_GROUP_JID || null;
 const configuredAnnouncementsGroup = process.env.WHATSAPP_ANNOUNCEMENTS_GROUP_JID || null;
 let announcementsGroup = null; // Activated only after checking community metadata.
 const announcementsEnabled = process.env.WHATSAPP_ANNOUNCEMENTS_ENABLED === 'true';
+// Explicitly gated; production will not tag members until the correct
+// community and participant list have been verified and this flag is enabled.
+const announcementMentionsEnabled = process.env.WHATSAPP_ANNOUNCEMENT_MENTIONS_ENABLED === 'true';
 const pairPhone = process.env.WHATSAPP_PAIR_PHONE?.replace(/\D/g, '');
 const enabled = process.env.WHATSAPP_REPLY_ENABLED === 'true';
 const secret = process.env.WHATSAPP_SESSION_ENCRYPTION_KEY;
@@ -149,8 +152,10 @@ function findPlayer(aliases) {
   return null;
 }
 async function discoverAnnouncementsGroup(sock) {
-  if (!announcementsEnabled || !targetGroup) return;
-  announcementsGroup = null; // Keep notifications off while verifying identity.
+  if (!targetGroup) return;
+  // Safe startup check also runs with notifications disabled.
+  // It only reads group metadata; no broadcast is sent during discovery.
+  announcementsGroup = null;
   try {
     const generalMetadata = await sock.groupMetadata(targetGroup);
     const groups = await sock.groupFetchAllParticipating();
@@ -185,7 +190,17 @@ async function notifyAnnouncement(sock, message, type) {
   if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > 600) return false;
   pendingAnnouncementIds.add(sourceId);
   try {
-    await sendText(sock, targetGroup, ANNOUNCEMENT_NOTICE);
+    let outgoing = { text: ANNOUNCEMENT_NOTICE, mentions: [] };
+    if (announcementMentionsEnabled) {
+      // Fail closed if we cannot confirm the full current membership of Geral.
+      const metadata = await sock.groupMetadata(targetGroup);
+      outgoing = buildAnnouncementMentionMessage(metadata, targetGroup);
+      if (!outgoing) {
+        console.warn('Avisos SEGA: lista de participantes do Geral incompleta; ninguém foi mencionado.');
+        return false;
+      }
+    }
+    await sendText(sock, targetGroup, outgoing.text, outgoing.mentions);
     announcedIds.add(sourceId);
     const recent = [...announcedIds].slice(-500);
     announcedIds.clear();
@@ -201,11 +216,12 @@ async function notifyAnnouncement(sock, message, type) {
   }
 }
 
-async function sendText(sock, jid, text) {
+async function sendText(sock, jid, text, mentions = []) {
   // Reserve before sending, because the echo may arrive before sendMessage returns.
   const cancelReservation = outgoingEchoGuard.reserve(jid, text);
   try {
-    const sent = await sock.sendMessage(jid, { text });
+    const payload = mentions.length ? { text, mentions } : { text };
+    const sent = await sock.sendMessage(jid, payload);
     if (sent?.key?.id) {
       outgoingEchoGuard.rememberId(sent.key.id);
       botSentMessageIds.add(sent.key.id);
