@@ -4,8 +4,9 @@ export const ANNOUNCEMENT_NOTICE = '📢 *Novo comunicado SEGA!*\nConfira o grup
 
 export function isAnnouncementPost(message, type, groupJid) {
   const key = message?.key;
-  if (!groupJid?.endsWith('@g.us') || type !== 'notify'
-      || key?.remoteJid !== groupJid || key?.fromMe || !key?.id) return false;
+  if (!groupJid?.endsWith('@g.us') || !['notify', 'append'].includes(type)
+      || (type === 'append' && !key?.fromMe)
+      || key?.remoteJid !== groupJid || !key?.id) return false;
   let content = message?.message;
   for (let i = 0; i < 3; i++) {
     const nested = content?.ephemeralMessage?.message
