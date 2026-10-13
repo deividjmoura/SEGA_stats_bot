@@ -1,7 +1,7 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup } from './announcementRouting.js';
-import { shouldProcessPrivateMessage } from './privateChatRouting.js';
+import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
 import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -451,12 +451,24 @@ function fullHelpLines() {
   ];
 }
 
+function activeRegistrationJids() {
+  const now = Date.now();
+  return new Set([...registrations].filter(([, state]) =>
+    Number.isFinite(Date.parse(state?.updatedAt || '')) &&
+    now - Date.parse(state.updatedAt) < REGISTRATION_TTL_MS
+  ).map(([jid]) => jid));
+}
+function canHandleRegistrationMessage(message) {
+  return shouldProcessRegistrationPrivateMessage(message, ownerAccountJids,
+    activeRegistrationJids(), messageText);
+}
 async function handleRegistration(sock, message) {
   const key = message.key || {};
   const jid = key.remoteJid;
-  // Only the owner's explicit self-chat is eligible for private automation.
-  // Ordinary chats with family, friends and customers must never be inspected or answered.
-  if (!enabled || !shouldProcessPrivateMessage(message, ownerAccountJids)) return false;
+  // An explicit !cadastrar starts a narrowly scoped private registration.
+  // Unrelated conversations still never reach this handler.
+  if (!enabled || !canHandleRegistrationMessage(message)) return false;
+  const ownerPrivate = shouldProcessPrivateMessage(message, ownerAccountJids);
   if (!jid || jid.endsWith('@g.us') || botSentMessageIds.has(key.id)) return false;
   const text = messageText(message.message);
   if (!text) return false;
@@ -467,7 +479,7 @@ async function handleRegistration(sock, message) {
     command = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda' }[command];
   } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
 
-  if (['!grupos','/grupos'].includes(command)) {
+  if (ownerPrivate && ['!grupos','/grupos'].includes(command)) {
     // Explicit owner-only group discovery: names and IDs, no group chat content.
     try {
       const groups = await sock.groupFetchAllParticipating();
@@ -492,24 +504,24 @@ async function handleRegistration(sock, message) {
     }
     return true;
   }
-  if (['!sega','/sega'].includes(command)) {
+  if (ownerPrivate && ['!sega','/sega'].includes(command)) {
     await sendSegaMenu(sock, jid);
     return true;
   }
-  if (command === '!ajuda') {
+  if (ownerPrivate && command === '!ajuda') {
     await sendText(sock, jid, fullHelpLines().join('\n'));
     return true;
   }
-  if (['!stats','/stats'].includes(command)) {
+  if (ownerPrivate && ['!stats','/stats'].includes(command)) {
     const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
     await sendPlayerStats(sock,jid,p);
     return true;
   }
-  if (['!ranking','/ranking'].includes(command)) {
+  if (ownerPrivate && ['!ranking','/ranking'].includes(command)) {
     await sendSavedRanking(sock,jid);
     return true;
   }
-  if (['!highlights', '/highlights'].includes(command)) {
+  if (ownerPrivate && ['!highlights', '/highlights'].includes(command)) {
     await sendHighlights(sock, jid);
     return true;
   }
@@ -519,7 +531,7 @@ async function handleRegistration(sock, message) {
     await sendText(sock, jid, '❌ Cadastro cancelado. Quando quiser recomeçar, envie !cadastrar.');
     return true;
   }
-  if (['!meunick','/meunick','meunick'].includes(command)) {
+  if (ownerPrivate && ['!meunick','/meunick','meunick'].includes(command)) {
     const p = findPlayer(aliasesFor(key));
     await sendText(sock, jid, p ? '🎮 Seu nick verificado é: ' + p.name : 'Você ainda não está cadastrado. Envie !cadastrar.');
     return true;
@@ -530,13 +542,14 @@ async function handleRegistration(sock, message) {
     return true;
   }
 
-  if (/^[!/]battle(?:\s+.*)?$/i.test(command)) {
+  if (ownerPrivate && /^[!/]battle(?:\s+.*)?$/i.test(command)) {
     await sendText(sock, jid, 'ℹ️ O Battle ID foi desativado. Use !stats para consultar seus dados do jogo.');
     return true;
   }
 
   const state = registrations.get(jid);
   if (!state) {
+    if (!ownerPrivate) return false;
     const parsed = ownerKnowledgeQuestion(text);
     if (!parsed) return false;
     try {
@@ -1235,7 +1248,7 @@ async function connect() {
         // Private chats with third parties are strictly out of scope.
         if (isGroup) {
           if (chatJid !== targetGroup && chatJid !== announcementsGroup) continue;
-        } else if (!shouldProcessPrivateMessage(message, ownerAccountJids)) continue;
+        } else if (!canHandleRegistrationMessage(message)) continue;
         if (botSentMessageIds.has(key.id)) continue;
         const raw = message?.message || {};
         if (outgoingEchoGuard.isEcho(key, messageText(raw))) continue;
