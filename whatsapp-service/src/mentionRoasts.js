@@ -428,24 +428,33 @@ export const roastEndings = [
 ];
 
 export const roastVariations = classicRoasts.length + freshRoasts.length + roastOpenings.length * roastMiddles.length * roastEndings.length;
+const curatedCount = classicRoasts.length + freshRoasts.length;
 const recent = [];
 
-export function makeMentionRoast(author, target, randomIndex = crypto.randomInt) {
-  // Não repetir resultados recentes, nem entre pessoas diferentes.
-  let choice = randomIndex(roastVariations);
-  for (let retry = 0; retry < 12 && recent.includes(choice); retry += 1) choice = randomIndex(roastVariations);
-  recent.push(choice);
-  if (recent.length > 80) recent.shift();
-
+export function formatRoastAt(index, author, target) {
+  if (!Number.isInteger(index) || index < 0 || index >= roastVariations) throw new RangeError('Índice inválido');
   let phrase;
-  if (choice < classicRoasts.length) phrase = classicRoasts[choice];
-  else if (choice < classicRoasts.length + freshRoasts.length) phrase = freshRoasts[choice - classicRoasts.length];
+  if (index < classicRoasts.length) phrase = classicRoasts[index];
+  else if (index < curatedCount) phrase = freshRoasts[index - classicRoasts.length];
   else {
-    const combo = choice - classicRoasts.length - freshRoasts.length;
+    const combo = index - curatedCount;
     const end = combo % roastEndings.length;
     const middle = Math.floor(combo / roastEndings.length) % roastMiddles.length;
     const opening = Math.floor(combo / (roastEndings.length * roastMiddles.length));
     phrase = roastOpenings[opening] + roastMiddles[middle] + ' ' + roastEndings[end];
   }
   return phrase.replaceAll('{author}', String(author)).replaceAll('{target}', String(target));
+}
+
+// Preserve os textos completos: 35% das vezes usa uma piada escrita à mão.
+// Os demais 65% combinam memes e situações, gerando milhares de novas versões.
+export function makeMentionRoast(author, target, randomIndex = crypto.randomInt) {
+  const next = () => randomIndex(100) < 35
+    ? randomIndex(curatedCount)
+    : curatedCount + randomIndex(roastVariations - curatedCount);
+  let choice = next();
+  for (let retry = 0; retry < 14 && recent.includes(choice); retry += 1) choice = next();
+  recent.push(choice);
+  if (recent.length > 80) recent.shift();
+  return formatRoastAt(choice, author, target);
 }
