@@ -303,10 +303,18 @@ function portugueseRankName(name) {
 function displayRankFromApi(code, records) {
   const rank = Number(code);
   if (!Number.isFinite(rank)) return 'Não disponível';
-  const found = records.find(entry => {
+  // Entries can overlap; prefer the narrowest documented range rather than
+  // silently taking whichever record the provider returned first.
+  const candidates = records.filter(entry => {
     const data = entry?.data || {};
-    return rank >= Number(data.rankid_start) && rank <= Number(data.rankid_end);
+    const low = Number(data.rankid_start), high = Number(data.rankid_end);
+    return Number.isFinite(low) && Number.isFinite(high) && low <= rank && rank <= high;
   });
+  candidates.sort((a, b) => {
+    const width = entry => Number(entry.data.rankid_end) - Number(entry.data.rankid_start);
+    return width(a) - width(b);
+  });
+  const found = candidates[0];
   if (!found) return 'Patente não identificada';
   const data = found.data || {};
   // Rone sometimes gives a broad major rank and a more specific caption.
@@ -344,8 +352,30 @@ async function sendPlayerStats(sock, jid, player) {
     if (profile.level != null) lines.push('⭐ Nível: ' + profile.level);
     if (profile.rank_level != null || profile.history_rank_level != null) {
       const rankRecords = await getRankRecords();
-      if (profile.rank_level != null) lines.push('🏅 Patente atual: ' + displayRankFromApi(profile.rank_level, rankRecords));
-      if (profile.history_rank_level != null) lines.push('🥇 Melhor patente: ' + displayRankFromApi(profile.history_rank_level, rankRecords));
+      const currentLabel = profile.rank_level == null ? null : displayRankFromApi(profile.rank_level, rankRecords);
+      const bestLabel = profile.history_rank_level == null ? null : displayRankFromApi(profile.history_rank_level, rankRecords);
+      if (currentLabel) lines.push('🏅 Patente atual: ' + currentLabel);
+      if (bestLabel) lines.push('🥇 Melhor patente: ' + bestLabel);
+      // Diagnose upstream ambiguity without storing player names, JWTs, or game IDs.
+      if (currentLabel === bestLabel && profile.rank_level != null &&
+          profile.history_rank_level != null && profile.rank_level !== profile.history_rank_level) {
+        const recordsForCode = code => rankRecords.filter(row => {
+          const d = row?.data || {};
+          return Number(d.rankid_start) <= Number(code) && Number(code) <= Number(d.rankid_end);
+        }).slice(0, 5).map(row => ({
+          range: [row.data.rankid_start, row.data.rankid_end],
+          major: String(row.data.bigrank_name || '').slice(0, 60),
+          minor: String(row.data.minrank_name || '').slice(0, 30),
+          caption: String(row.caption || '').slice(0, 60)
+        }));
+        console.info('[sega-rank-diagnostic]', JSON.stringify({
+          currentCode: profile.rank_level,
+          bestCode: profile.history_rank_level,
+          sameDisplay: true,
+          currentMatches: recordsForCode(profile.rank_level),
+          bestMatches: recordsForCode(profile.history_rank_level)
+        }));
+      }
     }
   }
   if (stats) {
