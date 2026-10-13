@@ -1039,7 +1039,11 @@ async function connect() {
   sock.ev.on('contacts.update', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
   sock.ev.on('creds.update', saveCreds);
   if (!state.creds.registered && pairPhone) setTimeout(async () => {
-    try { await sock.requestPairingCode(pairPhone); console.log('Código de pareamento solicitado com sucesso.'); }
+    try {
+      const code = await sock.requestPairingCode(pairPhone);
+      // One-time code appears only in private Railway service logs, never in group chats.
+      console.log('Código temporário de pareamento WhatsApp:', code);
+    }
     catch (e) { console.error('Falha ao solicitar pareamento:', e?.message); }
   }, 10000);
 
