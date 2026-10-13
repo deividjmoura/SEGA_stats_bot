@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isAnnouncementPost, ANNOUNCEMENT_NOTICE } from '../src/announcementRouting.js';
+import { isAnnouncementPost, ANNOUNCEMENT_NOTICE, selectCommunityAnnouncementsGroup } from '../src/announcementRouting.js';
 
 const group = 'announcements@g.us';
 const message = { key: { id: 'abc', fromMe: false, remoteJid: group }, message: { conversation: 'Important news' } };
@@ -26,4 +26,18 @@ test('owner announcements sent through synced device may arrive as append', () =
 test('image posts and ephemeral text count as announcements', () => {
   assert.equal(isAnnouncementPost({ ...message, message: { imageMessage: {} } }, 'notify', group), true);
   assert.equal(isAnnouncementPost({ ...message, message: { ephemeralMessage: { message: { conversation: 'x' } } } }, 'notify', group), true);
+});
+
+
+test('only the official announcement child of the Geral community is selected', () => {
+  const geral = { id: 'geral@g.us', linkedParent: 'sega-community@g.us' };
+  const channels = {
+    one: { id: 'official@g.us', isCommunityAnnounce: true, linkedParent: 'sega-community@g.us' },
+    two: { id: 'other-community@g.us', isCommunityAnnounce: true, linkedParent: 'other@g.us' },
+    three: { id: 'admins@g.us', announce: true, linkedParent: 'sega-community@g.us' }
+  };
+  assert.equal(selectCommunityAnnouncementsGroup(channels, geral), 'official@g.us');
+  assert.equal(selectCommunityAnnouncementsGroup(channels, { id: 'geral@g.us' }), null);
+  assert.equal(selectCommunityAnnouncementsGroup({ two: channels.two, three: channels.three }, geral), null);
+  assert.equal(selectCommunityAnnouncementsGroup({ ...channels, four: { ...channels.one, id: 'duplicate@g.us' } }, geral), null);
 });
