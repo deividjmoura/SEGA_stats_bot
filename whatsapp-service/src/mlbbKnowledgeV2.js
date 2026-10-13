@@ -1,4 +1,5 @@
 import knowledge from './mlbb-knowledge.json' with { type: 'json' };
+import { bilingualLabel, bilingualAttributes } from './buildLocalization.js';
 
 const KNOWN_HEROES = [
   "Aamon",
@@ -236,9 +237,9 @@ async function loadAcademyCatalog() {
   }, 60 * 60 * 1000);
 }
 
-async function loadAcademyEquipment() {
-  return academyCached('equipment', async () => {
-    const body = await academyFetch('/academy/equipment', { size: 250, lang: 'pt' });
+async function loadAcademyEquipment(lang = 'pt') {
+  return academyCached('equipment:' + lang, async () => {
+    const body = await academyFetch('/academy/equipment', { size: 250, lang });
     return body?.data?.records || [];
   }, 60 * 60 * 1000);
 }
@@ -331,17 +332,33 @@ async function getAcademyBuild(heroName) {
     });
 
     const best = candidates[0];
-    const equipment = await loadAcademyEquipment();
-    const itemNames = new Map();
-
-    for (const record of equipment) {
+    // Read both catalogs by stable equipment ID: never translate by position or
+    // change the item order that the selected Rone build recommended.
+    const [enResult, ptResult] = await Promise.allSettled([
+      loadAcademyEquipment('en'),
+      loadAcademyEquipment('pt')
+    ]);
+    const enRecords = enResult.status === 'fulfilled' ? enResult.value : [];
+    const ptRecords = ptResult.status === 'fulfilled' ? ptResult.value : [];
+    if (!enRecords.length && !ptRecords.length) throw new Error('Catálogo de equipamentos indisponível');
+    const englishNames = new Map();
+    const portugueseNames = new Map();
+    for (const record of enRecords) {
       const data = record?.data || {};
-      if (data.equipid != null && data.equipname) itemNames.set(String(data.equipid), data.equipname);
+      if (data.equipid != null && data.equipname) englishNames.set(String(data.equipid), data.equipname);
+    }
+    for (const record of ptRecords) {
+      const data = record?.data || {};
+      if (data.equipid != null && data.equipname) portugueseNames.set(String(data.equipid), data.equipname);
     }
 
     return {
       ...best,
-      items: best.items.map(id => itemNames.get(String(id)) || ('Item #' + id)).filter(Boolean)
+      items: best.items.map(id => {
+        const key = String(id);
+        const en = englishNames.get(key) || portugueseNames.get(key) || ('Item #' + key);
+        return bilingualLabel(en, portugueseNames.get(key), 'item');
+      })
     };
   } catch (error) {
     console.warn('⚠️ Build da Academy indisponível:', error?.message || error);
@@ -691,9 +708,9 @@ export async function answerMlbbQuestion(text) {
 
       return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
         '🛒 <b>Ordem sugerida:</b>\\n' +
-        fallback.items.map((item, index) => (index + 1) + '. ' + item).join('\\n') + '\\n\\n' +
-        '🧿 Emblema: <b>' + fallback.emblem + '</b>\\n' +
-        '✨ Feitiço: <b>' + fallback.spell + '</b>\\n\\n' +
+        fallback.items.map((item, index) => (index + 1) + '. ' + bilingualLabel(item)).join('\\n') + '\\n\\n' +
+        '🧿 Emblema: <b>' + bilingualLabel(fallback.emblem, '', 'emblem') + '</b>\\n' +
+        '✨ Feitiço: <b>' + bilingualLabel(fallback.spell, '', 'spell') + '</b>\\n\\n' +
         '💡 ' + fallback.note + '\\n\\n' +
         '📚 Fallback local; a fonte live de builds não respondeu.';
     }
@@ -708,9 +725,9 @@ export async function answerMlbbQuestion(text) {
     return '🧩 <b>BUILD / ' + title.toUpperCase() + '</b>\\n\\n' +
       '🛒 <b>Itens recomendados:</b>\\n' +
       liveBuild.items.map((item, index) => (index + 1) + '. ' + item).join('\\n') + '\\n\\n' +
-      '🧿 Emblema: <b>' + (liveBuild.emblem || 'não informado') + '</b>' +
-      (liveBuild.emblemAttr ? '\\n📐 ' + liveBuild.emblemAttr.replace(/\\n/g, ' • ').trim() : '') + '\\n' +
-      '✨ Feitiço: <b>' + (liveBuild.spell || 'não informado') + '</b>' +
+      '🧿 Emblema: <b>' + bilingualLabel(liveBuild.emblem, '', 'emblem') + '</b>' +
+      (liveBuild.emblemAttr ? '\\n📐 ' + bilingualAttributes(liveBuild.emblemAttr) : '') + '\\n' +
+      '✨ Feitiço: <b>' + bilingualLabel(liveBuild.spell, '', 'spell') + '</b>' +
       wr + pr + '\\n\\n' +
       '📚 Fonte live: <b>Rone Arena / Academy</b>. A build é uma referência estatística; ajuste botas, defesa, penetração e itens situacionais conforme a composição inimiga.';
   }
