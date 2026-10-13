@@ -1037,6 +1037,8 @@ async function connect() {
   const sock = makeWASocket({ auth: state, logger, browser: Browsers.ubuntu('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
   sock.ev.on('contacts.upsert', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
   sock.ev.on('contacts.update', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
+  let connectionIdentityRejected = false;
+  let connectionIdentityVerified = false;
   sock.ev.on('creds.update', saveCreds);
   if (!state.creds.registered && pairPhone) setTimeout(async () => {
     try {
@@ -1049,6 +1051,16 @@ async function connect() {
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
+      // An old persistent volume must never silently link a different WhatsApp account.
+      const connectedPhone = String(sock.user?.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (pairPhone && connectedPhone !== pairPhone) {
+        connectionIdentityRejected = true;
+        console.error('Segurança WhatsApp: sessão antiga pertence a outro número. Conexão bloqueada.');
+        sock.end(new Error('WhatsApp vinculado ao número errado'));
+        return;
+      }
+      connectionIdentityVerified = true;
+      console.log('WhatsApp: número conectado verificado contra o número configurado.');
       ownJid = sock.user?.id || null;
       ownerAccountJids = [sock.user?.id, sock.user?.lid, sock.user?.phoneNumber]
         .filter(value => typeof value === 'string' && value.includes('@'));
@@ -1057,11 +1069,12 @@ async function connect() {
     if (connection === 'close') {
       const status = lastDisconnect?.error?.output?.statusCode;
       console.error('WhatsApp socket fechado. Status:', status, 'Motivo:', lastDisconnect?.error?.message);
-      if (status !== DisconnectReason.loggedOut) setTimeout(() => void connect().catch(e => console.error(e?.message)), 5000);
+      if (status !== DisconnectReason.loggedOut && !connectionIdentityRejected) setTimeout(() => void connect().catch(e => console.error(e?.message)), 5000);
     }
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (!connectionIdentityVerified) return;
     // Messages sent by the linked WhatsApp account can arrive as "append"
     // instead of "notify". They are still real commands and must be processed.
     if (!['notify', 'append'].includes(type)) return;
