@@ -1,5 +1,7 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
+import { ANNOUNCEMENT_NOTICE, isAnnouncementPost } from './announcementRouting.js';
+import { shouldProcessPrivateMessage } from './privateChatRouting.js';
 import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
@@ -14,7 +16,10 @@ const dataDir = process.env.WHATSAPP_DATA_DIR || '/app/data';
 const sessionsFile = dataDir + '/whatsapp-players.json';
 const registrationsFile = dataDir + '/whatsapp-registrations.json';
 const battlesFile = dataDir + '/whatsapp-battles.json';
+const announcementsFile = dataDir + '/whatsapp-announcement-deliveries.json';
 const targetGroup = process.env.WHATSAPP_GROUP_JID || null;
+const announcementsGroup = process.env.WHATSAPP_ANNOUNCEMENTS_GROUP_JID || null;
+const announcementsEnabled = process.env.WHATSAPP_ANNOUNCEMENTS_ENABLED === 'true';
 const pairPhone = process.env.WHATSAPP_PAIR_PHONE?.replace(/\D/g, '');
 const enabled = process.env.WHATSAPP_REPLY_ENABLED === 'true';
 const secret = process.env.WHATSAPP_SESSION_ENCRYPTION_KEY;
@@ -25,6 +30,9 @@ const players = new Map();
 const registrations = new Map();
 const lastMessageBySender = new Map();
 const botSentMessageIds = new Set();
+const announcedIds = new Set();
+const pendingAnnouncementIds = new Set();
+let announcementHistoryLoaded = false;
 const groupNames = new Map();
 const identityAliases = new Map();
 function linkIdentities(jids) {
@@ -43,6 +51,7 @@ function linkedAliases(jid) {
 const menuSessions = new Map();
 const MENU_TTL_MS = 5 * 60 * 1000;
 let ownJid = null;
+let ownerAccountJids = [];
 
 async function readJson(path, fallback) {
   try { return JSON.parse(await fs.readFile(path, 'utf8')); }
@@ -135,6 +144,37 @@ function findPlayer(aliases) {
   if (aliases.some(jid => jid === ownJid) && players.has('self')) return players.get('self');
   return null;
 }
+async function notifyAnnouncement(sock, message, type) {
+  if (!announcementsEnabled || !announcementsGroup || !targetGroup ||
+      announcementsGroup === targetGroup ||
+      !isAnnouncementPost(message, type, announcementsGroup)) return false;
+  const sourceId = announcementsGroup + ':' + message.key.id;
+  if (botSentMessageIds.has(message.key.id) ||
+      announcedIds.has(sourceId) || pendingAnnouncementIds.has(sourceId)) return false;
+  // Only recent events can announce. Old backfilled messages must never trigger broadcasts.
+  const rawTimestamp = message.messageTimestamp;
+  const seconds = typeof rawTimestamp === 'number' ? rawTimestamp
+    : typeof rawTimestamp === 'string' ? Number(rawTimestamp)
+    : rawTimestamp?.toNumber?.();
+  if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > 600) return false;
+  pendingAnnouncementIds.add(sourceId);
+  try {
+    await sendText(sock, targetGroup, ANNOUNCEMENT_NOTICE);
+    announcedIds.add(sourceId);
+    const recent = [...announcedIds].slice(-500);
+    announcedIds.clear();
+    for (const id of recent) announcedIds.add(id);
+    await writeJson(announcementsFile, recent);
+    console.log('Aviso de comunicado enviado ao grupo Geral.');
+    return true;
+  } catch (error) {
+    console.error('Falha ao notificar comunicado:', error?.message);
+    return false;
+  } finally {
+    pendingAnnouncementIds.delete(sourceId);
+  }
+}
+
 async function sendText(sock, jid, text) {
   const sent = await sock.sendMessage(jid, { text });
   if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
@@ -296,6 +336,9 @@ function fullHelpLines() {
 async function handleRegistration(sock, message) {
   const key = message.key || {};
   const jid = key.remoteJid;
+  // Only the owner's explicit self-chat is eligible for private automation.
+  // Ordinary chats with family, friends and customers must never be inspected or answered.
+  if (!shouldProcessPrivateMessage(message, ownerAccountJids)) return false;
   if (!jid || jid.endsWith('@g.us') || botSentMessageIds.has(key.id)) return false;
   const text = messageText(message.message);
   if (!text) return false;
@@ -976,6 +1019,13 @@ async function handleGroup(sock, message) {
 async function connect() {
   await restorePlayers();
   await restoreRegistrations();
+  if (!announcementHistoryLoaded) {
+    const history = await readJson(announcementsFile, []);
+    for (const id of Array.isArray(history) ? history.slice(-500) : []) {
+      if (typeof id === 'string') announcedIds.add(id);
+    }
+    announcementHistoryLoaded = true;
+  }
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const sock = makeWASocket({ auth: state, logger, browser: Browsers.ubuntu('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
   sock.ev.on('contacts.upsert', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
@@ -989,6 +1039,8 @@ async function connect() {
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
       ownJid = sock.user?.id || null;
+      ownerAccountJids = [sock.user?.id, sock.user?.lid, sock.user?.phoneNumber]
+        .filter(value => typeof value === 'string' && value.includes('@'));
       console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
     }
     if (connection === 'close') {
@@ -1013,6 +1065,7 @@ async function connect() {
           messageTypes: Object.keys(raw),
           parsedText: messageText(raw).slice(0, 160)
         }));
+        if (await notifyAnnouncement(sock, message, type)) continue;
         if (await handleRegistration(sock, message)) continue;
         await handleGroup(sock, message);
       } catch (e) { console.error('Falha ao processar mensagem WhatsApp:', e?.message); }
