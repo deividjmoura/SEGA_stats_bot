@@ -1057,7 +1057,9 @@ async function handleGroup(sock, message) {
   const mentioned = mentionedNow;
   const knowledge = segaKnowledgeQuery(text);
   const botWasMentioned = mentioned.some(isOwnMention);
-  const segaMention = knowledge.textual || botWasMentioned;
+  // A mention of the owner's WhatsApp is a normal group mention: keep the joke.
+  // Only the explicit @SEGA text triggers the MLBB knowledge handler.
+  const segaMention = knowledge.textual;
   console.log('[sega-knowledge-debug]', JSON.stringify({ textual: knowledge.textual, botWasMentioned, fromMe: Boolean(key.fromMe), text: text.slice(0, 120), mentionCount: mentioned.length }));
   if (enabled && !botSentMessageIds.has(key.id) && mentioned.length && !segaMention) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
