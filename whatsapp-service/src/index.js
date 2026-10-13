@@ -8,6 +8,7 @@ import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch, fetchPlayerOverview } from './roneApi.js';
 import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
+import { createOutgoingEchoGuard, ownerKnowledgeQuestion } from './messageSafety.js';
 
 const INACTIVITY_MS = 15 * 60 * 1000;
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
@@ -31,6 +32,7 @@ const players = new Map();
 const registrations = new Map();
 const lastMessageBySender = new Map();
 const botSentMessageIds = new Set();
+const outgoingEchoGuard = createOutgoingEchoGuard();
 const announcedIds = new Set();
 const pendingAnnouncementIds = new Set();
 let announcementHistoryLoaded = false;
@@ -177,14 +179,22 @@ async function notifyAnnouncement(sock, message, type) {
 }
 
 async function sendText(sock, jid, text) {
-  const sent = await sock.sendMessage(jid, { text });
-  if (sent?.key?.id) {
-    botSentMessageIds.add(sent.key.id);
-    if (botSentMessageIds.size > 1000) {
-      for (const oldId of [...botSentMessageIds].slice(0, 300)) botSentMessageIds.delete(oldId);
+  // Reserve before sending, because the echo may arrive before sendMessage returns.
+  const cancelReservation = outgoingEchoGuard.reserve(jid, text);
+  try {
+    const sent = await sock.sendMessage(jid, { text });
+    if (sent?.key?.id) {
+      outgoingEchoGuard.rememberId(sent.key.id);
+      botSentMessageIds.add(sent.key.id);
+      if (botSentMessageIds.size > 1000) {
+        for (const oldId of [...botSentMessageIds].slice(0, 300)) botSentMessageIds.delete(oldId);
+      }
     }
+    return sent;
+  } catch (error) {
+    cancelReservation();
+    throw error;
   }
-  return sent;
 }
 async function sendSegaMenu(sock, jid, sessionKey = jid) {
   const menu = [
@@ -355,6 +365,28 @@ async function handleRegistration(sock, message) {
     command = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[command];
   } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
 
+  if (['!grupos','/grupos'].includes(command)) {
+    // Explicit owner-only group discovery: names and IDs, no group chat content.
+    try {
+      const groups = await sock.groupFetchAllParticipating();
+      const matches = Object.values(groups || {})
+        .filter(group => /sega|mega\s*drive/i.test(String(group?.subject || '')))
+        .slice(0, 16);
+      if (!matches.length) {
+        await sendText(sock, jid, '🔎 Não encontrei grupos SEGA nesta conta. Confira se a comunidade está neste mesmo WhatsApp.');
+      } else {
+        const lines = ['🔐 *GRUPOS SEGA — SOMENTE PARA O DONO*', '', 'Copie o ID do 🎮 SEGA Geral e envie no ChatGPT.', ''];
+        for (const group of matches) {
+          lines.push('• *' + String(group.subject).slice(0, 95) + '*', 'ID: ' + group.id, '');
+        }
+        await sendText(sock, jid, lines.join('\n'));
+      }
+    } catch (error) {
+      console.error('Falha na lista de grupos do dono:', error?.message);
+      await sendText(sock, jid, '⚠️ Não consegui listar os grupos agora. Tente !grupos novamente.');
+    }
+    return true;
+  }
   if (['!sega','/sega'].includes(command)) {
     await sendSegaMenu(sock, jid);
     return true;
@@ -415,7 +447,22 @@ async function handleRegistration(sock, message) {
   }
 
   const state = registrations.get(jid);
-  if (!state) return false;
+  if (!state) {
+    const parsed = ownerKnowledgeQuestion(text);
+    if (!parsed) return false;
+    try {
+      const answer = await answerMlbbQuestion(parsed.question);
+      if (!answer && !parsed.prefixed) return false;
+      const plain = answer
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
+        : '🧠 Ainda não entendi essa pergunta sobre Mobile Legends. Ex.: SEGA, quem mata Harley?';
+      await sendText(sock, jid, plain);
+    } catch (error) {
+      console.error('Falha ao responder conhecimento no autochat:', error?.message);
+      await sendText(sock, jid, '⚠️ Não consegui consultar o conhecimento agora. Tente novamente em alguns segundos.');
+    }
+    return true;
+  }
 
   if (state.step === 'role_id') {
     if (!/^\d{6,12}$/.test(text)) { await sendText(sock, jid, '⚠️ Role ID inválido. Envie somente os números.'); return true; }
@@ -1093,6 +1140,7 @@ async function connect() {
         } else if (!shouldProcessPrivateMessage(message, ownerAccountJids)) continue;
         if (botSentMessageIds.has(key.id)) continue;
         const raw = message?.message || {};
+        if (outgoingEchoGuard.isEcho(key, messageText(raw))) continue;
         console.log('[incoming-debug]', JSON.stringify({
           type,
           fromMe: Boolean(key.fromMe),

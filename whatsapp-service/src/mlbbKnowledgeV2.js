@@ -453,17 +453,22 @@ function canonicalHeroName(name) {
   return name;
 }
 
-function intentOf(text) {
+export function intentOf(text) {
   const source = compact(text);
-  const against = '(?:contra|conta|cotra|conra|counter|couter)';
-
-  // Aceita erros de digitação comuns sem perder a intenção da pergunta.
-  if (new RegExp('(?:counter|couter|countera|counteram|counterado|counterada|ganha|vence|bom\\s+' + against + '|forte\\s+' + against + ')').test(source)) return 'counter';
-  if (new RegExp('(?:item|itens|equipamento|equipamentos).*' + against + '|' + against + '.*(?:item|itens|equipamento|equipamentos)').test(source)) return 'items';
-  if (new RegExp('(?:como jogar|como luto|como enfrentar|dica|dicas).*' + against + '|como jogar\\s+' + against).test(source)) return 'tips';
-  if (/(?:build|buildar|montar|montagem)(?:.*(?:de|do|da)\b|\s+[a-z0-9áàâãéêíóôõúçü' -]+$)/.test(source)) return 'build';
-  if (/(funcao|lane|rota|papel|role|quem e|quem eh|qual heroi)/.test(source)) return 'hero';
-  if (new RegExp('(?:counter|couter|' + against + '|build|item|equipamento|heroi)').test(source)) return 'unknown_mlbb';
+  // Classify the requested detail first: "which item against X" must never
+  // be mistaken for a generic hero-counter question.
+  const against = /\b(?:contra|conta|cotra|conra|conter|against)\b/;
+  if (/\b(?:item|itens|equipamento|equipamentos|defesa|defensivo|armadura)\b/.test(source)
+      && (against.test(source) || /\b(?:faco|usar|compro|montar)\b/.test(source))) return 'items';
+  if (/\b(?:como jogar|como luto|como enfrentar|dica|dicas|estrategia|como lidar)\b/.test(source)
+      && (against.test(source) || /\b(?:jogar|enfrentar|lidar)\b/.test(source))) return 'tips';
+  if (/\b(?:build|buildar|montagem|montar build|melhores itens para)\b/.test(source)) return 'build';
+  const counterSpelling = /\b(?:counter\w*|couter\w*|cauter\w*|caunter\w*|coun\w*|kounter\w*)\b/;
+  const naturalCounter = /\b(?:quem|qual heroi|qual personagem|qual pick|o que)\s+(?:mata|sola|solo|para|segura|vence|ganha|derrota|amassa|destroi|faz frente|da conta)\b/;
+  const otherCounter = /\b(?:forte|bom|melhor|pick|ganha|vence|derrota|bater|jogar)\s+(?:de|do|da|pra|para|em|e|ser|muito)?\s*(?:contra|conta|cotra|conra)\b/;
+  if (counterSpelling.test(source) || naturalCounter.test(source) || otherCounter.test(source)) return 'counter';
+  if (/\b(?:funcao|lane|rota|papel|role|quem e|quem eh|qual heroi|qual a classe)\b/.test(source)) return 'hero';
+  if (against.test(source) || /\b(?:heroi|herois)\b/.test(source)) return 'unknown_mlbb';
   return 'unknown';
 }
 
@@ -567,7 +572,8 @@ async function getLiveHeroProfile(heroName) {
 
 export function listKnowledgeExamples() {
   return [
-    'quem countera Harley?',
+    'quem mata Harley?',
+    'quem cautera Gusion?',
     'quem é bom contra Gusion?',
     'qual item faço contra Silvanna?',
     'como jogar contra Fanny?',
