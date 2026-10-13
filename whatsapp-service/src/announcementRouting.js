@@ -23,3 +23,20 @@ export function isAnnouncementPost(message, type, groupJid) {
   ];
   return allowed.some(type => Object.prototype.hasOwnProperty.call(content, type));
 }
+
+
+// Discover the community's *official* announcement channel, not an ordinary
+// admin-only group. Fail closed if the Geral isn't linked to a community or
+// there is more than one possible candidate.
+export function selectCommunityAnnouncementsGroup(groups, generalMetadata) {
+  const parentId = generalMetadata?.linkedParent;
+  if (!parentId) return null;
+  const matches = Object.values(groups || {}).filter(group =>
+    group?.isCommunityAnnounce === true
+    && group?.linkedParent === parentId
+    && group?.id !== generalMetadata?.id
+    && typeof group?.id === 'string'
+    && group.id.endsWith('@g.us')
+  );
+  return matches.length === 1 ? matches[0].id : null;
+}
