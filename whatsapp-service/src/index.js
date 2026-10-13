@@ -410,7 +410,7 @@ function fullHelpLines() {
     'Ao mencionar outra pessoa no Geral, o SEGA pode responder com uma zoeira sem revelar identificadores privados.', '',
     '🤖 *IMPORTANTE*',
     'O SEGA está conectado ao número do administrador; respostas automáticas aparecem como mensagens dessa conta.', '',
-    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !sega abre o menu. Cadastro e stats: privado do dono. Conhecimento e zoeiras: SEGA Geral.'
+    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !sega abre o menu. Cadastro: privado do dono. Stats: no Geral ou privado do dono. Conhecimento e zoeiras: SEGA Geral.'
   ];
 }
 
@@ -1029,17 +1029,19 @@ async function handleGroup(sock, message) {
       if (name) rememberGroupName(jid, name);
     } catch {}
   }
-  const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
+  const authorPlayer = key.fromMe
+    ? (players.get('self') || aliases.map(playerForJid).find(Boolean) || findPlayer(aliases))
+    : (aliases.map(playerForJid).find(Boolean) || findPlayer(aliases));
   if (/^[!\/]sega$/i.test(text)) {
     await sendSegaMenu(sock, groupJid, menuKey);
     return;
   }
   if (/^[!/]battle(?:\s+.*)?$/i.test(text)) {
-    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no privado para consultar seus dados.');
+    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no Geral para consultar seus dados.');
     return;
   }
-  if (/^!stats$/i.test(text)) {
-    await sendText(sock,groupJid,'📊 Para consultar seus stats, abra meu privado e envie !stats.');
+  if (/^[!/]stats$/i.test(text)) {
+    await sendPlayerStats(sock, groupJid, authorPlayer);
     return;
   }
   if (/^!ajuda$/i.test(text)) {
