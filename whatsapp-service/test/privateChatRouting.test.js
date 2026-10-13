@@ -7,7 +7,7 @@ function msg(jid, text = '!sega', fromMe = false) {
   return { key: { id: 'key', remoteJid: jid, fromMe }, message: { conversation: text } };
 }
 
-test('the owner's self-chat accepts explicit commands for testing', () => {
+test("the owner\'s self-chat accepts explicit commands for testing", () => {
   assert.equal(isOwnPrivateChat('owner@s.whatsapp.net', own), true);
   assert.equal(shouldProcessPrivateMessage(msg('owner@s.whatsapp.net', '!sega', true), own), true);
   assert.equal(shouldProcessPrivateMessage(msg('ownerlid@lid', '!stats', true), own), true);
