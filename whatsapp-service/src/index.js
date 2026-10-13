@@ -177,7 +177,12 @@ async function notifyAnnouncement(sock, message, type) {
 
 async function sendText(sock, jid, text) {
   const sent = await sock.sendMessage(jid, { text });
-  if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
+  if (sent?.key?.id) {
+    botSentMessageIds.add(sent.key.id);
+    if (botSentMessageIds.size > 1000) {
+      for (const oldId of [...botSentMessageIds].slice(0, 300)) botSentMessageIds.delete(oldId);
+    }
+  }
   return sent;
 }
 async function sendSegaMenu(sock, jid, sessionKey = jid) {
@@ -856,6 +861,8 @@ async function handleGroup(sock, message) {
   const key = message.key || {};
   const groupJid = key.remoteJid;
   if (!enabled || !groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
+  // Never interpret a message that this bridge itself sent as a new command.
+  if (botSentMessageIds.has(key.id)) return;
   let text = messageText(message.message);
   const menuKey = groupJid + ':' + (key.participant || key.participantAlt || key.remoteJid);
   const until = menuSessions.get(menuKey) || 0;
@@ -1057,13 +1064,20 @@ async function connect() {
     for (const message of messages || []) {
       try {
         const key = message?.key || {};
+        const chatJid = String(key.remoteJid || '');
+        const isGroup = chatJid.endsWith('@g.us');
+        // Filter before inspecting message text or logging anything about the chat.
+        // Private chats with third parties are strictly out of scope.
+        if (isGroup) {
+          if (chatJid !== targetGroup && chatJid !== announcementsGroup) continue;
+        } else if (!shouldProcessPrivateMessage(message, ownerAccountJids)) continue;
+        if (botSentMessageIds.has(key.id)) continue;
         const raw = message?.message || {};
         console.log('[incoming-debug]', JSON.stringify({
           type,
           fromMe: Boolean(key.fromMe),
           group: String(key.remoteJid || '').endsWith('@g.us'),
-          messageTypes: Object.keys(raw),
-          parsedText: messageText(raw).slice(0, 160)
+          messageTypes: Object.keys(raw)
         }));
         if (await notifyAnnouncement(sock, message, type)) continue;
         if (await handleRegistration(sock, message)) continue;
