@@ -22,3 +22,18 @@ export function shouldProcessPrivateMessage(message, ownJids = []) {
     && isOwnPrivateChat(key.remoteJid, ownJids)
   );
 }
+
+/**
+ * A personal account must ignore regular private conversations.
+ * Explicit !cadastrar opts a sender in; after that, only that sender's active
+ * registration can be processed. Owner self-chat keeps its existing features.
+ * The supplied text reader is only used to compare an exact opt-in command.
+ */
+export function shouldProcessRegistrationPrivateMessage(message, ownJids = [], activeRegistrationJids = new Set(), readText = () => '') {
+  const key = message?.key || {};
+  if (shouldProcessPrivateMessage(message, ownJids)) return true;
+  if (!key.id || !message?.message || !key.remoteJid || key.remoteJid.endsWith('@g.us') || key.fromMe) return false;
+  if (activeRegistrationJids.has(key.remoteJid)) return true;
+  const command = String(readText(message.message) || '').trim().toLowerCase();
+  return ['!cadastrar', '/cadastrar', 'cadastrar'].includes(command);
+}
