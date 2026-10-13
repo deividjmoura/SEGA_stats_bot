@@ -4,7 +4,7 @@ Esta ponte usa Baileys (biblioteca WhatsApp **não oficial**) e é separada do b
 
 ## Estado de preparação
 
-A instância `SEGA_WhatsApp_Bridge` no Railway fica apenas **staged**, sem deploy e sem conexão, até a autorização de implantação e o pareamento. O volume antigo `sega-whatsapp-auth` deve ser montado em `/app/data` para preservar credenciais que ainda possam existir. Não há garantia de reutilização da sessão antiga.
+A instância `SEGA_WhatsApp_Bridge` no Railway fica apenas **staged**, sem deploy e sem conexão, até a autorização de implantação. A conexão WhatsApp exige uma segunda ativação explícita de `WHATSAPP_CONNECT_ENABLED=true` e só deve ocorrer após a autorização de pareamento. O volume antigo `sega-whatsapp-auth` deve ser montado em `/app/data` para preservar credenciais que ainda possam existir. Não há garantia de reutilização da sessão antiga.
 
 ## Papéis dos grupos
 
@@ -22,6 +22,7 @@ Essa política evita que o bot entre no meio das conversas pessoais do administr
 
 ## Variáveis de ambiente
 
+- `WHATSAPP_CONNECT_ENABLED=false` até a autorização explícita para estabelecer a sessão. Mesmo após a implantação do serviço, o processo fica estacionado sem abrir conexão enquanto esta variável estiver desativada.
 - `WHATSAPP_AUTH_DIR=/app/data/whatsapp-auth-v2`
 - `WHATSAPP_DATA_DIR=/app/data`
 - `WHATSAPP_REPLY_ENABLED=false` até terminar a validação e autorizar respostas.
