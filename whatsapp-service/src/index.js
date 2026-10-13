@@ -994,7 +994,7 @@ async function handleGroup(sock, message) {
       const activityNow = Date.now();
       for (const jid of linkedAliases(activitySender)) lastMessageBySender.set(groupJid + ':' + jid, activityNow);
     }
-    await sendText(sock, groupJid, roastFor(author, target, key.id));
+    await sendText(sock, groupJid, roastFor(author, target));
     return;
   }
   if (segaMention) {
