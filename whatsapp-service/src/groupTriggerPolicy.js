@@ -1,7 +1,7 @@
 // Strict group reply policy: natural group chat must never trigger a NOX reply.
 // Only explicit commands, bot-directed questions and real WhatsApp mentions do.
 const NOX_QUESTION = /@nox(?:[ _]?stats)?(?:[ _]?bot)?\b/i;
-const DIRECT_COMMAND = /^(?:[!\/]\s*(?:nox|stats|ranking|highlights|ajuda|cadastrar)|cadastrar|[!\/]\s*battle(?:\s+.*)?)$/i;
+const DIRECT_COMMAND = /^(?:(?:[!\/]\s*)?(?:nox|agenda|sugestao)|[!\/]\s*(?:stats|ranking|highlights|ajuda|cadastrar)|cadastrar|[!\/]\s*battle(?:\s+.*)?)$/i;
 
 export function isExplicitGroupInteraction(text, mentions = [], menuActive = false) {
   const value = String(text || '').trim();
