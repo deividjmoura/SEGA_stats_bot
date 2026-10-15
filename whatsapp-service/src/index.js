@@ -82,6 +82,44 @@ function readableAttendeeName(entry) {
   return String(player?.name || entry.name || 'Participante')
     .replace(/[\r\n\t]+/g, ' ').trim().slice(0, 70);
 }
+// Text RSVP also works when a WhatsApp client cannot render native-flow buttons.
+async function handleDirectRsvp(sock, message, rawText) {
+  const match = /^!(confirmar|desistir) ([a-f0-9]{8})$/i.exec(rawText);
+  if (!match) return false;
+  const jid = message.key.remoteJid;
+  if (jid !== targetGroup) return false;
+  const ids = rsvpActorIds(message.key);
+  if (!ids.length) {
+    await sendText(sock,jid,'⚠️ Não consegui identificar seu WhatsApp. Tente novamente.');
+    return true;
+  }
+  const [command, verb, requestedId] = match;
+  const event = (await upcomingAgendaEvents()).find(item => item.id === requestedId.toLowerCase());
+  if (!event) {
+    await sendText(sock,jid,'⚠️ Evento não encontrado. Envie !agenda para consultar os IDs válidos.');
+    return true;
+  }
+  if (!isRsvpOpen(event)) {
+    await sendText(sock,jid,'🔒 Confirmações encerradas: o prazo acaba 30 minutos antes do evento. Apenas o Conselho pode autorizar exceções.');
+    return true;
+  }
+  const attending = verb.toLowerCase() === 'confirmar';
+  const name = ids.map(playerForJid).find(Boolean)?.name ||
+    message.pushName || ids.map(id=>whatsappName(id,'')).find(Boolean) || 'Participante';
+  const result = await updateAttendance(state=>changeAttendance(state,event.id,ids,name,attending));
+  const count = attendanceCount(result.data,event.id);
+  if (!result.changed) {
+    await sendText(sock,jid,attending
+      ? '✅ Sua presença já estava confirmada em *'+event.title+'*. 👥 '+count+' confirmado(s).'
+      : 'ℹ️ Você não estava na lista de confirmados de *'+event.title+'*.');
+    return true;
+  }
+  await sendText(sock,jid,attending
+    ? '✅ Presença confirmada em *'+event.title+'*! 👥 '+count+' confirmado(s). Prazo: até 30 minutos antes do evento.'
+    : '✅ Sua confirmação foi retirada de *'+event.title+'*. 👥 '+count+' confirmado(s).');
+  return true;
+}
+
 async function sendRsvpAgenda(sock, message) {
   const jid = message.key.remoteJid;
   const ids = rsvpActorIds(message.key);
