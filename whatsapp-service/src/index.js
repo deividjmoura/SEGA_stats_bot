@@ -825,12 +825,15 @@ async function sendInteractive(sock, jid, menu, permittedGroups = []) {
   return sent;
 }
 async function sendNoxMenu(sock, jid) {
+  const fallback = '📱 *Se o menu clicável aparecer como incompatível no seu WhatsApp,* use os comandos de texto:\n' +
+    '📊 !stats · 🏆 !ranking · 🌟 !highlights\n' +
+    '📅 !agenda · 💡 !sugestao · ❓ !ajuda · 🎮 !cadastrar';
   try {
-    return await sendInteractive(sock, jid, buildNoxClickableMenu(), [targetGroup].filter(Boolean));
+    await sendInteractive(sock, jid, buildNoxClickableMenu(), [targetGroup].filter(Boolean));
   } catch (error) {
-    console.error('Falha ao enviar menu clicável:', error?.message);
-    return sendText(sock, jid, '⚠️ Não consegui abrir o menu clicável. Tente !nox novamente ou envie !ajuda.');
+    console.warn('Menu interativo indisponível; mantendo atalhos de texto:',error?.message);
   }
+  return sendText(sock, jid, fallback);
 }
 
 async function loadBattles() { return readJson(battlesFile, {}); }
