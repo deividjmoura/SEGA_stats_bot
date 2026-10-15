@@ -544,9 +544,12 @@ async function handleAdminAgenda(sock, message) {
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
     if (!title.trim()) { await sendText(sock,jid,'⚠️ Informe o nome do evento.'); return true; }
-    const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
-    const localDate = new Date(date.getTime() - 3 * 60 * 60 * 1000);
-    if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now() || localDate.getUTCFullYear() !== Number(yyyy) || localDate.getUTCMonth()+1 !== Number(mm) || localDate.getUTCDate() !== Number(dd) || localDate.getUTCHours() !== Number(hh) || localDate.getUTCMinutes() !== Number(min)) { await sendText(sock,jid,'⚠️ Data inválida ou passada. Use !agendar Treino | DD/MM/AAAA HH:MM'); return true; }
+    const schedule = validateAgendaSchedule(dd+'/'+mm+'/'+yyyy,hh+':'+min);
+    if (!schedule.ok) {
+      await sendText(sock,jid,agendaValidationMessage(schedule));
+      return true;
+    }
+    const date = schedule.date;
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos ainda não confirmado. Evento não cadastrado.'); return true; }
     const events = await readJson(agendaFile, []);
     if (events.some(e => e.title.toLowerCase() === title.trim().toLowerCase() && e.date === date.toISOString())) { await sendText(sock,jid,'⚠️ Este evento já está cadastrado.'); return true; }
@@ -562,15 +565,16 @@ async function handleAdminAgenda(sock, message) {
   const edit = raw.match(/^!editarevento\s+([a-f0-9]{8})\s*\|\s*(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (edit) {
     const [,id,title,dd,mm,yyyy,hh,min] = edit;
-    const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
-    const localDate = new Date(date.getTime()-3*60*60*1000);
-    if (!title.trim() || !Number.isFinite(date.getTime()) || date.getTime()<=Date.now() ||
-        localDate.getUTCFullYear()!==Number(yyyy) || localDate.getUTCMonth()+1!==Number(mm) ||
-        localDate.getUTCDate()!==Number(dd) || localDate.getUTCHours()!==Number(hh) ||
-        localDate.getUTCMinutes()!==Number(min)) {
-      await sendText(sock,jid,'⚠️ Use !editarevento ID | Nome | DD/MM/AAAA HH:MM com data futura válida.');
+    if (!title.trim()) {
+      await sendText(sock,jid,'⚠️ O nome do evento não pode ficar vazio.');
       return true;
     }
+    const schedule = validateAgendaSchedule(dd+'/'+mm+'/'+yyyy,hh+':'+min);
+    if (!schedule.ok) {
+      await sendText(sock,jid,agendaValidationMessage(schedule));
+      return true;
+    }
+    const date = schedule.date;
     const events = await readJson(agendaFile, []);
     const index = events.findIndex(e=>e.id===id.toLowerCase());
     if (index<0) { await sendText(sock,jid,'⚠️ Evento não encontrado.'); return true; }
