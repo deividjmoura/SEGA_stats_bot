@@ -63,7 +63,7 @@ export function buildAgendaEventChoices(events, mode, page = 0) {
   if (page > 0) rows.push({ id: 'nox:page:' + (page - 1), title: '⬅️ Página anterior' });
   if (page + 1 < totalPages) rows.push({ id: 'nox:page:' + (page + 1), title: '➡️ Próxima página' });
   return buildInteractiveList({
-    title: mode === 'presencas' ? '👥 PRESENÇAS DO EVENTO' : mode === 'editarevento' ? '✏️ EDITAR EVENTO' : '❌ CANCELAR EVENTO',
+    title: mode === 'presencas' ? '👥 PRESENÇAS DO EVENTO' : mode === 'aprovarpresenca' ? '⚖️ AUTORIZAR PRESENÇA' : mode === 'editarevento' ? '✏️ EDITAR EVENTO' : '❌ CANCELAR EVENTO',
     body: 'Selecione o evento (página ' + (page + 1) + ' de ' + totalPages + '). Envie !sair para desistir.',
     buttonText: '📅 ESCOLHER EVENTO',
     rows,
@@ -79,6 +79,37 @@ export function buildAgendaConfirmationChoice(event) {
       { id: 'nox:confirm:sim', title: '✅ Sim, excluir evento' },
       { id: 'nox:confirm:nao', title: '↩️ Não, manter evento' },
     ],
+  });
+}
+
+export function buildApprovalMemberChoices(members, event, page = 0) {
+  const perPage=8;
+  const totalPages=Math.max(1,Math.ceil(members.length/perPage));
+  if (!members.length || !Number.isInteger(page) || page<0 || page>=totalPages) {
+    throw new Error('Página inválida para autorização');
+  }
+  const rows=members.slice(page*perPage,(page+1)*perPage).map((member,i)=>({
+    id: 'nox:approval:member:'+(page*perPage+i),
+    title: String(member.name||'Integrante').slice(0,24),
+    description:'Ainda não confirmou presença',
+  }));
+  if(page>0)rows.push({id:'nox:approval:page:'+(page-1),title:'⬅️ Anterior'});
+  if(page+1<totalPages)rows.push({id:'nox:approval:page:'+(page+1),title:'➡️ Próxima página'});
+  return buildInteractiveList({
+    title:'⚖️ EXCEÇÃO DO CONSELHO',
+    body:'Evento: '+String(event.title).slice(0,70)+' — escolha um integrante para autorizar.',
+    buttonText:'👥 ESCOLHER INTEGRANTE',rows
+  });
+}
+export function buildApprovalConfirmationChoice(event, member) {
+  return buildInteractiveList({
+    title:'⚖️ AUTORIZAR PRESENÇA',
+    body:'Autorizar *'+String(member.name).slice(0,60)+'* em *'+String(event.title).slice(0,70)+'* após o prazo?',
+    buttonText:'⚖️ DECISÃO DO CONSELHO',
+    rows:[
+      {id:'nox:approval:confirm',title:'✅ Autorizar presença'},
+      {id:'nox:approval:cancel',title:'↩️ Não autorizar'},
+    ]
   });
 }
 
