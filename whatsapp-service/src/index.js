@@ -72,7 +72,7 @@ async function handleAdminAgenda(sock, message) {
     }
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos indisponível. Alteração não realizada.'); return true; }
     const updated = {...events[index],title:title.trim().slice(0,120),date:date.toISOString()};
-    await sendText(sock,announcementsGroup,'✏️ *EVENTO ATUALIZADO*\\n🎮 '+updated.title+'\\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\\n🆔 '+updated.id);
+    await sendText(sock,announcementsGroup,'✏️ *EVENTO ATUALIZADO*\n🎮 '+updated.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+updated.id);
     events[index]=updated;
     await writeJson(agendaFile,events);
     await sendText(sock,jid,'✅ Evento atualizado e publicado nos Avisos.');
