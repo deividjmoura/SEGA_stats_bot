@@ -29,10 +29,46 @@ async function agendaText() {
   const upcoming = events.filter(e => Date.parse(e.date) >= Date.now()).sort((a,b) => a.date.localeCompare(b.date));
   return upcoming.length ? '📅 *AGENDA DO CLÃ*\n\n' + upcoming.map(e => '• *' + e.title + '* — ' + new Date(e.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (ID: ' + e.id + ')').join('\n') : '📅 Nenhum evento futuro cadastrado.';
 }
+const agendaDrafts = new Map();
+const AGENDA_DRAFT_TTL = 15 * 60 * 1000;
+async function handleAgendaWizard(sock, jid, message, raw) {
+  const actor = String(message?.key?.participant || message?.key?.participantAlt || (message?.key?.fromMe ? 'owner' : '') || '');
+  const key = jid + ':' + actor;
+  if (/^!agendar$/i.test(raw)) {
+    agendaDrafts.set(key, { step: 'title', expires: Date.now() + AGENDA_DRAFT_TTL });
+    await sendText(sock, jid, '📅 *Novo evento* (1/3)\\nQual é o nome do evento?\\nDigite !sair para cancelar.');
+    return true;
+  }
+  const draft = agendaDrafts.get(key);
+  if (!draft) return false;
+  if (Date.now() > draft.expires) { agendaDrafts.delete(key); await sendText(sock, jid, '⌛ Agendamento expirou. Envie !agendar para começar novamente.'); return true; }
+  if (/^!sair$/i.test(raw)) { agendaDrafts.delete(key); await sendText(sock, jid, '❌ Agendamento cancelado.'); return true; }
+  if (raw.startsWith('!')) return false;
+  if (draft.step === 'title') {
+    if (!raw || raw.length > 120) { await sendText(sock, jid, '⚠️ Informe um nome com até 120 caracteres.'); return true; }
+    draft.title = raw.trim(); draft.step = 'date';
+    await sendText(sock, jid, '📅 (2/3) Qual a data? Use DD/MM/AAAA.');
+    return true;
+  }
+  if (draft.step === 'date') {
+    if (!/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(raw)) { await sendText(sock, jid, '⚠️ Data inválida. Use DD/MM/AAAA.'); return true; }
+    draft.date = raw; draft.step = 'time';
+    await sendText(sock, jid, '🕗 (3/3) Qual o horário? Use HH:MM (horário de Brasília).');
+    return true;
+  }
+  if (draft.step === 'time') {
+    if (!/^\\d{2}:\\d{2}$/.test(raw)) { await sendText(sock, jid, '⚠️ Horário inválido. Use HH:MM.'); return true; }
+    agendaDrafts.delete(key);
+    const synthetic = { ...message, message: { conversation: '!agendar ' + draft.title + ' | ' + draft.date + ' ' + raw } };
+    return handleAdminAgenda(sock, synthetic);
+  }
+  return false;
+}
 async function handleAdminAgenda(sock, message) {
   const jid = message?.key?.remoteJid;
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
+  if (await handleAgendaWizard(sock, jid, message, raw)) return true;
   if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,await agendaText()); return true; }
   const match = raw.match(/^!agendar\s+(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (match) {
