@@ -3,6 +3,7 @@ import pino from 'pino';
 import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { brandNoxText } from './noxBranding.js';
+import { isVagueWinQuestion, makeUnknownQuestionRoast } from './unknownQuestionRoasts.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
@@ -1024,6 +1025,7 @@ function fullHelpLines() {
     '',
     '🧠 *DÚVIDAS SOBRE MOBILE LEGENDS*',
     'No Geral, escreva *@NOX* seguido de sua pergunta sobre heróis, counters, builds, itens ou rotas.',
+    'Se a pergunta não tiver resposta ou for vaga demais, o NOX pode responder com uma zoeira e indicar *!sugestao* para novas ideias.',
     '💬 *EXEMPLOS:*',
     ...examples.map(question => '• @NOX ' + question),
     '',
@@ -1135,11 +1137,11 @@ async function handleRegistration(sock, message) {
     const parsed = ownerKnowledgeQuestion(text);
     if (!parsed) return false;
     try {
-      const answer = await answerMlbbQuestion(parsed.question);
+      const answer = isVagueWinQuestion(parsed.question) ? null : await answerMlbbQuestion(parsed.question);
       if (!answer && !parsed.prefixed) return false;
       const plain = answer
         ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : '🧠 Ainda não entendi essa pergunta sobre Mobile Legends. Ex.: NOX, quem mata Harley?';
+        : makeUnknownQuestionRoast();
       await sendText(sock, jid, plain);
     } catch (error) {
       console.error('Falha ao responder conhecimento no autochat:', error?.message);
@@ -1337,10 +1339,10 @@ async function handleGroup(sock, message) {
       return;
     }
     try {
-      const answer = await answerMlbbQuestion(question);
+      const answer = isVagueWinQuestion(question) ? null : await answerMlbbQuestion(question);
       const plain = answer
         ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @NOX ' + x).join('\n');
+        : makeUnknownQuestionRoast();
       await sendText(sock, groupJid, plain);
     } catch (error) {
       console.error('Falha no conhecimento WhatsApp:', error?.message);
@@ -1451,10 +1453,10 @@ async function handleGroup(sock, message) {
       return;
     }
     try {
-      const answer = await answerMlbbQuestion(question);
+      const answer = isVagueWinQuestion(question) ? null : await answerMlbbQuestion(question);
       const plain = answer
         ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @NOX ' + x).join('\n');
+        : makeUnknownQuestionRoast();
       await sendText(sock, groupJid, plain);
     } catch (error) {
       console.error('Falha no conhecimento WhatsApp:', error?.message);
