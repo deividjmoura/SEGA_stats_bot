@@ -274,11 +274,13 @@ async function runAgendaNotificationTick(sock) {
       // The send completes before persisting the idempotency key: never claim a notice was delivered on error.
       if(type==='reminder') {
         const minutes=Math.ceil((Date.parse(event.date)-Date.now())/60000);
+        const deadline=new Date(Date.parse(event.date)-RSVP_CLOSE_BEFORE_MS)
+          .toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
         await sendText(sock,targetGroup,
           '⏰ *LEMBRETE DO CLÃ — EVENTO PRÓXIMO!*\n\n🎮 *'+event.title+'*\n'+
           '🕗 '+new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
           '\n⏳ Faltam aproximadamente '+minutes+' minutos!\n\n'+
-          '✅ *PRAZO FINAL: CONFIRME SUA PARTICIPAÇÃO NOS PRÓXIMOS 30 MINUTOS!*\n'+
+          '✅ *PRAZO FINAL: CONFIRME SUA PARTICIPAÇÃO ATÉ '+deadline+'!*\n'+
           'Toque no menu clicável abaixo e escolha *Vou participar* (ou abra *!agenda*).\n'+
           '⚠️ Quem não confirmar até *30 minutos antes* fica fora da lista, salvo aprovação do Conselho.\n'+
           'Quem já confirmou permanece na lista — não precisa confirmar novamente.');
