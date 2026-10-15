@@ -1,6 +1,6 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { sendPrivateNoxMenuPrototype } from './clickableMenuPrototype.js';
+import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
 import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
@@ -44,8 +44,8 @@ async function handleAgendaWizard(sock, jid, message, raw) {
     } else {
       const list = await events();
       if (!list.length) { await sendText(sock,jid,'📅 Não há eventos futuros cadastrados.'); return true; }
-      agendaDrafts.set(key,{mode,step:'select',list,expires:Date.now()+AGENDA_DRAFT_TTL});
-      await sendText(sock,jid,(mode==='editarevento'?'✏️ *Editar evento*':'❌ *Excluir evento*')+'\nQual evento? Responda com o número:\n'+list.map((e,i)=>(i+1)+'. '+e.title+' — '+new Date(e.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})).join('\n')+'\nDigite !sair para cancelar.');
+      agendaDrafts.set(key,{mode,step:'select',list,page:0,expires:Date.now()+AGENDA_DRAFT_TTL});
+      await sendInteractive(sock,jid,buildAgendaEventChoices(list,mode,0),[adminsGroup]);
     }
     return true;
   }
@@ -55,12 +55,30 @@ async function handleAgendaWizard(sock, jid, message, raw) {
   if (/^!sair$/i.test(raw)) { agendaDrafts.delete(key); await sendText(sock,jid,'❌ Operação cancelada.'); return true; }
   if (raw.startsWith('!')) return false;
   if (draft.step==='select') {
-    const idx=Number(raw)-1;
-    if (!/^\d+$/.test(raw)||idx<0||idx>=draft.list.length) { await sendText(sock,jid,'⚠️ Responda com um número da lista.'); return true; }
-    draft.event=draft.list[idx];
+    if (!isInteractiveChoice(message.message)) {
+      await sendText(sock,jid,'📅 Toque no botão ESCOLHER EVENTO do menu anterior, ou envie !sair.');
+      return true;
+    }
+    if (/^nox:page:\d+$/.test(raw)) {
+      const page=Number(raw.slice('nox:page:'.length));
+      if (page < 0 || page >= Math.ceil(draft.list.length/8)) {
+        await sendText(sock,jid,'⚠️ Página inválida. Abra a lista novamente.');
+        return true;
+      }
+      draft.page=page;
+      await sendInteractive(sock,jid,buildAgendaEventChoices(draft.list,draft.mode,page),[adminsGroup]);
+      return true;
+    }
+    const match=raw.match(/^nox:event:([a-f0-9]{8})$/i);
+    const event=match && draft.list.find(item=>item.id===match[1].toLowerCase());
+    if (!event || !draft.list.slice((draft.page||0)*8,(draft.page||0)*8+8).some(item=>item.id===event.id)) {
+      await sendText(sock,jid,'⚠️ Escolha um evento válido na lista.');
+      return true;
+    }
+    draft.event=event;
     if (draft.mode==='cancelarevento') {
       draft.step='confirm';
-      await sendText(sock,jid,'⚠️ Confirmar exclusão de *'+draft.event.title+'*? Responda *SIM* ou *NÃO*.');
+      await sendInteractive(sock,jid,buildAgendaConfirmationChoice(event),[adminsGroup]);
     } else {
       draft.step='title';
       await sendText(sock,jid,'✏️ Qual será o novo nome de *'+draft.event.title+'*?');
@@ -68,9 +86,12 @@ async function handleAgendaWizard(sock, jid, message, raw) {
     return true;
   }
   if (draft.step==='confirm') {
-    if (!/^(sim|não|nao)$/i.test(raw)) { await sendText(sock,jid,'Responda SIM ou NÃO.'); return true; }
+    if (!isInteractiveChoice(message.message) || !['nox:confirm:sim','nox:confirm:nao'].includes(raw)) {
+      await sendText(sock,jid,'⚠️ Toque em Sim ou Não no menu de confirmação.');
+      return true;
+    }
     agendaDrafts.delete(key);
-    if (!/^sim$/i.test(raw)) { await sendText(sock,jid,'Exclusão cancelada.'); return true; }
+    if (raw==='nox:confirm:nao') { await sendText(sock,jid,'Exclusão cancelada.'); return true; }
     return handleAdminAgenda(sock,{...message,message:{conversation:'!cancelarevento '+draft.event.id}});
   }
   if (draft.step==='title') {
@@ -193,8 +214,6 @@ function linkedAliases(jid) {
   const base = jidAliases(jid);
   return [...new Set([...base, ...base.flatMap(x => identityAliases.get(x) || [])])];
 }
-const menuSessions = new Map();
-const MENU_TTL_MS = 5 * 60 * 1000;
 let ownJid = null;
 let ownerAccountJids = [];
 
@@ -393,23 +412,24 @@ async function sendText(sock, jid, text, mentions = [], mentionAll = false) {
     throw error;
   }
 }
-async function sendNoxMenu(sock, jid, sessionKey = jid) {
-  const menu = [
-    '🎮 *NOX STATS*',
-    '━━━━━━━━━━━━━━━━',
-    '',
-    '1️⃣ 📊 !stats',
-    '2️⃣ 🏆 !ranking',
-    '3️⃣ 🌟 !highlights',
-    '4️⃣ 🎮 !cadastrar',
-    '5️⃣ ❓ !ajuda',
-    '6️⃣ 📅 !agenda',
-    '7️⃣ 💡 !sugestao',
-    '',
-    '⌨️ *Digite 1 a 7 ou use o comando.*'
-  ].join('\n');
-  menuSessions.set(sessionKey, Date.now() + MENU_TTL_MS);
-  return sendText(sock, jid, menu);
+async function sendInteractive(sock, jid, menu, permittedGroups = []) {
+  const sent = await sendNoxInteractiveMenu(sock, jid, generateWAMessageFromContent, menu, permittedGroups);
+  if (sent?.key?.id) {
+    botSentMessageIds.add(sent.key.id);
+    outgoingEchoGuard.rememberId(sent.key.id);
+    if (botSentMessageIds.size > 1000) {
+      for (const oldId of [...botSentMessageIds].slice(0, 300)) botSentMessageIds.delete(oldId);
+    }
+  }
+  return sent;
+}
+async function sendNoxMenu(sock, jid) {
+  try {
+    return await sendInteractive(sock, jid, buildNoxClickableMenu(), [targetGroup].filter(Boolean));
+  } catch (error) {
+    console.error('Falha ao enviar menu clicável:', error?.message);
+    return sendText(sock, jid, '⚠️ Não consegui abrir o menu clicável. Tente !nox novamente ou envie !ajuda.');
+  }
 }
 
 async function loadBattles() { return readJson(battlesFile, {}); }
@@ -600,22 +620,23 @@ function fullHelpLines() {
   const examples = listKnowledgeExamples().slice(0, 12);
   return [
     '🎮 *NOX STATS — AJUDA COMPLETA*', '━━━━━━━━━━━━━━━━', '',
-    '📋 *MENU PRINCIPAL*', 'Digite *!nox*. Escolha uma opção de 1 a 7 ou use o comando diretamente.', '',
-    '1️⃣ 📊 *MEUS STATS* — !stats',
-    '2️⃣ 🏆 *RANKING DO CLÃ* — !ranking _(em desenvolvimento)_',
-    '3️⃣ 🌟 *HIGHLIGHTS* — !highlights _(em desenvolvimento)_',
-    '4️⃣ 🎮 *CADASTRO* — !cadastrar no privado',
-    '5️⃣ ❓ *AJUDA* — !ajuda',
-    '6️⃣ 📅 *AGENDA* — !agenda',
-    '7️⃣ 💡 *SUGESTÕES* — !sugestao', '',
+    '📋 *MENU PRINCIPAL*', 'No grupo Geral, envie *!nox* e toque em *ABRIR MENU* para escolher uma opção. Você também pode usar os comandos diretamente.', '',
+    '📊 *MEUS STATS* — !stats',
+    '🏆 *RANKING DO CLÃ* — !ranking _(em desenvolvimento)_',
+    '🌟 *HIGHLIGHTS* — !highlights _(em desenvolvimento)_',
+    '🎮 *CADASTRO* — !cadastrar no privado',
+    '❓ *AJUDA* — !ajuda',
+    '📅 *AGENDA* — !agenda',
+    '💡 *SUGESTÕES* — !sugestao', '',
     '📅 *AGENDA DO CLÃ*',
     'No *Geral*: *!agenda* consulta os próximos eventos.',
     'No *Conselho de ADMs*, use:',
-    '➕ *!agendar Treino | 17/10/2026 20:00* — cadastrar evento.',
-    '✏️ *!editarevento ID | Treino atualizado | 18/10/2026 21:00* — editar evento.',
-    '❌ *!cancelarevento ID* — cancelar evento.',
-    '📅 *!agenda* — consultar eventos e seus IDs.',
-    'O ID de 8 caracteres aparece na agenda. Alterações são publicadas nos Avisos Oficiais.', '',
+    '➕ *!agendar* — o NOX pergunta o nome, a data (DD/MM/AAAA) e o horário (HH:MM).',
+    '✏️ *!editarevento* — toque no evento da lista; depois informe novo nome, data e horário.',
+    '❌ *!cancelarevento* — toque no evento da lista e confirme a exclusão nos botões.',
+    '📅 *!agenda* — consulte os próximos eventos.',
+    'Também aceita os comandos completos: !agendar Nome | DD/MM/AAAA HH:MM, !editarevento ID | Novo nome | DD/MM/AAAA HH:MM e !cancelarevento ID.',
+    'Somente o Conselho pode alterar eventos. Alterações são publicadas nos Avisos Oficiais e notificadas no Geral.', '',
     '💡 *IDEIAS E SUGESTÕES*',
     '*!sugestao* abre o WhatsApp privado do responsável. Envie sua ideia diretamente na conversa; o NOX não armazena sugestões.', '',
     '🔐 *CADASTRO*',
@@ -658,12 +679,6 @@ async function handleRegistration(sock, message) {
   const text = messageText(message.message);
   if (!text) return false;
   let command = text.toLowerCase();
-  const menuUntil = menuSessions.get(jid) || 0;
-  if (menuUntil > Date.now() && /^[1-7]$/.test(command) && !registrations.has(jid)) {
-    menuSessions.delete(jid);
-    command = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda', '6':'!agenda', '7':'!sugestao' }[command];
-  } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
-
   if (ownerPrivate && ['!grupos','/grupos'].includes(command)) {
     // Explicit owner-only group discovery: names and IDs, no group chat content.
     try {
@@ -686,20 +701,6 @@ async function handleRegistration(sock, message) {
     } catch (error) {
       console.error('Falha na lista de grupos do dono:', error?.message);
       await sendText(sock, jid, '⚠️ Não consegui listar os grupos agora. Tente !grupos novamente.');
-    }
-    return true;
-  }
-  // Experimental only: opt-in command in the owner's private chat; never groups.
-  if (ownerPrivate && command === '!noxmenu') {
-    try {
-      const sent = await sendPrivateNoxMenuPrototype(sock, jid, generateWAMessageFromContent);
-      if (sent?.key?.id) {
-        botSentMessageIds.add(sent.key.id);
-        outgoingEchoGuard.rememberId(sent.key.id);
-      }
-    } catch (error) {
-      console.error('Falha no menu interativo privado:', error?.message);
-      await sendText(sock, jid, '⚠️ Menu clicável indisponível neste WhatsApp. Use !nox para abrir o menu por números.');
     }
     return true;
   }
@@ -933,16 +934,11 @@ async function handleGroup(sock, message) {
   // Never interpret a message that this bridge itself sent as a new command.
   if (botSentMessageIds.has(key.id)) return;
   let text = messageText(message.message);
-  const menuKey = groupJid + ':' + (key.participant || key.participantAlt || key.remoteJid);
   const mentionedNow = mentionIds(message.message);
   // Natural messages, even after hours offline, must not provoke a bot reply.
   // This gate runs before contact lookups or other response handlers.
-  if (!isExplicitGroupInteraction(text, mentionedNow, (menuSessions.get(menuKey) || 0) > Date.now())) return;
-  const until = menuSessions.get(menuKey) || 0;
-  if (until > Date.now() && /^[1-7]$/.test(text)) {
-    menuSessions.delete(menuKey);
-    text = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda', '6':'!agenda', '7':'!sugestao' }[text];
-  } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
+  const selectedMenuOption = isInteractiveChoice(message.message) && NOX_MENU_OPTIONS.some(option => option.id === text);
+  if (!selectedMenuOption && !isExplicitGroupInteraction(text, mentionedNow)) return;
   const aliases = aliasesFor(key);
   linkIdentities([key.participant, key.participantAlt].filter(Boolean));
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
@@ -1005,7 +1001,13 @@ async function handleGroup(sock, message) {
     ? (players.get('self') || aliases.map(playerForJid).find(Boolean) || findPlayer(aliases))
     : (aliases.map(playerForJid).find(Boolean) || findPlayer(aliases));
   if (/^[!\/]nox$/i.test(text)) {
-    await sendNoxMenu(sock, groupJid, menuKey);
+    await sendNoxMenu(sock, groupJid);
+    return;
+  }
+  if (/^[!/]cadastrar$/i.test(text)) {
+    await sendText(sock, groupJid, registrationLink()
+      ? '🎮 Para cadastrar sua conta no NOX, abra o privado do administrador: ' + registrationLink()
+      : '🎮 O cadastro é feito no privado. Envie !cadastrar ao responsável.');
     return;
   }
   if (/^[!/]sugestao$/i.test(text)) {
