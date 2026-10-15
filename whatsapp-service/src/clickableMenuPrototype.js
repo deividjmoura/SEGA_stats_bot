@@ -63,7 +63,7 @@ export function buildAgendaEventChoices(events, mode, page = 0) {
   if (page > 0) rows.push({ id: 'nox:page:' + (page - 1), title: '⬅️ Página anterior' });
   if (page + 1 < totalPages) rows.push({ id: 'nox:page:' + (page + 1), title: '➡️ Próxima página' });
   return buildInteractiveList({
-    title: mode === 'editarevento' ? '✏️ EDITAR EVENTO' : '❌ CANCELAR EVENTO',
+    title: mode === 'presencas' ? '👥 PRESENÇAS DO EVENTO' : mode === 'editarevento' ? '✏️ EDITAR EVENTO' : '❌ CANCELAR EVENTO',
     body: 'Selecione o evento (página ' + (page + 1) + ' de ' + totalPages + '). Envie !sair para desistir.',
     buttonText: '📅 ESCOLHER EVENTO',
     rows,
@@ -78,6 +78,48 @@ export function buildAgendaConfirmationChoice(event) {
     rows: [
       { id: 'nox:confirm:sim', title: '✅ Sim, excluir evento' },
       { id: 'nox:confirm:nao', title: '↩️ Não, manter evento' },
+    ],
+  });
+}
+
+// Public RSVP menus use separate action IDs to prevent accidental admin commands.
+export function buildRsvpEventChoices(events, attendance, page = 0) {
+  const perPage = 8;
+  const totalPages = Math.max(1, Math.ceil(events.length / perPage));
+  if (!events.length || !Number.isInteger(page) || page < 0 || page >= totalPages) {
+    throw new Error('Página da agenda inválida');
+  }
+  const rows = events.slice(page * perPage, (page + 1) * perPage).map(event => ({
+    id: 'nox:rsvp:event:' + event.id,
+    title: String(event.title || 'Evento').slice(0, 24),
+    description: new Date(event.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) +
+      ' · ' + Number(attendance?.[event.id] || 0) + ' confirmado(s)',
+  }));
+  if (page > 0) rows.push({ id: 'nox:rsvp:page:' + (page - 1), title: '⬅️ Página anterior' });
+  if (page + 1 < totalPages) rows.push({ id: 'nox:rsvp:page:' + (page + 1), title: '➡️ Próxima página' });
+  return buildInteractiveList({
+    title: '📅 PARTICIPAR DE EVENTO',
+    body: 'Quer participar de algum evento? Toque abaixo e escolha (página ' +
+      (page + 1) + ' de ' + totalPages + ').',
+    buttonText: '🎮 ESCOLHER EVENTO',
+    rows,
+  });
+}
+
+export function buildRsvpConfirmationChoice(event, alreadyConfirmed) {
+  const date = new Date(event.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  return buildInteractiveList({
+    title: alreadyConfirmed ? '✅ PRESENÇA CONFIRMADA' : '📅 CONFIRMAR PRESENÇA',
+    body: String(event.title).slice(0, 100) + ' — ' + date +
+      (alreadyConfirmed ? '\nVocê já confirmou sua participação. Deseja cancelar?' :
+      '\nVocê confirma que vai participar?'),
+    buttonText: '✅ RESPONDER',
+    rows: alreadyConfirmed ? [
+      { id: 'nox:rsvp:withdraw:' + event.id, title: '❌ Não vou mais' },
+      { id: 'nox:rsvp:keep:' + event.id, title: '✅ Manter presença' },
+    ] : [
+      { id: 'nox:rsvp:confirm:' + event.id, title: '✅ Vou participar' },
+      { id: 'nox:rsvp:decline:' + event.id, title: '↩️ Agora não' },
     ],
   });
 }
