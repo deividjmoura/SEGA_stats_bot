@@ -52,6 +52,32 @@ async function handleAdminAgenda(sock, message) {
     await sendText(sock,jid,'✅ Evento cadastrado e publicado nos Avisos! ID: '+event.id);
     return true;
   }
+  const edit = raw.match(/^!editarevento\s+([a-f0-9]{8})\s*\|\s*(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
+  if (edit) {
+    const [,id,title,dd,mm,yyyy,hh,min] = edit;
+    const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
+    const localDate = new Date(date.getTime()-3*60*60*1000);
+    if (!title.trim() || !Number.isFinite(date.getTime()) || date.getTime()<=Date.now() ||
+        localDate.getUTCFullYear()!==Number(yyyy) || localDate.getUTCMonth()+1!==Number(mm) ||
+        localDate.getUTCDate()!==Number(dd) || localDate.getUTCHours()!==Number(hh) ||
+        localDate.getUTCMinutes()!==Number(min)) {
+      await sendText(sock,jid,'⚠️ Use !editarevento ID | Nome | DD/MM/AAAA HH:MM com data futura válida.');
+      return true;
+    }
+    const events = await readJson(agendaFile, []);
+    const index = events.findIndex(e=>e.id===id.toLowerCase());
+    if (index<0) { await sendText(sock,jid,'⚠️ Evento não encontrado.'); return true; }
+    if (events.some(e=>e.id!==id.toLowerCase() && e.title.toLowerCase()===title.trim().toLowerCase() && e.date===date.toISOString())) {
+      await sendText(sock,jid,'⚠️ Já existe um evento com esse nome e horário.'); return true;
+    }
+    if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos indisponível. Alteração não realizada.'); return true; }
+    const updated = {...events[index],title:title.trim().slice(0,120),date:date.toISOString()};
+    await sendText(sock,announcementsGroup,'✏️ *EVENTO ATUALIZADO*\\n🎮 '+updated.title+'\\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\\n🆔 '+updated.id);
+    events[index]=updated;
+    await writeJson(agendaFile,events);
+    await sendText(sock,jid,'✅ Evento atualizado e publicado nos Avisos.');
+    return true;
+  }
   const cancel = raw.match(/^!cancelarevento\s+([a-f0-9]{8})$/i);
   if (cancel) {
     const events = await readJson(agendaFile, []);
@@ -497,7 +523,7 @@ function fullHelpLines() {
     '6️⃣ 📅 *AGENDA* — !agenda',
     '7️⃣ 💡 *SUGESTÕES* — !sugestao', '',
     '📅 *AGENDA DO CLÃ*',
-    '*!agenda* mostra os próximos eventos no Geral. Somente membros do grupo de ADMs podem cadastrar ou cancelar eventos, exclusivamente naquele grupo: *!agendar Treino | 17/10/2026 20:00* e *!cancelarevento ID*. O NOX publica os eventos nos Avisos.', '',
+    '*!agenda* mostra os próximos eventos no Geral. Somente membros do grupo de ADMs podem cadastrar ou cancelar eventos, exclusivamente naquele grupo: *!agendar Treino | 17/10/2026 20:00* e *!editarevento ID | Nome | DD/MM/AAAA HH:MM* e *!cancelarevento ID*. O NOX publica os eventos nos Avisos.', '',
     '💡 *IDEIAS E SUGESTÕES*',
     '*!sugestao* abre o WhatsApp privado do responsável. Envie sua ideia diretamente na conversa; o NOX não armazena sugestões.', '',
     '🔐 *CADASTRO*',
