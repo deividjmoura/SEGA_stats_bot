@@ -32,12 +32,12 @@ export function participantAliases(participant) {
   return [...new Set(values.filter(value =>
     /^\d+(?::\d+)?@(s\.whatsapp\.net|lid)$/.test(value)))];
 }
-export function partitionRoster(attendees, participants) {
+export function partitionRoster(attendees, participants, resolveAliases = ids => ids) {
   const confirmed = Array.isArray(attendees) ? attendees : [];
   const present = [];
   const absent = [];
   for (const member of Array.isArray(participants) ? participants : []) {
-    const aliases = participantAliases(member);
+    const aliases = resolveAliases(participantAliases(member));
     if (!aliases.length) continue;
     const check = confirmed.find(row =>
       Array.isArray(row.ids) && row.ids.some(id => aliases.includes(id)));
