@@ -480,12 +480,13 @@ async function handleAdminAgenda(sock, message) {
       await sendText(sock,jid,'⚠️ Já existe um evento com esse nome e horário.'); return true;
     }
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos indisponível. Alteração não realizada.'); return true; }
+    const previousDate = events[index].date;
     const updated = {...events[index],title:title.trim().slice(0,120),date:date.toISOString()};
     await sendText(sock,announcementsGroup,'✏️ *EVENTO ATUALIZADO*\n🎮 '+updated.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+updated.id);
     await notifyGeneralOfAgendaChange(sock);
     events[index]=updated;
     await writeJson(agendaFile,events);
-    if (events[index].date !== updated.date) {
+    if (previousDate !== updated.date) {
       const alertHistory=await readJson(attendanceAlertsFile,{});
       delete alertHistory[updated.id];
       await writeJson(attendanceAlertsFile,alertHistory);
@@ -1447,6 +1448,11 @@ async function connect() {
   sock.ev.on('contacts.update', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
   let connectionIdentityRejected = false;
   let connectionIdentityVerified = false;
+  let agendaAlertTimer = null;
+  const pollAgendaNotifications = () => {
+    void runAgendaNotificationTick(sock).catch(error =>
+      console.error('Falha no lembrete/relatório de evento:', error?.message));
+  };
   sock.ev.on('creds.update', saveCreds);
   if (!state.creds.registered && pairPhone) setTimeout(async () => {
     try {
@@ -1476,8 +1482,14 @@ async function connect() {
         .filter(value => typeof value === 'string' && value.includes('@'));
       console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
       void discoverAnnouncementsGroup(sock);
+      if (agendaAlertTimer) clearInterval(agendaAlertTimer);
+      pollAgendaNotifications();
+      agendaAlertTimer = setInterval(pollAgendaNotifications, 45_000);
     }
     if (connection === 'close') {
+      connectionIdentityVerified = false;
+      if (agendaAlertTimer) clearInterval(agendaAlertTimer);
+      agendaAlertTimer = null;
       const status = lastDisconnect?.error?.output?.statusCode;
       console.error('WhatsApp socket fechado. Status:', status, 'Motivo:', lastDisconnect?.error?.message);
       if (status !== DisconnectReason.loggedOut && !connectionIdentityRejected) setTimeout(() => void connect().catch(e => console.error(e?.message)), 5000);
