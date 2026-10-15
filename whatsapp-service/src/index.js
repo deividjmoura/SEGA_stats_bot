@@ -1,6 +1,7 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
+import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
+import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
 import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
@@ -24,19 +25,153 @@ const registrationsFile = dataDir + '/whatsapp-registrations.json';
 const battlesFile = dataDir + '/whatsapp-battles.json';
 const announcementsFile = dataDir + '/whatsapp-announcement-deliveries.json';
 const agendaFile = dataDir + '/whatsapp-agenda.json';
+const attendanceFile = dataDir + '/whatsapp-attendance.json';
+const rsvpSessions = new Map();
+const RSVP_SESSION_TTL_MS = 10 * 60 * 1000;
+let attendanceWrites = Promise.resolve();
+
+async function readAttendance() {
+  const saved = await readJson(attendanceFile, {});
+  return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+}
+async function updateAttendance(transform) {
+  // Serialize read/modify/write so simultaneous WhatsApp clicks cannot erase RSVPs.
+  const op = attendanceWrites.then(async () => {
+    const before = await readAttendance();
+    const result = transform(before);
+    if (result?.data) await writeJson(attendanceFile, result.data);
+    return result;
+  });
+  attendanceWrites = op.catch(() => {});
+  return op;
+}
+async function upcomingAgendaEvents() {
+  const saved = await readJson(agendaFile, []);
+  return (Array.isArray(saved) ? saved : [])
+    .filter(event => /^[a-f0-9]{8}$/i.test(event?.id || '') &&
+      Number.isFinite(Date.parse(event?.date)) && Date.parse(event.date) > Date.now())
+    .sort((a,b) => a.date.localeCompare(b.date));
+}
+function rsvpActorIds(key) {
+  return attendeeIds([key?.participant, key?.participantAlt,
+    ...(key?.fromMe ? [ownJid, ...ownerAccountJids] : [])]
+    .filter(Boolean).flatMap(jidAliases));
+}
+function rsvpSessionKey(jid, ids) {
+  return jid + ':' + ids[0];
+}
+function readableAttendeeName(entry) {
+  const player = (entry.ids || []).map(playerForJid).find(Boolean);
+  return String(player?.name || entry.name || 'Participante')
+    .replace(/[\r\n\t]+/g, ' ').trim().slice(0, 70);
+}
+async function sendRsvpAgenda(sock, message) {
+  const jid = message.key.remoteJid;
+  const ids = rsvpActorIds(message.key);
+  if (!ids.length) {
+    await sendText(sock, jid, '⚠️ Não consegui identificar seu perfil do WhatsApp para confirmar presença.');
+    return;
+  }
+  const events = await upcomingAgendaEvents();
+  if (!events.length) {
+    await sendText(sock, jid, '📅 Não há eventos futuros cadastrados no momento.');
+    return;
+  }
+  const state = await readAttendance();
+  const counts = Object.fromEntries(events.map(event => [event.id, attendanceCount(state,event.id)]));
+  const session = { step:'pick', page:0, expires:Date.now()+RSVP_SESSION_TTL_MS };
+  rsvpSessions.set(rsvpSessionKey(jid,ids), session);
+  await sendText(sock,jid,await agendaText());
+  await sendInteractive(sock,jid,buildRsvpEventChoices(events,counts,0),[targetGroup]);
+}
+async function handleRsvpChoice(sock, message, action) {
+  const jid = message.key.remoteJid;
+  const ids = rsvpActorIds(message.key);
+  if (!ids.length) {
+    await sendText(sock,jid,'⚠️ Não consegui confirmar sua identidade. Abra !agenda novamente.');
+    return;
+  }
+  const key = rsvpSessionKey(jid,ids);
+  const session = rsvpSessions.get(key);
+  if (!session || session.expires <= Date.now()) {
+    rsvpSessions.delete(key);
+    await sendText(sock,jid,'⌛ A escolha expirou. Envie !agenda para abrir uma nova lista.');
+    return;
+  }
+  const match=action.match(/^nox:rsvp:(page|event|confirm|decline|withdraw|keep):([a-f0-9]{8}|\d+)$/i);
+  if (!match) return;
+  const [, kind, value] = match;
+  const events=await upcomingAgendaEvents();
+  if (kind==='page') {
+    const page=Number(value);
+    if (session.step!=='pick' || !Number.isInteger(page) || page<0 || page>=Math.ceil(events.length/8)) {
+      await sendText(sock,jid,'⚠️ Página inválida. Envie !agenda novamente.');
+      return;
+    }
+    session.page=page;
+    const state=await readAttendance();
+    const counts=Object.fromEntries(events.map(event => [event.id,attendanceCount(state,event.id)]));
+    await sendInteractive(sock,jid,buildRsvpEventChoices(events,counts,page),[targetGroup]);
+    return;
+  }
+  const event=events.find(item => item.id === value.toLowerCase());
+  if (!event) {
+    rsvpSessions.delete(key);
+    await sendText(sock,jid,'⚠️ O evento não está mais disponível. Abra !agenda novamente.');
+    return;
+  }
+  if (kind==='event') {
+    if (session.step!=='pick' ||
+        !events.slice(session.page*8,session.page*8+8).some(item=>item.id===event.id)) {
+      await sendText(sock,jid,'⚠️ Escolha um evento da lista mais recente.');
+      return;
+    }
+    session.step='confirm';
+    session.eventId=event.id;
+    const state=await readAttendance();
+    await sendInteractive(sock,jid,buildRsvpConfirmationChoice(event,isAttending(state,event.id,ids)),[targetGroup]);
+    return;
+  }
+  if (session.step!=='confirm' || session.eventId!==event.id) {
+    await sendText(sock,jid,'⚠️ Confirmação inválida. Abra !agenda novamente.');
+    return;
+  }
+  rsvpSessions.delete(key);
+  if (kind==='decline' || kind==='keep') {
+    await sendText(sock,jid,kind==='decline' ? '↩️ Tudo bem! Nenhuma presença foi adicionada.' :
+      '✅ Sua confirmação de participação continua ativa.');
+    return;
+  }
+  if (kind!=='confirm' && kind!=='withdraw') return;
+  const attending=kind==='confirm';
+  const actorName=String(message?.key?.pushName ||
+    ids.map(playerForJid).find(Boolean)?.name ||
+    ids.map(whatsappName).find(name=>name && name!=='jogador') || 'Participante');
+  const result=await updateAttendance(state=>changeAttendance(state,event.id,ids,actorName,attending));
+  const count=attendanceCount(result.data,event.id);
+  await sendText(sock,jid,attending
+    ? '✅ Presença confirmada em *'+event.title+'*! 👥 '+count+' participante(s) confirmado(s). Para desistir, abra !agenda novamente.'
+    : '✅ Sua presença foi retirada de *'+event.title+'*. 👥 '+count+' participante(s) confirmado(s).');
+}
+
 const adminsGroup = process.env.WHATSAPP_ADMINS_GROUP_JID || null;
 async function agendaText() {
-  const events = await readJson(agendaFile, []);
-  const upcoming = events.filter(e => Date.parse(e.date) >= Date.now()).sort((a,b) => a.date.localeCompare(b.date));
-  return upcoming.length ? '📅 *AGENDA DO CLÃ*\n\n' + upcoming.map(e => '• *' + e.title + '* — ' + new Date(e.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (ID: ' + e.id + ')').join('\n') : '📅 Nenhum evento futuro cadastrado.';
+  const events = await upcomingAgendaEvents();
+  const attendance = await readAttendance();
+  return events.length ? '📅 *AGENDA DO CLÃ*\n\n' +
+    events.map(e => '• *' + e.title + '* — ' +
+      new Date(e.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}) +
+      '\n  👥 ' + attendanceCount(attendance,e.id) + ' confirmado(s) · ID: ' + e.id).join('\n') +
+    '\n\n🎮 No *Geral*, envie !agenda e toque em um evento para confirmar sua presença.'
+    : '📅 Nenhum evento futuro cadastrado.';
 }
 const agendaDrafts = new Map();
 const AGENDA_DRAFT_TTL = 15 * 60 * 1000;
 async function handleAgendaWizard(sock, jid, message, raw) {
   const actor = String(message?.key?.participant || message?.key?.participantAlt || (message?.key?.fromMe ? 'owner' : '') || '');
   const key = jid + ':' + actor;
-  const events = async () => (await readJson(agendaFile, [])).filter(e => Date.parse(e.date) >= Date.now()).sort((a,b) => a.date.localeCompare(b.date));
-  if (/^!(agendar|editarevento|cancelarevento)$/i.test(raw)) {
+  const events = upcomingAgendaEvents;
+  if (/^!(agendar|editarevento|cancelarevento|presencas)$/i.test(raw)) {
     const mode = raw.slice(1).toLowerCase();
     if (mode === 'agendar') {
       agendaDrafts.set(key, { mode, step:'title', expires:Date.now()+AGENDA_DRAFT_TTL });
@@ -76,6 +211,24 @@ async function handleAgendaWizard(sock, jid, message, raw) {
       return true;
     }
     draft.event=event;
+    if (draft.mode==='presencas') {
+      agendaDrafts.delete(key);
+      const state=await readAttendance();
+      const attendees=attendanceFor(state,event.id);
+      const header='👥 *PRESENÇAS CONFIRMADAS*\n🎮 *'+event.title+'*\n🕗 '+
+        new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
+        '\n✅ *Total: '+attendees.length+' jogador(es)*';
+      if (!attendees.length) {
+        await sendText(sock,jid,header+'\n\nAinda não há participantes confirmados.');
+        return true;
+      }
+      const names=attendees.map((entry,index)=>(index+1)+'. '+readableAttendeeName(entry));
+      await sendText(sock,jid,header+'\n\n'+names.slice(0,50).join('\n'));
+      for (let offset=50;offset<names.length;offset+=50) {
+        await sendText(sock,jid,names.slice(offset,offset+50).join('\n'));
+      }
+      return true;
+    }
     if (draft.mode==='cancelarevento') {
       draft.step='confirm';
       await sendInteractive(sock,jid,buildAgendaConfirmationChoice(event),[adminsGroup]);
@@ -119,7 +272,7 @@ async function handleAdminAgenda(sock, message) {
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
   if (await handleAgendaWizard(sock, jid, message, raw)) return true;
-  if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,await agendaText()); return true; }
+  if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,(await agendaText())+'\n\n👥 Para consultar os participantes de cada evento, envie *!presencas*.'); return true; }
   const match = raw.match(/^!agendar\s+(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
@@ -175,6 +328,7 @@ async function handleAdminAgenda(sock, message) {
     await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\n'+event.title+' (ID: '+event.id+')');
     await notifyGeneralOfAgendaChange(sock);
     await writeJson(agendaFile,events.filter(e=>e.id!==event.id));
+    await updateAttendance(state=>({data:removeEventAttendance(state,event.id)}));
     await sendText(sock,jid,'✅ Evento cancelado.'); return true;
   }
   return false;
@@ -629,12 +783,14 @@ function fullHelpLines() {
     '📅 *AGENDA* — !agenda',
     '💡 *SUGESTÕES* — !sugestao', '',
     '📅 *AGENDA DO CLÃ*',
-    'No *Geral*: *!agenda* consulta os próximos eventos.',
+    'No *Geral*: envie *!agenda*, toque no evento e escolha *Vou participar* para confirmar presença. Se desistir, abra !agenda novamente, escolha o mesmo evento e toque em *Não vou mais*.',
+    'A lista mostra a quantidade de participantes confirmados. Cada jogador só altera a própria confirmação.',
     'No *Conselho de ADMs*, use:',
     '➕ *!agendar* — o NOX pergunta o nome, a data (DD/MM/AAAA) e o horário (HH:MM).',
     '✏️ *!editarevento* — toque no evento da lista; depois informe novo nome, data e horário.',
     '❌ *!cancelarevento* — toque no evento da lista e confirme a exclusão nos botões.',
-    '📅 *!agenda* — consulte os próximos eventos.',
+    '📅 *!agenda* — consulte os próximos eventos e a quantidade de confirmados.',
+    '👥 *!presencas* — escolha o evento no menu clicável para ver o total e os nomes dos participantes confirmados.',
     'Também aceita os comandos completos: !agendar Nome | DD/MM/AAAA HH:MM, !editarevento ID | Novo nome | DD/MM/AAAA HH:MM e !cancelarevento ID.',
     'Somente o Conselho pode alterar eventos. Alterações são publicadas nos Avisos Oficiais e notificadas no Geral.', '',
     '💡 *IDEIAS E SUGESTÕES*',
@@ -937,8 +1093,14 @@ async function handleGroup(sock, message) {
   const mentionedNow = mentionIds(message.message);
   // Natural messages, even after hours offline, must not provoke a bot reply.
   // This gate runs before contact lookups or other response handlers.
-  const selectedMenuOption = isInteractiveChoice(message.message) && NOX_MENU_OPTIONS.some(option => option.id === text);
-  if (!selectedMenuOption && !isExplicitGroupInteraction(text, mentionedNow)) return;
+  const isClick = isInteractiveChoice(message.message);
+  const selectedMenuOption = isClick && NOX_MENU_OPTIONS.some(option => option.id === text);
+  const selectedRsvpOption = isClick && /^nox:rsvp:(page|event|confirm|decline|withdraw|keep):/.test(text);
+  if (!selectedMenuOption && !selectedRsvpOption && !isExplicitGroupInteraction(text, mentionedNow)) return;
+  if (selectedRsvpOption) {
+    await handleRsvpChoice(sock,message,text);
+    return;
+  }
   const aliases = aliasesFor(key);
   linkIdentities([key.participant, key.participantAlt].filter(Boolean));
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
@@ -1015,7 +1177,7 @@ async function handleGroup(sock, message) {
     return;
   }
   if (/^[!/]agenda$/i.test(text)) {
-    await sendText(sock, groupJid, await agendaText());
+    await sendRsvpAgenda(sock,message);
     return;
   }
   if (/^[!/]battle(?:\s+.*)?$/i.test(text)) {
