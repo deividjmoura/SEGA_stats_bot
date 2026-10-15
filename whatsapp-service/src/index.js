@@ -464,7 +464,7 @@ async function handleAdminAgenda(sock, message) {
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
   if (await handleAgendaWizard(sock, jid, message, raw)) return true;
-  if (/^(?:[!\/]\s*)?agenda$/i.test(raw)) { await sendText(sock,jid,(await agendaText())+'\n\n👥 Para consultar os participantes de cada evento, envie *!presencas*.'); return true; }
+  if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,(await agendaText())+'\n\n👥 Para consultar os participantes de cada evento, envie *!presencas*.'); return true; }
   const match = raw.match(/^!agendar\s+(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
@@ -1068,7 +1068,7 @@ async function handleRegistration(sock, message) {
     await sendNoxMenu(sock, jid);
     return true;
   }
-  if (ownerPrivate && ['agenda','!agenda','/agenda'].includes(command)) { await sendText(sock, jid, await agendaText()); return true; }
+  if (ownerPrivate && command === '!agenda') { await sendText(sock, jid, await agendaText()); return true; }
   if (ownerPrivate && ['sugestao','!sugestao','/sugestao'].includes(command)) { await sendText(sock, jid, suggestionLink() || '⚠️ Link privado indisponível.'); return true; }
   if (ownerPrivate && command === '!ajuda') {
     await sendText(sock, jid, fullHelpLines().join('\n'));
@@ -1380,7 +1380,7 @@ async function handleGroup(sock, message) {
     await sendText(sock, groupJid, suggestionLink() ? '💡 Envie sua ideia diretamente no privado: ' + suggestionLink() : '⚠️ Link privado indisponível.');
     return;
   }
-  if (/^(?:[!\/]\s*)?agenda$/i.test(text)) {
+  if (/^!agenda$/i.test(text)) {
     await sendRsvpAgenda(sock,message);
     return;
   }
