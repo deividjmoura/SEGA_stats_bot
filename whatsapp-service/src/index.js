@@ -691,8 +691,16 @@ async function handleRegistration(sock, message) {
   }
   // Experimental only: opt-in command in the owner's private chat; never groups.
   if (ownerPrivate && command === '!noxmenu') {
-    try { await sendPrivateNoxMenuPrototype(sock, jid); }
-    catch (error) { await sendText(sock, jid, '⚠️ Menu clicável indisponível neste WhatsApp. Use !nox para abrir o menu por números.'); }
+    try {
+      const sent = await sendPrivateNoxMenuPrototype(sock, jid, generateWAMessageFromContent);
+      if (sent?.key?.id) {
+        botSentMessageIds.add(sent.key.id);
+        outgoingEchoGuard.rememberId(sent.key.id);
+      }
+    } catch (error) {
+      console.error('Falha no menu interativo privado:', error?.message);
+      await sendText(sock, jid, '⚠️ Menu clicável indisponível neste WhatsApp. Use !nox para abrir o menu por números.');
+    }
     return true;
   }
   if (ownerPrivate && ['!nox','/nox'].includes(command)) {
