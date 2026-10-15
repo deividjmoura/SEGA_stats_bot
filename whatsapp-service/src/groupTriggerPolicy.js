@@ -8,5 +8,5 @@ export function isExplicitGroupInteraction(text, mentions = [], menuActive = fal
   if (Array.isArray(mentions) && mentions.length > 0) return true;
   if (NOX_QUESTION.test(value)) return true;
   if (menuActive && /^[1-5]$/.test(value)) return true;
-  return DIRECT_COMMAND.test(value);
+  return DIRECT_COMMAND.test(value) || /^!(confirmar|desistir) [a-f0-9]{8}$/i.test(value);
 }
