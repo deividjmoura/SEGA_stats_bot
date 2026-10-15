@@ -22,6 +22,44 @@ const sessionsFile = dataDir + '/whatsapp-players.json';
 const registrationsFile = dataDir + '/whatsapp-registrations.json';
 const battlesFile = dataDir + '/whatsapp-battles.json';
 const announcementsFile = dataDir + '/whatsapp-announcement-deliveries.json';
+const agendaFile = dataDir + '/whatsapp-agenda.json';
+const adminsGroup = process.env.WHATSAPP_ADMINS_GROUP_JID || null;
+async function agendaText() {
+  const events = await readJson(agendaFile, []);
+  const upcoming = events.filter(e => Date.parse(e.date) >= Date.now()).sort((a,b) => a.date.localeCompare(b.date));
+  return upcoming.length ? '📅 *AGENDA DO CLÃ*\\n\\n' + upcoming.map(e => '• *' + e.title + '* — ' + new Date(e.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (ID: ' + e.id + ')').join('\\n') : '📅 Nenhum evento futuro cadastrado.';
+}
+async function handleAdminAgenda(sock, message) {
+  const jid = message?.key?.remoteJid;
+  if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
+  const raw = messageText(message.message).trim();
+  if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,await agendaText()); return true; }
+  const match = raw.match(/^!agendar\\s+(.+?)\\s*\\|\\s*(\\d{2})\\/(\\d{2})\\/(\\d{4})\\s+(\\d{2}):(\\d{2})$/i);
+  if (match) {
+    const [,title,dd,mm,yyyy,hh,min] = match;
+    const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
+    if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now() || date.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) !== yyyy+'-'+mm+'-'+dd) { await sendText(sock,jid,'⚠️ Data inválida ou passada. Use !agendar Treino | DD/MM/AAAA HH:MM'); return true; }
+    if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos ainda não confirmado. Evento não cadastrado.'); return true; }
+    const events = await readJson(agendaFile, []);
+    const event = { id: crypto.randomBytes(4).toString('hex'), title: title.slice(0,120), date: date.toISOString() };
+    events.push(event);
+    await writeJson(agendaFile,events);
+    try { await sendText(sock,announcementsGroup,'📅 *NOVO EVENTO DO CLÃ*\\n🎮 '+event.title+'\\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\\n🆔 '+event.id); }
+    catch (error) { await writeJson(agendaFile,events.filter(e=>e.id!==event.id)); throw error; }
+    await sendText(sock,jid,'✅ Evento cadastrado e publicado nos Avisos! ID: '+event.id);
+    return true;
+  }
+  const cancel = raw.match(/^!cancelarevento\\s+([a-f0-9]{8})$/i);
+  if (cancel) {
+    const events = await readJson(agendaFile, []);
+    const event = events.find(e=>e.id===cancel[1]);
+    if (!event) { await sendText(sock,jid,'⚠️ Evento não encontrado.'); return true; }
+    await writeJson(agendaFile,events.filter(e=>e.id!==event.id));
+    if (announcementsGroup) await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\\n'+event.title+' (ID: '+event.id+')');
+    await sendText(sock,jid,'✅ Evento cancelado.'); return true;
+  }
+  return false;
+}
 const targetGroup = process.env.WHATSAPP_GROUP_JID || null;
 const configuredAnnouncementsGroup = process.env.WHATSAPP_ANNOUNCEMENTS_GROUP_JID || null;
 let announcementsGroup = null; // Activated only after checking community metadata.
@@ -979,7 +1017,7 @@ async function connect() {
         // Filter before inspecting message text or logging anything about the chat.
         // Private chats with third parties are strictly out of scope.
         if (isGroup) {
-          if (chatJid !== targetGroup && chatJid !== announcementsGroup) continue;
+          if (chatJid !== targetGroup && chatJid !== announcementsGroup && chatJid !== adminsGroup) continue;
         } else if (!canHandleRegistrationMessage(message)) continue;
         if (botSentMessageIds.has(key.id)) continue;
         const raw = message?.message || {};
@@ -990,6 +1028,7 @@ async function connect() {
           group: String(key.remoteJid || '').endsWith('@g.us'),
           messageTypes: Object.keys(raw)
         }));
+        if (isGroup && chatJid === adminsGroup) { await handleAdminAgenda(sock, message); continue; }
         if (await notifyAnnouncement(sock, message, type)) continue;
         if (await handleRegistration(sock, message)) continue;
         await handleGroup(sock, message);
