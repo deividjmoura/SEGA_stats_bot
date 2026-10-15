@@ -27,14 +27,14 @@ const adminsGroup = process.env.WHATSAPP_ADMINS_GROUP_JID || null;
 async function agendaText() {
   const events = await readJson(agendaFile, []);
   const upcoming = events.filter(e => Date.parse(e.date) >= Date.now()).sort((a,b) => a.date.localeCompare(b.date));
-  return upcoming.length ? '📅 *AGENDA DO CLÃ*\\n\\n' + upcoming.map(e => '• *' + e.title + '* — ' + new Date(e.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (ID: ' + e.id + ')').join('\\n') : '📅 Nenhum evento futuro cadastrado.';
+  return upcoming.length ? '📅 *AGENDA DO CLÃ*\n\n' + upcoming.map(e => '• *' + e.title + '* — ' + new Date(e.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (ID: ' + e.id + ')').join('\n') : '📅 Nenhum evento futuro cadastrado.';
 }
 async function handleAdminAgenda(sock, message) {
   const jid = message?.key?.remoteJid;
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
   if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,await agendaText()); return true; }
-  const match = raw.match(/^!agendar\\s+(.+?)\\s*\\|\\s*(\\d{2})\\/(\\d{2})\\/(\\d{4})\\s+(\\d{2}):(\\d{2})$/i);
+  const match = raw.match(/^!agendar\s+(.+?)\s*\\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
     const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
@@ -45,18 +45,18 @@ async function handleAdminAgenda(sock, message) {
     const event = { id: crypto.randomBytes(4).toString('hex'), title: title.slice(0,120), date: date.toISOString() };
     events.push(event);
     await writeJson(agendaFile,events);
-    try { await sendText(sock,announcementsGroup,'📅 *NOVO EVENTO DO CLÃ*\\n🎮 '+event.title+'\\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\\n🆔 '+event.id); }
+    try { await sendText(sock,announcementsGroup,'📅 *NOVO EVENTO DO CLÃ*\n🎮 '+event.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+event.id); }
     catch (error) { await writeJson(agendaFile,events.filter(e=>e.id!==event.id)); throw error; }
     await sendText(sock,jid,'✅ Evento cadastrado e publicado nos Avisos! ID: '+event.id);
     return true;
   }
-  const cancel = raw.match(/^!cancelarevento\\s+([a-f0-9]{8})$/i);
+  const cancel = raw.match(/^!cancelarevento\s+([a-f0-9]{8})$/i);
   if (cancel) {
     const events = await readJson(agendaFile, []);
     const event = events.find(e=>e.id===cancel[1]);
     if (!event) { await sendText(sock,jid,'⚠️ Evento não encontrado.'); return true; }
     await writeJson(agendaFile,events.filter(e=>e.id!==event.id));
-    if (announcementsGroup) await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\\n'+event.title+' (ID: '+event.id+')');
+    if (announcementsGroup) await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\n'+event.title+' (ID: '+event.id+')');
     await sendText(sock,jid,'✅ Evento cancelado.'); return true;
   }
   return false;
