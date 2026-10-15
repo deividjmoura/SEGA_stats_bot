@@ -464,7 +464,7 @@ async function handleAdminAgenda(sock, message) {
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
   if (await handleAgendaWizard(sock, jid, message, raw)) return true;
-  if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,(await agendaText())+'\n\n👥 Para consultar os participantes de cada evento, envie *!presencas*.'); return true; }
+  if (/^(?:[!\/]\s*)?agenda$/i.test(raw)) { await sendText(sock,jid,(await agendaText())+'\n\n👥 Para consultar os participantes de cada evento, envie *!presencas*.'); return true; }
   const match = raw.match(/^!agendar\s+(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
