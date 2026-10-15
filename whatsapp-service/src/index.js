@@ -111,7 +111,8 @@ async function handleAdminAgenda(sock, message) {
     const event = { id: crypto.randomBytes(4).toString('hex'), title: title.trim().slice(0,120), date: date.toISOString() };
     events.push(event);
     await writeJson(agendaFile,events);
-    try { await sendText(sock,announcementsGroup,'📅 *NOVO EVENTO DO CLÃ*\n🎮 '+event.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+event.id); }
+    try { await sendText(sock,announcementsGroup,'📅 *NOVO EVENTO DO CLÃ*\n🎮 '+event.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+event.id);
+    await notifyGeneralOfAgendaChange(sock); }
     catch (error) { await writeJson(agendaFile,events.filter(e=>e.id!==event.id)); throw error; }
     await sendText(sock,jid,'✅ Evento cadastrado e publicado nos Avisos! ID: '+event.id);
     return true;
@@ -137,6 +138,7 @@ async function handleAdminAgenda(sock, message) {
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos indisponível. Alteração não realizada.'); return true; }
     const updated = {...events[index],title:title.trim().slice(0,120),date:date.toISOString()};
     await sendText(sock,announcementsGroup,'✏️ *EVENTO ATUALIZADO*\n🎮 '+updated.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+updated.id);
+    await notifyGeneralOfAgendaChange(sock);
     events[index]=updated;
     await writeJson(agendaFile,events);
     await sendText(sock,jid,'✅ Evento atualizado e publicado nos Avisos.');
@@ -149,6 +151,7 @@ async function handleAdminAgenda(sock, message) {
     if (!event) { await sendText(sock,jid,'⚠️ Evento não encontrado.'); return true; }
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos indisponível. Cancelamento não realizado.'); return true; }
     await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\n'+event.title+' (ID: '+event.id+')');
+    await notifyGeneralOfAgendaChange(sock);
     await writeJson(agendaFile,events.filter(e=>e.id!==event.id));
     await sendText(sock,jid,'✅ Evento cancelado.'); return true;
   }
@@ -350,6 +353,24 @@ async function notifyAnnouncement(sock, message, type) {
   }
 }
 
+async function notifyGeneralOfAgendaChange(sock) {
+  if (!announcementsEnabled || !announcementsGroup || !targetGroup || announcementsGroup === targetGroup) {
+    console.warn('Aviso de agenda publicado, mas notificação no Geral está desabilitada.');
+    return;
+  }
+  try {
+    let outgoing = { text: ANNOUNCEMENT_NOTICE, mentionAll: false };
+    if (announcementMentionsEnabled) {
+      const metadata = await sock.groupMetadata(targetGroup);
+      outgoing = buildAnnouncementMentionMessage(metadata, targetGroup);
+      if (!outgoing) throw new Error('Grupo Geral não validado para menção');
+    }
+    await sendText(sock, targetGroup, outgoing.text, [], outgoing.mentionAll === true);
+    console.log('Notificação de alteração da agenda enviada ao Geral.');
+  } catch (error) {
+    console.error('Evento publicado nos Avisos, mas falhou notificação no Geral:', error?.message);
+  }
+}
 async function sendText(sock, jid, text, mentions = [], mentionAll = false) {
   // Reserve before sending, because the echo may arrive before sendMessage returns.
   const cancelReservation = outgoingEchoGuard.reserve(jid, text);
