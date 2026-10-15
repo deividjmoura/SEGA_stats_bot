@@ -1,9 +1,10 @@
-// Experimental Baileys native-flow menu payload. Not wired to production.
+// Experimental WhatsApp list menu; enabled only on explicit owner self-chat command.
 // Send only to an explicitly approved private test JID; never broadcast to groups.
 export const NOX_MENU_OPTIONS = Object.freeze([
   { id: '!stats', title: '📊 Minhas estatísticas' },
   { id: '!ranking', title: '🏆 Ranking do clã' },
   { id: '!highlights', title: '🌟 Destaques' },
+  { id: '!cadastrar', title: '🎮 Cadastrar jogador' },
   { id: '!agenda', title: '📅 Agenda do clã' },
   { id: '!sugestao', title: '💡 Sugestões' },
   { id: '!ajuda', title: '❓ Ajuda' },
@@ -24,6 +25,6 @@ export function resolveNoxMenuSelection(value) {
 }
 
 export async function sendPrivateNoxMenuPrototype(sock, jid) {
-  if (!/^\d+@s\.whatsapp\.net$/.test(jid)) throw new Error('Protótipo permitido somente em chat privado');
+  if (!/^\d+@(s\.whatsapp\.net|lid)$/.test(jid)) throw new Error('Protótipo permitido somente em chat privado');
   return sock.sendMessage(jid, buildNoxClickableMenu());
 }
