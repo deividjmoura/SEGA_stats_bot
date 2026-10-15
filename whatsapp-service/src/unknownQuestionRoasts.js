@@ -313,7 +313,7 @@ export function isVagueWinQuestion(question) {
 
 export function makeUnknownQuestionRoast(randomInt = crypto.randomInt) {
   const joke = drawJoke(randomInt);
-  return '💀 *NOX NÃO ENTENDEU ESSA*\\n\\n' + joke +
-    '\\n\\n💡 Quer ensinar algo novo pro bot? Envie *!sugestao*.' +
-    '\\n🎮 Tente algo mais específico: *@NOX quem countera Harley?*';
+  return '💀 *NOX NÃO ENTENDEU ESSA*\n\n' + joke +
+    '\n\n💡 Quer ensinar algo novo pro bot? Envie *!sugestao*.' +
+    '\n🎮 Tente algo mais específico: *@NOX quem countera Harley?*';
 }
