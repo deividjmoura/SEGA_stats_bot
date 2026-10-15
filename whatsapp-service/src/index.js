@@ -508,6 +508,13 @@ async function handleAdminAgenda(sock, message) {
   const jid = message?.key?.remoteJid;
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
+  if (raw.startsWith('!presencas ')) {
+    const eventId = raw.slice('!presencas '.length).trim().toLowerCase();
+    const chosen = (await upcomingAgendaEvents()).find(item => item.id === eventId);
+    if (chosen) await sendAttendanceReport(sock, chosen, false);
+    else await sendText(sock, jid, 'Evento não encontrado. Confira os IDs com !agenda.');
+    return true;
+  }
   if (await handleAgendaWizard(sock, jid, message, raw)) return true;
   if (/^!agenda$/i.test(raw)) { await sendText(sock,jid,(await agendaText())+'\n\n👥 Para consultar os participantes de cada evento, envie *!presencas*.'); return true; }
   const match = raw.match(/^!agendar\s+(.+?)\s*\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
