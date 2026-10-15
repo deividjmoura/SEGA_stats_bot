@@ -125,3 +125,8 @@ export function isInteractiveChoice(message) {
   }
   return false;
 }
+
+// Compatibility during rollout: keep existing production imports working.
+export function sendPrivateNoxMenuPrototype(sock, jid, generator) {
+  return sendNoxInteractiveMenu(sock, jid, generator, buildNoxClickableMenu());
+}
