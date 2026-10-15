@@ -185,13 +185,104 @@ async function agendaText() {
     '\n\n🎮 No *Geral*, envie !agenda e toque em um evento para confirmar presença. ⚠️ A confirmação é obrigatória até *30 minutos antes* do início; depois, somente com aprovação do Conselho.'
     : '📅 Nenhum evento futuro cadastrado.';
 }
+// The reference population is the official Integrantes group, never the larger Geral.
+async function getClanMemberRoster(sock) {
+  if (!membersGroup || membersGroup===targetGroup || membersGroup===adminsGroup) {
+    throw new Error('Grupo Integrantes sem configuração segura');
+  }
+  const metadata=await sock.groupMetadata(membersGroup);
+  if (!metadata?.participants || !Array.isArray(metadata.participants)) {
+    throw new Error('Integrantes indisponíveis na conta conectada');
+  }
+  for (const member of metadata.participants) {
+    const ids=participantAliases(member);
+    if (ids.length>1) linkIdentities(ids);
+    const name=member?.notify || member?.name || member?.verifiedName || member?.username;
+    if(name) for(const id of ids) rememberGroupName(id,name);
+  }
+  return metadata.participants.filter(member=>participantAliases(member).length);
+}
+
+function memberLabel(member,index) {
+  const ids=participantAliases(member);
+  const verified=ids.map(playerForJid).find(Boolean)?.name;
+  const saved=ids.map(id=>whatsappName(id,'')).find(Boolean);
+  const label=verified || member?.notify || member?.name || member?.verifiedName ||
+    member?.username || saved || 'Integrante sem nome #' +(index+1);
+  return String(label).replace(/[\r\n\t]+/g,' ').trim().slice(0,70);
+}
+async function formatAttendanceReport(sock,event,cutoff=false) {
+  const state=await readAttendance();
+  const attendees=attendanceFor(state,event.id);
+  const lines=[
+    (cutoff?'⏰ *PRAZO DE CONFIRMAÇÃO ENCERRADO*':'👥 *RELATÓRIO DE PRESENÇAS*'),
+    '🎮 *'+event.title+'*',
+    '🕗 '+new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}),
+    '',
+    '✅ *CONFIRMADOS ('+attendees.length+')*',
+    ...(attendees.length?attendees.map((entry,index)=>(index+1)+'. '+readableAttendeeName(entry)) :
+      ['Nenhuma confirmação recebida']),
+  ];
+  try {
+    const roster=await getClanMemberRoster(sock);
+    const {absent}=partitionRoster(attendees,roster,ids=>ids.flatMap(linkedAliases));
+    lines.push('','❌ *NÃO CONFIRMARAM ('+absent.length+')*');
+    if(absent.length)for(let i=0;i<absent.length;i++) {
+      lines.push((i+1)+'. '+memberLabel(absent[i].participant,i));
+    } else lines.push('Todos os integrantes identificados já confirmaram.');
+  } catch(error) {
+    console.warn('Lista de ausência incompleta: não foi possível consultar Integrantes:',error?.message);
+    lines.push('','⚠️ *Não confirmaram:* lista indisponível — não foi possível consultar o grupo Integrantes. Nenhuma ausência foi presumida.');
+  }
+  lines.push('','⚖️ *Exceções após o prazo:* somente mediante aprovação do Conselho com !aprovarpresenca.');
+  return lines.join('\n');
+}
+async function sendAttendanceReport(sock,event,cutoff=false) {
+  if(!adminsGroup)throw new Error('Grupo Conselho de ADMs não configurado');
+  const message=await formatAttendanceReport(sock,event,cutoff);
+  // WhatsApp can truncate extremely large messages.
+  for (let offset=0;offset<message.length;offset+=3500) {
+    await sendText(sock,adminsGroup,message.slice(offset,offset+3500));
+  }
+}
+let agendaAlertBusy=false;
+async function runAgendaNotificationTick(sock) {
+  if(agendaAlertBusy || !enabled || !targetGroup || !adminsGroup)return;
+  agendaAlertBusy=true;
+  try {
+    const events=await upcomingAgendaEvents();
+    const history=await readJson(attendanceAlertsFile,{});
+    const scheduled=dueAgendaActions(events,history);
+    for(const {type,event} of scheduled) {
+      // The send completes before persisting the idempotency key: never claim a notice was delivered on error.
+      if(type==='reminder') {
+        const minutes=Math.ceil((Date.parse(event.date)-Date.now())/60000);
+        await sendText(sock,targetGroup,
+          '⏰ *LEMBRETE DO CLÃ — EVENTO PRÓXIMO!*\n\n🎮 *'+event.title+'*\n'+
+          '🕗 '+new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
+          '\n⏳ Faltam aproximadamente '+minutes+' minutos!\n\n'+
+          '✅ *PRAZO FINAL: CONFIRME SUA PARTICIPAÇÃO NOS PRÓXIMOS 30 MINUTOS!*\n'+
+          'Abra *!agenda*, toque no evento e escolha *Vou participar*.\n'+
+          '⚠️ Quem não confirmar até *30 minutos antes* fica fora da lista, salvo aprovação do Conselho.\n'+
+          'Quem já confirmou permanece na lista — não precisa confirmar novamente.');
+        history[event.id]={...history[event.id],reminderAt:new Date().toISOString()};
+      } else if(type==='report') {
+        await sendAttendanceReport(sock,event,true);
+        history[event.id]={...history[event.id],reportAt:new Date().toISOString()};
+      }
+      await writeJson(attendanceAlertsFile,history);
+    }
+  } finally {
+    agendaAlertBusy=false;
+  }
+}
 const agendaDrafts = new Map();
 const AGENDA_DRAFT_TTL = 15 * 60 * 1000;
 async function handleAgendaWizard(sock, jid, message, raw) {
   const actor = String(message?.key?.participant || message?.key?.participantAlt || (message?.key?.fromMe ? 'owner' : '') || '');
   const key = jid + ':' + actor;
   const events = upcomingAgendaEvents;
-  if (/^!(agendar|editarevento|cancelarevento|presencas)$/i.test(raw)) {
+  if (/^!(agendar|editarevento|cancelarevento|presencas|aprovarpresenca)$/i.test(raw)) {
     const mode = raw.slice(1).toLowerCase();
     if (mode === 'agendar') {
       agendaDrafts.set(key, { mode, step:'title', expires:Date.now()+AGENDA_DRAFT_TTL });
@@ -231,22 +322,32 @@ async function handleAgendaWizard(sock, jid, message, raw) {
       return true;
     }
     draft.event=event;
-    if (draft.mode==='presencas') {
+    if(draft.mode==='presencas') {
       agendaDrafts.delete(key);
-      const state=await readAttendance();
-      const attendees=attendanceFor(state,event.id);
-      const header='👥 *PRESENÇAS CONFIRMADAS*\n🎮 *'+event.title+'*\n🕗 '+
-        new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
-        '\n✅ *Total: '+attendees.length+' jogador(es)*';
-      if (!attendees.length) {
-        await sendText(sock,jid,header+'\n\nAinda não há participantes confirmados.');
+      await sendAttendanceReport(sock,event,false);
+      return true;
+    }
+    if(draft.mode==='aprovarpresenca') {
+      let roster;
+      try { roster=await getClanMemberRoster(sock); }
+      catch(error) {
+        agendaDrafts.delete(key);
+        await sendText(sock,jid,'⚠️ Não consegui consultar o grupo Integrantes. A autorização não foi feita.');
         return true;
       }
-      const names=attendees.map((entry,index)=>(index+1)+'. '+readableAttendeeName(entry));
-      await sendText(sock,jid,header+'\n\n'+names.slice(0,50).join('\n'));
-      for (let offset=50;offset<names.length;offset+=50) {
-        await sendText(sock,jid,names.slice(offset,offset+50).join('\n'));
+      const state=await readAttendance();
+      const members=roster.map((member,index)=>({
+        ids:attendeeIds(participantAliases(member).flatMap(linkedAliases)),
+        name:memberLabel(member,index)
+      })).filter(member=>member.ids.length &&
+        !isAttending(state,event.id,member.ids));
+      if(!members.length) {
+        agendaDrafts.delete(key);
+        await sendText(sock,jid,'✅ Todos os integrantes identificados já estão confirmados.');
+        return true;
       }
+      draft.members=members;draft.step='approve_pick';draft.page=0;
+      await sendInteractive(sock,jid,buildApprovalMemberChoices(members,event,0),[adminsGroup]);
       return true;
     }
     if (draft.mode==='cancelarevento') {
@@ -256,6 +357,54 @@ async function handleAgendaWizard(sock, jid, message, raw) {
       draft.step='title';
       await sendText(sock,jid,'✏️ Qual será o novo nome de *'+draft.event.title+'*?');
     }
+    return true;
+  }
+  if(draft.step==='approve_pick') {
+    if(!isInteractiveChoice(message.message)) {
+      await sendText(sock,jid,'⚖️ Escolha um integrante no menu clicável.');
+      return true;
+    }
+    const pageMatch=raw.match(/^nox:approval:page:(\d+)$/);
+    if(pageMatch) {
+      const page=Number(pageMatch[1]);
+      if(page<0||page>=Math.ceil(draft.members.length/8)){
+        await sendText(sock,jid,'⚠️ Página inválida.');
+        return true;
+      }
+      draft.page=page;
+      await sendInteractive(sock,jid,buildApprovalMemberChoices(draft.members,draft.event,page),[adminsGroup]);
+      return true;
+    }
+    const memberMatch=raw.match(/^nox:approval:member:(\d+)$/);
+    const index=memberMatch?Number(memberMatch[1]):-1;
+    if(index<draft.page*8||index>=draft.page*8+8||index>=draft.members.length) {
+      await sendText(sock,jid,'⚠️ Escolha uma pessoa exibida na lista.');
+      return true;
+    }
+    draft.member=draft.members[index];draft.step='approve_confirm';
+    await sendInteractive(sock,jid,buildApprovalConfirmationChoice(draft.event,draft.member),[adminsGroup]);
+    return true;
+  }
+  if(draft.step==='approve_confirm') {
+    if(!isInteractiveChoice(message.message) ||
+       !['nox:approval:confirm','nox:approval:cancel'].includes(raw)) {
+      await sendText(sock,jid,'⚠️ Confirme a decisão no menu clicável.');
+      return true;
+    }
+    agendaDrafts.delete(key);
+    if(raw==='nox:approval:cancel') {
+      await sendText(sock,jid,'↩️ Exceção cancelada. Nenhuma presença alterada.');
+      return true;
+    }
+    const fresh=(await upcomingAgendaEvents()).find(event=>event.id===draft.event.id);
+    if(!fresh) {
+      await sendText(sock,jid,'⚠️ O evento já terminou ou foi cancelado. Aprovação não realizada.');
+      return true;
+    }
+    const result=await updateAttendance(state=>
+      changeAttendance(state,draft.event.id,draft.member.ids,draft.member.name,true));
+    await sendText(sock,jid,'⚖️ *PRESENÇA AUTORIZADA PELO CONSELHO*\n🎮 '+draft.event.title+
+      '\n✅ '+draft.member.name+'\n👥 Total confirmado: '+attendanceCount(result.data,draft.event.id));
     return true;
   }
   if (draft.step==='confirm') {
@@ -336,6 +485,11 @@ async function handleAdminAgenda(sock, message) {
     await notifyGeneralOfAgendaChange(sock);
     events[index]=updated;
     await writeJson(agendaFile,events);
+    if (events[index].date !== updated.date) {
+      const alertHistory=await readJson(attendanceAlertsFile,{});
+      delete alertHistory[updated.id];
+      await writeJson(attendanceAlertsFile,alertHistory);
+    }
     await sendText(sock,jid,'✅ Evento atualizado e publicado nos Avisos.');
     return true;
   }
@@ -349,6 +503,9 @@ async function handleAdminAgenda(sock, message) {
     await notifyGeneralOfAgendaChange(sock);
     await writeJson(agendaFile,events.filter(e=>e.id!==event.id));
     await updateAttendance(state=>({data:removeEventAttendance(state,event.id)}));
+    const alertHistory=await readJson(attendanceAlertsFile,{});
+    delete alertHistory[event.id];
+    await writeJson(attendanceAlertsFile,alertHistory);
     await sendText(sock,jid,'✅ Evento cancelado.'); return true;
   }
   return false;
@@ -804,13 +961,16 @@ function fullHelpLines() {
     '💡 *SUGESTÕES* — !sugestao', '',
     '📅 *AGENDA DO CLÃ*',
     'No *Geral*: envie *!agenda*, toque no evento e escolha *Vou participar* para confirmar presença. Se desistir, abra !agenda novamente, escolha o mesmo evento e toque em *Não vou mais*.',
-    'A lista mostra a quantidade de participantes confirmados. Cada jogador só altera a própria confirmação.',
+    '⏰ *PRAZO:* confirme até 30 minutos antes do início do evento. O NOX envia um aviso 1 hora antes com os últimos 30 minutos para confirmar. Depois do prazo, só entra com aprovação do Conselho.',
+    'Quem já confirmou anteriormente não precisa confirmar duas vezes. Cada jogador só altera a própria confirmação.',
     'No *Conselho de ADMs*, use:',
     '➕ *!agendar* — o NOX pergunta o nome, a data (DD/MM/AAAA) e o horário (HH:MM).',
     '✏️ *!editarevento* — toque no evento da lista; depois informe novo nome, data e horário.',
     '❌ *!cancelarevento* — toque no evento da lista e confirme a exclusão nos botões.',
     '📅 *!agenda* — consulte os próximos eventos e a quantidade de confirmados.',
-    '👥 *!presencas* — escolha o evento no menu clicável para ver o total e os nomes dos participantes confirmados.',
+    '👥 *!presencas* — escolha o evento para ver confirmados e integrantes que ainda não confirmaram.',
+    '⚖️ *!aprovarpresenca* — escolha evento e integrante no menu para autorizar presença excepcional mesmo após o prazo.',
+    '📣 O Geral recebe aviso 1 hora antes; 30 minutos antes o Conselho recebe automaticamente a lista final de confirmados e de quem não confirmou.',
     'Também aceita os comandos completos: !agendar Nome | DD/MM/AAAA HH:MM, !editarevento ID | Novo nome | DD/MM/AAAA HH:MM e !cancelarevento ID.',
     'Somente o Conselho pode alterar eventos. Alterações são publicadas nos Avisos Oficiais e notificadas no Geral.', '',
     '💡 *IDEIAS E SUGESTÕES*',
