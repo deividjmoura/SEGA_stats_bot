@@ -2,6 +2,7 @@ import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto,
 import pino from 'pino';
 import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
+import { brandNoxText } from './noxBranding.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
@@ -748,9 +749,10 @@ async function notifyGeneralOfAgendaChange(sock) {
 }
 async function sendText(sock, jid, text, mentions = [], mentionAll = false) {
   // Reserve before sending, because the echo may arrive before sendMessage returns.
-  const cancelReservation = outgoingEchoGuard.reserve(jid, text);
+  const brandedText = brandNoxText(text);
+  const cancelReservation = outgoingEchoGuard.reserve(jid, brandedText);
   try {
-    const payload = { text };
+    const payload = { text: brandedText };
     if (mentions.length) payload.mentions = mentions;
     if (mentionAll) payload.mentionAll = true;
     const sent = await sock.sendMessage(jid, payload);
