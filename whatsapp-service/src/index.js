@@ -3,6 +3,7 @@ import pino from 'pino';
 import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { brandNoxText } from './noxBranding.js';
+import { validateAgendaDay, validateAgendaSchedule, agendaValidationMessage } from './agendaDateValidation.js';
 import { isVagueWinQuestion, makeUnknownQuestionRoast } from './unknownQuestionRoasts.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
@@ -348,7 +349,10 @@ async function runAgendaNotificationTick(sock) {
 const agendaDrafts = new Map();
 const AGENDA_DRAFT_TTL = 15 * 60 * 1000;
 async function handleAgendaWizard(sock, jid, message, raw) {
-  const actor = String(message?.key?.participant || message?.key?.participantAlt || (message?.key?.fromMe ? 'owner' : '') || '');
+  // The linked account can have multiple participant JIDs; it must own one draft.
+  // Other admins must never accidentally share a draft when metadata is absent.
+  const actor = message?.key?.fromMe ? 'owner' : String(message?.key?.participant || message?.key?.participantAlt || '');
+  if (!actor) return false;
   const key = jid + ':' + actor;
   const events = upcomingAgendaEvents;
   if (/^!(agendar|editarevento|cancelarevento|presencas|aprovarpresenca)$/i.test(raw)) {
@@ -492,14 +496,32 @@ async function handleAgendaWizard(sock, jid, message, raw) {
     return true;
   }
   if (draft.step==='date') {
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) { await sendText(sock,jid,'⚠️ Use a data no formato DD/MM/AAAA.'); return true; }
-    draft.date=raw;draft.step='time';
-    await sendText(sock,jid,'🕗 Qual é o horário? Use HH:MM (Brasília).');
+    const check = validateAgendaDay(raw);
+    if (!check.ok) {
+      await sendText(sock,jid,agendaValidationMessage(check) + '\n\n📅 Informe outra data ou envie *!sair*.');
+      return true;
+    }
+    draft.date=check.value;
+    draft.step='time';
+    await sendText(sock,jid,'🕗 Qual é o horário? Use *HH:MM* (Brasília).\nA data é *'+draft.date+'*. O horário precisa ser futuro.');
     return true;
   }
   if (draft.step==='time') {
-    if (!/^\d{2}:\d{2}$/.test(raw)) { await sendText(sock,jid,'⚠️ Use o horário HH:MM.'); return true; }
-    const command=draft.mode==='editarevento'?'!editarevento '+draft.event.id+' | '+draft.title+' | '+draft.date+' '+raw:'!agendar '+draft.title+' | '+draft.date+' '+raw;
+    const check = validateAgendaSchedule(draft.date,raw);
+    if (!check.ok) {
+      if (check.reason.startsWith('date_')) {
+        draft.step='date';
+        await sendText(sock,jid,agendaValidationMessage(check) + '\n\n📅 Informe uma nova data (DD/MM/AAAA). O nome do evento foi preservado.');
+      } else {
+        await sendText(sock,jid,agendaValidationMessage(check) + '\n\n🕗 Informe outro horário (*HH:MM*). O nome e a data foram preservados. Envie *!sair* para cancelar.');
+      }
+      return true;
+    }
+    const command=draft.mode==='editarevento'
+      ? '!editarevento '+draft.event.id+' | '+draft.title+' | '+draft.date+' '+raw
+      : '!agendar '+draft.title+' | '+draft.date+' '+raw;
+    // The payload has been validated. Keep draft until dispatch to avoid losing
+    // fields on a bad date/time entry.
     agendaDrafts.delete(key);
     return handleAdminAgenda(sock,{...message,message:{conversation:command}});
   }
