@@ -11,7 +11,7 @@ export const NOX_MENU_OPTIONS = Object.freeze([
 
 export function buildNoxClickableMenu() {
   return {
-    text: '🎮 *NOX — MENU PRINCIPAL*\\nEscolha uma opção abaixo:',
+    text: '🎮 *NOX — MENU PRINCIPAL*\nEscolha uma opção abaixo:',
     footer: '🐺 Clã Tenebrozos',
     title: 'NOX',
     buttonText: '📋 ABRIR MENU',
@@ -24,6 +24,6 @@ export function resolveNoxMenuSelection(value) {
 }
 
 export async function sendPrivateNoxMenuPrototype(sock, jid) {
-  if (!/^\\d+@s\\.whatsapp\\.net$/.test(jid)) throw new Error('Protótipo permitido somente em chat privado');
+  if (!/^\d+@s\.whatsapp\.net$/.test(jid)) throw new Error('Protótipo permitido somente em chat privado');
   return sock.sendMessage(jid, buildNoxClickableMenu());
 }
