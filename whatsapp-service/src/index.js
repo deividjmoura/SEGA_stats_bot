@@ -1064,12 +1064,12 @@ async function handleRegistration(sock, message) {
     }
     return true;
   }
-  if (ownerPrivate && ['!nox','/nox'].includes(command)) {
+  if (ownerPrivate && ['!nox','/nox','nox'].includes(command)) {
     await sendNoxMenu(sock, jid);
     return true;
   }
-  if (ownerPrivate && command === '!agenda') { await sendText(sock, jid, await agendaText()); return true; }
-  if (ownerPrivate && command === '!sugestao') { await sendText(sock, jid, suggestionLink() || '⚠️ Link privado indisponível.'); return true; }
+  if (ownerPrivate && ['agenda','!agenda','/agenda'].includes(command)) { await sendText(sock, jid, await agendaText()); return true; }
+  if (ownerPrivate && ['sugestao','!sugestao','/sugestao'].includes(command)) { await sendText(sock, jid, suggestionLink() || '⚠️ Link privado indisponível.'); return true; }
   if (ownerPrivate && command === '!ajuda') {
     await sendText(sock, jid, fullHelpLines().join('\n'));
     return true;
@@ -1366,7 +1366,7 @@ async function handleGroup(sock, message) {
   const authorPlayer = key.fromMe
     ? (players.get('self') || aliases.map(playerForJid).find(Boolean) || findPlayer(aliases))
     : (aliases.map(playerForJid).find(Boolean) || findPlayer(aliases));
-  if (/^[!\/]nox$/i.test(text)) {
+  if (/^(?:[!\/]\s*)?nox$/i.test(text)) {
     await sendNoxMenu(sock, groupJid);
     return;
   }
@@ -1376,11 +1376,11 @@ async function handleGroup(sock, message) {
       : '🎮 O cadastro é feito no privado. Envie !cadastrar ao responsável.');
     return;
   }
-  if (/^[!/]sugestao$/i.test(text)) {
+  if (/^(?:[!\/]\s*)?sugestao$/i.test(text)) {
     await sendText(sock, groupJid, suggestionLink() ? '💡 Envie sua ideia diretamente no privado: ' + suggestionLink() : '⚠️ Link privado indisponível.');
     return;
   }
-  if (/^[!/]agenda$/i.test(text)) {
+  if (/^(?:[!\/]\s*)?agenda$/i.test(text)) {
     await sendRsvpAgenda(sock,message);
     return;
   }
