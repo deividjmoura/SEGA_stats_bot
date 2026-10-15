@@ -17,6 +17,18 @@ const QUIPS = [
   'Se eu soubesse ganhar sempre, tava jogando, não respondendo aqui. 😎',
 ];
 
+export function isVagueWinQuestion(question) {
+  const words = String(question || '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const has = value => words.includes(value);
+  if (['contra','counter','countera','cautera','cauter'].some(has)) return false;
+  const vagueHero = ['personagem','heroi','boneco','pick'].some(has);
+  const win = ['ganhar','vencer','vitoria','subir','carregar'].some(has);
+  const choice = ['uso','usar','escolho','pego','jogo','qual','que'].some(has);
+  const impossible = has('ganhar') && ['todas','sempre'].some(has);
+  return vagueHero && win && choice || impossible;
+}
+
 export function makeUnknownQuestionRoast(randomInt = crypto.randomInt) {
   const joke = QUIPS[randomInt(QUIPS.length)];
   return '💀 *NOX NÃO ENTENDEU ESSA*\n\n' + joke +
