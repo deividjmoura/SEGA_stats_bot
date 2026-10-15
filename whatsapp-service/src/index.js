@@ -1,6 +1,7 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
+import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
+import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
@@ -26,6 +27,9 @@ const battlesFile = dataDir + '/whatsapp-battles.json';
 const announcementsFile = dataDir + '/whatsapp-announcement-deliveries.json';
 const agendaFile = dataDir + '/whatsapp-agenda.json';
 const attendanceFile = dataDir + '/whatsapp-attendance.json';
+const attendanceAlertsFile = dataDir + '/whatsapp-attendance-alerts.json';
+// The official clan roster is in the Integrantes group; it is never a command destination.
+const membersGroup = process.env.WHATSAPP_MEMBERS_GROUP_JID || '120363432845996995@g.us';
 const rsvpSessions = new Map();
 const RSVP_SESSION_TTL_MS = 10 * 60 * 1000;
 let attendanceWrites = Promise.resolve();
@@ -55,10 +59,21 @@ async function upcomingAgendaEvents() {
 function rsvpActorIds(key) {
   return attendeeIds([key?.participant, key?.participantAlt,
     ...(key?.fromMe ? [ownJid, ...ownerAccountJids] : [])]
-    .filter(Boolean).flatMap(jidAliases));
+    .filter(Boolean).flatMap(linkedAliases));
 }
-function rsvpSessionKey(jid, ids) {
-  return jid + ':' + ids[0];
+function rsvpSessionKeys(jid, ids) {
+  return ids.map(id => jid + ':' + id);
+}
+function storeRsvpSession(jid,ids,session) {
+  for (const key of rsvpSessionKeys(jid,ids)) rsvpSessions.set(key,session);
+}
+function findRsvpSession(jid,ids) {
+  return rsvpSessionKeys(jid,ids).map(key=>rsvpSessions.get(key)).find(Boolean);
+}
+function deleteRsvpSession(jid,ids) {
+  const session=findRsvpSession(jid,ids);
+  if(!session)return;
+  for(const [key,value] of rsvpSessions)if(value===session)rsvpSessions.delete(key);
 }
 function readableAttendeeName(entry) {
   const player = (entry.ids || []).map(playerForJid).find(Boolean);
@@ -78,11 +93,16 @@ async function sendRsvpAgenda(sock, message) {
     return;
   }
   const state = await readAttendance();
-  const counts = Object.fromEntries(events.map(event => [event.id, attendanceCount(state,event.id)]));
-  const session = { step:'pick', page:0, expires:Date.now()+RSVP_SESSION_TTL_MS };
-  rsvpSessions.set(rsvpSessionKey(jid,ids), session);
+  const openEvents=events.filter(event=>isRsvpOpen(event));
+  const counts = Object.fromEntries(openEvents.map(event => [event.id, attendanceCount(state,event.id)]));
   await sendText(sock,jid,await agendaText());
-  await sendInteractive(sock,jid,buildRsvpEventChoices(events,counts,0),[targetGroup]);
+  if (!openEvents.length) {
+    await sendText(sock,jid,'⏰ O prazo de confirmação dos próximos eventos já encerrou. Só o Conselho pode autorizar exceções.');
+    return;
+  }
+  const session = { step:'pick', page:0, expires:Date.now()+RSVP_SESSION_TTL_MS };
+  storeRsvpSession(jid,ids,session);
+  await sendInteractive(sock,jid,buildRsvpEventChoices(openEvents,counts,0),[targetGroup]);
 }
 async function handleRsvpChoice(sock, message, action) {
   const jid = message.key.remoteJid;
@@ -91,17 +111,16 @@ async function handleRsvpChoice(sock, message, action) {
     await sendText(sock,jid,'⚠️ Não consegui confirmar sua identidade. Abra !agenda novamente.');
     return;
   }
-  const key = rsvpSessionKey(jid,ids);
-  const session = rsvpSessions.get(key);
+  const session = findRsvpSession(jid,ids);
   if (!session || session.expires <= Date.now()) {
-    rsvpSessions.delete(key);
+    deleteRsvpSession(jid,ids);
     await sendText(sock,jid,'⌛ A escolha expirou. Envie !agenda para abrir uma nova lista.');
     return;
   }
   const match=action.match(/^nox:rsvp:(page|event|confirm|decline|withdraw|keep):([a-f0-9]{8}|\d+)$/i);
   if (!match) return;
   const [, kind, value] = match;
-  const events=await upcomingAgendaEvents();
+  const events=(await upcomingAgendaEvents()).filter(event=>isRsvpOpen(event));
   if (kind==='page') {
     const page=Number(value);
     if (session.step!=='pick' || !Number.isInteger(page) || page<0 || page>=Math.ceil(events.length/8)) {
@@ -116,8 +135,8 @@ async function handleRsvpChoice(sock, message, action) {
   }
   const event=events.find(item => item.id === value.toLowerCase());
   if (!event) {
-    rsvpSessions.delete(key);
-    await sendText(sock,jid,'⚠️ O evento não está mais disponível. Abra !agenda novamente.');
+    deleteRsvpSession(jid,ids);
+    await sendText(sock,jid,'⏰ Evento indisponível ou prazo encerrado. Confirmações fecham *30 minutos antes* do início. Exceções precisam de aprovação do Conselho.');
     return;
   }
   if (kind==='event') {
@@ -136,7 +155,7 @@ async function handleRsvpChoice(sock, message, action) {
     await sendText(sock,jid,'⚠️ Confirmação inválida. Abra !agenda novamente.');
     return;
   }
-  rsvpSessions.delete(key);
+  deleteRsvpSession(jid,ids);
   if (kind==='decline' || kind==='keep') {
     await sendText(sock,jid,kind==='decline' ? '↩️ Tudo bem! Nenhuma presença foi adicionada.' :
       '✅ Sua confirmação de participação continua ativa.');
@@ -144,13 +163,12 @@ async function handleRsvpChoice(sock, message, action) {
   }
   if (kind!=='confirm' && kind!=='withdraw') return;
   const attending=kind==='confirm';
-  const actorName=String(message?.key?.pushName ||
-    ids.map(playerForJid).find(Boolean)?.name ||
-    ids.map(whatsappName).find(name=>name && name!=='jogador') || 'Participante');
+  const actorName=String(ids.map(playerForJid).find(Boolean)?.name ||
+    message?.pushName || ids.map(id=>whatsappName(id,'')).find(Boolean) || 'Participante');
   const result=await updateAttendance(state=>changeAttendance(state,event.id,ids,actorName,attending));
   const count=attendanceCount(result.data,event.id);
   await sendText(sock,jid,attending
-    ? '✅ Presença confirmada em *'+event.title+'*! 👥 '+count+' participante(s) confirmado(s). Para desistir, abra !agenda novamente.'
+    ? '✅ Presença confirmada em *'+event.title+'*! 👥 '+count+' participante(s) confirmado(s). ⏰ O prazo termina *30 minutos antes* do evento. Para desistir dentro do prazo, abra !agenda novamente.'
     : '✅ Sua presença foi retirada de *'+event.title+'*. 👥 '+count+' participante(s) confirmado(s).');
 }
 
@@ -161,8 +179,10 @@ async function agendaText() {
   return events.length ? '📅 *AGENDA DO CLÃ*\n\n' +
     events.map(e => '• *' + e.title + '* — ' +
       new Date(e.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}) +
-      '\n  👥 ' + attendanceCount(attendance,e.id) + ' confirmado(s) · ID: ' + e.id).join('\n') +
-    '\n\n🎮 No *Geral*, envie !agenda e toque em um evento para confirmar sua presença.'
+      '\n  👥 ' + attendanceCount(attendance,e.id) + ' confirmado(s) · ' +
+      (isRsvpOpen(e) ? '⏰ Confirme até '+new Date(Date.parse(e.date)-RSVP_CLOSE_BEFORE_MS).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}) : '🔒 Confirmações encerradas') +
+      ' · ID: ' + e.id).join('\n') +
+    '\n\n🎮 No *Geral*, envie !agenda e toque em um evento para confirmar presença. ⚠️ A confirmação é obrigatória até *30 minutos antes* do início; depois, somente com aprovação do Conselho.'
     : '📅 Nenhum evento futuro cadastrado.';
 }
 const agendaDrafts = new Map();
