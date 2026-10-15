@@ -38,7 +38,8 @@ async function handleAdminAgenda(sock, message) {
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
     const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
-    if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now() || date.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}) !== yyyy+'-'+mm+'-'+dd) { await sendText(sock,jid,'⚠️ Data inválida ou passada. Use !agendar Treino | DD/MM/AAAA HH:MM'); return true; }
+    const localDate = new Date(date.getTime() - 3 * 60 * 60 * 1000);
+    if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now() || localDate.getUTCFullYear() !== Number(yyyy) || localDate.getUTCMonth()+1 !== Number(mm) || localDate.getUTCDate() !== Number(dd) || localDate.getUTCHours() !== Number(hh) || localDate.getUTCMinutes() !== Number(min)) { await sendText(sock,jid,'⚠️ Data inválida ou passada. Use !agendar Treino | DD/MM/AAAA HH:MM'); return true; }
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos ainda não confirmado. Evento não cadastrado.'); return true; }
     const events = await readJson(agendaFile, []);
     const event = { id: crypto.randomBytes(4).toString('hex'), title: title.slice(0,120), date: date.toISOString() };
