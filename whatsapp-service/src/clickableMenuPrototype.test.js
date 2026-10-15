@@ -6,7 +6,7 @@ test('menu contains seven unique clickable rows', () => {
   const menu = buildNoxClickableMenu();
   assert.equal(menu.sections.length, 1);
   assert.equal(menu.sections[0].rows.length, 7);
-  assert.equal(new Set(menu.sections[0].rows.map(row => row.rowId)).size, 6);
+  assert.equal(new Set(menu.sections[0].rows.map(row => row.rowId)).size, 7);
   assert.equal(menu.buttonText, '📋 ABRIR MENU');
 });
 
