@@ -1,6 +1,6 @@
 // A group post is an announcement only when it is a new, user-authored message
 // in the configured announcements group. Reactions, edits and history are ignored.
-export const ANNOUNCEMENT_NOTICE = '📢 *Novo comunicado SEGA!*\nConfira o grupo de Avisos Oficiais.';
+export const ANNOUNCEMENT_NOTICE = '📢 *Novo comunicado NOX!*\nConfira o grupo de Avisos Oficiais.';
 
 export function isAnnouncementPost(message, type, groupJid) {
   const key = message?.key;

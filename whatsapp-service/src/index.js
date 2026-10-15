@@ -163,17 +163,17 @@ async function discoverAnnouncementsGroup(sock) {
     const groups = await sock.groupFetchAllParticipating();
     const found = selectCommunityAnnouncementsGroup(groups, generalMetadata);
     if (!found) {
-      console.warn('Avisos SEGA desativados: canal oficial da mesma comunidade não identificado sem ambiguidade.');
+      console.warn('Avisos NOX desativados: canal oficial da mesma comunidade não identificado sem ambiguidade.');
       return;
     }
     if (configuredAnnouncementsGroup && configuredAnnouncementsGroup !== found) {
-      console.error('Avisos SEGA desativados: o ID configurado não corresponde ao canal oficial da comunidade.');
+      console.error('Avisos NOX desativados: o ID configurado não corresponde ao canal oficial da comunidade.');
       return;
     }
     announcementsGroup = found;
-    console.log('Avisos SEGA: canal oficial da comunidade verificado:', found);
+    console.log('Avisos NOX: canal oficial da comunidade verificado:', found);
   } catch (error) {
-    console.error('Avisos SEGA desativados: falha ao confirmar canal oficial:', error?.message);
+    console.error('Avisos NOX desativados: falha ao confirmar canal oficial:', error?.message);
   }
 }
 
@@ -194,11 +194,11 @@ async function notifyAnnouncement(sock, message, type) {
   try {
     let outgoing = { text: ANNOUNCEMENT_NOTICE, mentionAll: false };
     if (announcementMentionsEnabled) {
-      // Check that the destination really is Geral; WhatsApp handles current group membership for native @all.
+      // Check that the destination really is Integrantes; WhatsApp handles current group membership for native @all.
       const metadata = await sock.groupMetadata(targetGroup);
       outgoing = buildAnnouncementMentionMessage(metadata, targetGroup);
       if (!outgoing) {
-        console.warn('Avisos SEGA: não foi possível verificar o grupo Geral; @all não enviado.');
+        console.warn('Avisos NOX: não foi possível verificar o grupo Integrantes; @all não enviado.');
         return false;
       }
     }
@@ -208,7 +208,7 @@ async function notifyAnnouncement(sock, message, type) {
     announcedIds.clear();
     for (const id of recent) announcedIds.add(id);
     await writeJson(announcementsFile, recent);
-    console.log('Aviso de comunicado enviado ao grupo Geral.');
+    console.log('Aviso de comunicado enviado ao grupo Integrantes.');
     return true;
   } catch (error) {
     console.error('Falha ao notificar comunicado:', error?.message);
@@ -239,9 +239,9 @@ async function sendText(sock, jid, text, mentions = [], mentionAll = false) {
     throw error;
   }
 }
-async function sendSegaMenu(sock, jid, sessionKey = jid) {
+async function sendNoxMenu(sock, jid, sessionKey = jid) {
   const menu = [
-    '🎮 *SEGA STATS*',
+    '🎮 *NOX STATS*',
     '━━━━━━━━━━━━━━━━',
     '',
     '1️⃣ 📊 *MEUS STATS*',
@@ -388,7 +388,7 @@ async function sendPlayerStats(sock, jid, player) {
           minor: String(row.data.minrank_name || '').slice(0, 30),
           caption: String(row.caption || '').slice(0, 60)
         }));
-        console.info('[sega-rank-diagnostic]', JSON.stringify({
+        console.info('[nox-rank-diagnostic]', JSON.stringify({
           currentCode: profile.rank_level,
           bestCode: profile.history_rank_level,
           sameDisplay: true,
@@ -427,7 +427,7 @@ async function sendSavedRanking(sock, jid) {
   return sendText(sock, jid, '🏆 *RANKING DO CLÃ*\n\n⏳ Em desenvolvimento. O ranking oficial será baseado em dados confiáveis do jogo, sem prints ou partidas escolhidas pelos jogadores.');
 }
 async function sendHighlights(sock, jid) {
-  return sendText(sock, jid, '🌟 *HIGHLIGHTS SEGA*\n\n⏳ Em desenvolvimento. Os destaques serão liberados quando conseguirmos consultar os dados necessários com segurança.');
+  return sendText(sock, jid, '🌟 *HIGHLIGHTS NOX*\n\n⏳ Em desenvolvimento. Os destaques serão liberados quando conseguirmos consultar os dados necessários com segurança.');
 }
 
 function matchSummary(match) {
@@ -439,10 +439,10 @@ function matchSummary(match) {
     (match?.mvp ? '\n👑 MVP' : '');
 }
 
-function segaKnowledgeQuery(text) {
+function noxKnowledgeQuery(text) {
   const raw = String(text || '').trim();
-  const textual = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(raw);
-  const cleaned = raw.replace(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/ig, '').trim();
+  const textual = /@nox(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(raw);
+  const cleaned = raw.replace(/@nox(?:[ _]?stats)?(?:[ _]?bot)?\b/ig, '').trim();
   return { textual, cleaned };
 }
 function isOwnMention(jid) {
@@ -453,8 +453,8 @@ function isOwnMention(jid) {
 function fullHelpLines() {
   const examples = listKnowledgeExamples().slice(0, 12);
   return [
-    '🎮 *SEGA STATS — AJUDA COMPLETA*', '━━━━━━━━━━━━━━━━', '',
-    '📋 *MENU PRINCIPAL*', 'Digite *!sega*. Escolha uma opção de 1 a 5 ou use o comando diretamente.', '',
+    '🎮 *NOX STATS — AJUDA COMPLETA*', '━━━━━━━━━━━━━━━━', '',
+    '📋 *MENU PRINCIPAL*', 'Digite *!nox*. Escolha uma opção de 1 a 5 ou use o comando diretamente.', '',
     '1️⃣ 📊 *MEUS STATS* — !stats',
     '2️⃣ 🏆 *RANKING DO CLÃ* — !ranking _(em desenvolvimento)_',
     '3️⃣ 🌟 *HIGHLIGHTS* — !highlights _(em desenvolvimento)_',
@@ -467,14 +467,14 @@ function fullHelpLines() {
     '🏆 *RANKING E HIGHLIGHTS*',
     'Ainda em desenvolvimento: precisamos de dados consistentes da API para evitar classificações injustas.', '',
     '🧠 *CONHECIMENTO DE MOBILE LEGENDS*',
-    'No Geral, escreva *@SEGA* com uma pergunta sobre counters, builds, itens, matchup, heróis ou rotas.', '',
+    'No Integrantes, escreva *@NOX* com uma pergunta sobre counters, builds, itens, matchup, heróis ou rotas.', '',
     '💬 *EXEMPLOS DE PERGUNTAS*',
-    ...examples.map(x => '• *@SEGA ' + x + '*'), '',
+    ...examples.map(x => '• *@NOX ' + x + '*'), '',
     '😂 *MENÇÕES E ZOEIRAS*',
-    'Ao mencionar outra pessoa no Geral, o SEGA pode responder com uma zoeira sem revelar identificadores privados.', '',
+    'Ao mencionar outra pessoa no Integrantes, o NOX pode responder com uma zoeira sem revelar identificadores privados.', '',
     '🤖 *IMPORTANTE*',
-    'O SEGA está conectado ao número do administrador; respostas automáticas aparecem como mensagens dessa conta.', '',
-    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !sega abre o menu. Cadastro: privado do dono. Stats: no Geral ou privado do dono. Conhecimento e zoeiras: SEGA Geral.'
+    'O NOX está conectado ao número do administrador; respostas automáticas aparecem como mensagens dessa conta.', '',
+    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !nox abre o menu. Cadastro: privado do dono. Stats: no Integrantes ou privado do dono. Conhecimento e zoeiras: NOX Integrantes.'
   ];
 }
 
@@ -511,12 +511,12 @@ async function handleRegistration(sock, message) {
     try {
       const groups = await sock.groupFetchAllParticipating();
       const matches = Object.values(groups || {})
-        .filter(group => /sega|mega\s*drive/i.test(String(group?.subject || '')))
+        .filter(group => /tenebrozos|nox/i.test(String(group?.subject || '')))
         .slice(0, 16);
       if (!matches.length) {
-        await sendText(sock, jid, '🔎 Não encontrei grupos SEGA nesta conta. Confira se a comunidade está neste mesmo WhatsApp.');
+        await sendText(sock, jid, '🔎 Não encontrei grupos NOX nesta conta. Confira se a comunidade está neste mesmo WhatsApp.');
       } else {
-        const lines = ['🔐 *GRUPOS SEGA — SOMENTE PARA O DONO*', '', 'Copie o ID do 🎮 SEGA Geral e envie no ChatGPT.', ''];
+        const lines = ['🔐 *GRUPOS NOX — SOMENTE PARA O DONO*', '', 'Copie o ID do 🎮 NOX Integrantes e envie no ChatGPT.', ''];
         for (const group of matches) {
           const label = group.isCommunityAnnounce ? ' 📢 *(AVISOS OFICIAIS)*'
             : group.isCommunity ? ' 🏠 *(COMUNIDADE)*'
@@ -531,8 +531,8 @@ async function handleRegistration(sock, message) {
     }
     return true;
   }
-  if (ownerPrivate && ['!sega','/sega'].includes(command)) {
-    await sendSegaMenu(sock, jid);
+  if (ownerPrivate && ['!nox','/nox'].includes(command)) {
+    await sendNoxMenu(sock, jid);
     return true;
   }
   if (ownerPrivate && command === '!ajuda') {
@@ -565,7 +565,7 @@ async function handleRegistration(sock, message) {
   }
   if (['!cadastrar','/cadastrar','cadastrar'].includes(command)) {
     await setRegistration(jid, { step: 'role_id' });
-    await sendText(sock, jid, '📝 CADASTRO SEGA\n\nMe envie somente o Role ID do Mobile Legends.\nExemplo: 123456789');
+    await sendText(sock, jid, '📝 CADASTRO NOX\n\nMe envie somente o Role ID do Mobile Legends.\nExemplo: 123456789');
     return true;
   }
 
@@ -584,7 +584,7 @@ async function handleRegistration(sock, message) {
       if (!answer && !parsed.prefixed) return false;
       const plain = answer
         ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : '🧠 Ainda não entendi essa pergunta sobre Mobile Legends. Ex.: SEGA, quem mata Harley?';
+        : '🧠 Ainda não entendi essa pergunta sobre Mobile Legends. Ex.: NOX, quem mata Harley?';
       await sendText(sock, jid, plain);
     } catch (error) {
       console.error('Falha ao responder conhecimento no autochat:', error?.message);
@@ -650,7 +650,7 @@ async function handleRegistration(sock, message) {
       if (key.fromMe) players.set('self', player);
       await savePlayers();
       await deleteRegistration(jid);
-      await sendText(sock, jid, '✅ CONTA VERIFICADA!\n\n🎮 Nick confirmado: ' + name + '\n🆔 ID: ' + roleId + '\n🌐 Zone: ' + zoneId + '\n\nSeu WhatsApp agora está vinculado ao SEGA Stats.');
+      await sendText(sock, jid, '✅ CONTA VERIFICADA!\n\n🎮 Nick confirmado: ' + name + '\n🆔 ID: ' + roleId + '\n🌐 Zone: ' + zoneId + '\n\nSeu WhatsApp agora está vinculado ao NOX Stats.');
     } catch (e) {
       console.error('Falha ao autenticar jogador WhatsApp:', e?.message);
       await sendText(sock, jid, '⚠️ Erro de conexão ao validar o código. Tente novamente em alguns segundos.');
@@ -768,19 +768,19 @@ async function handleGroup(sock, message) {
   const aliases = aliasesFor(key);
   linkIdentities([key.participant, key.participantAlt].filter(Boolean));
   if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
-  const earlyKnowledge = segaKnowledgeQuery(text);
+  const earlyKnowledge = noxKnowledgeQuery(text);
   if (earlyKnowledge.textual) {
     const question = earlyKnowledge.cleaned.replace(/@\d{5,}/g, '').trim();
-    console.log('[sega-knowledge-hit]', JSON.stringify({ fromMe: Boolean(key.fromMe), question: question.slice(0, 120) }));
+    console.log('[nox-knowledge-hit]', JSON.stringify({ fromMe: Boolean(key.fromMe), question: question.slice(0, 120) }));
     if (!question) {
-      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @SEGA quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
+      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @NOX quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
       return;
     }
     try {
       const answer = await answerMlbbQuestion(question);
       const plain = answer
         ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
+        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @NOX ' + x).join('\n');
       await sendText(sock, groupJid, plain);
     } catch (error) {
       console.error('Falha no conhecimento WhatsApp:', error?.message);
@@ -826,12 +826,12 @@ async function handleGroup(sock, message) {
   const authorPlayer = key.fromMe
     ? (players.get('self') || aliases.map(playerForJid).find(Boolean) || findPlayer(aliases))
     : (aliases.map(playerForJid).find(Boolean) || findPlayer(aliases));
-  if (/^[!\/]sega$/i.test(text)) {
-    await sendSegaMenu(sock, groupJid, menuKey);
+  if (/^[!\/]nox$/i.test(text)) {
+    await sendNoxMenu(sock, groupJid, menuKey);
     return;
   }
   if (/^[!/]battle(?:\s+.*)?$/i.test(text)) {
-    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no Geral para consultar seus dados.');
+    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no Integrantes para consultar seus dados.');
     return;
   }
   if (/^[!/]stats$/i.test(text)) {
@@ -851,13 +851,13 @@ async function handleGroup(sock, message) {
     return;
   }
   const mentioned = mentionedNow;
-  const knowledge = segaKnowledgeQuery(text);
+  const knowledge = noxKnowledgeQuery(text);
   const botWasMentioned = mentioned.some(isOwnMention);
   // A mention of the owner's WhatsApp is a normal group mention: keep the joke.
-  // Only the explicit @SEGA text triggers the MLBB knowledge handler.
-  const segaMention = knowledge.textual;
-  console.log('[sega-knowledge-debug]', JSON.stringify({ textual: knowledge.textual, botWasMentioned, fromMe: Boolean(key.fromMe), text: text.slice(0, 120), mentionCount: mentioned.length }));
-  if (enabled && !botSentMessageIds.has(key.id) && mentioned.length && !segaMention) {
+  // Only the explicit @NOX text triggers the MLBB knowledge handler.
+  const noxMention = knowledge.textual;
+  console.log('[nox-knowledge-debug]', JSON.stringify({ textual: knowledge.textual, botWasMentioned, fromMe: Boolean(key.fromMe), text: text.slice(0, 120), mentionCount: mentioned.length }));
+  if (enabled && !botSentMessageIds.has(key.id) && mentioned.length && !noxMention) {
     const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
     const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
     let target = displayPlayer(targetJid, '');
@@ -870,17 +870,17 @@ async function handleGroup(sock, message) {
     await sendText(sock, groupJid, roastFor(author, target));
     return;
   }
-  if (segaMention) {
+  if (noxMention) {
     const question = knowledge.cleaned.replace(/@\d{5,}/g, '').trim();
     if (!question) {
-      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @SEGA quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
+      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @NOX quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
       return;
     }
     try {
       const answer = await answerMlbbQuestion(question);
       const plain = answer
         ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
+        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @NOX ' + x).join('\n');
       await sendText(sock, groupJid, plain);
     } catch (error) {
       console.error('Falha no conhecimento WhatsApp:', error?.message);

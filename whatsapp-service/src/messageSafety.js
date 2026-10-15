@@ -29,7 +29,7 @@ export function createOutgoingEchoGuard(now = () => Date.now(), ttlMs = 120000) 
 export function ownerKnowledgeQuestion(text) {
   const raw = String(text || '').trim();
   if (!raw || raw.length > 260 || /[\r\n]/.test(raw) || /^[!/]/.test(raw)) return null;
-  const prefix = /^\s*(?:@sega(?:[ _]?stats)?(?:[ _]?bot)?|sega)\b[\s,:;.!?-]*/i;
+  const prefix = /^\s*(?:@nox(?:[ _]?stats)?(?:[ _]?bot)?|nox)\b[\s,:;.!?-]*/i;
   const prefixed = prefix.test(raw);
   const clean = prefixed ? raw.replace(prefix, '').trim() : raw;
   if (!clean) return null;

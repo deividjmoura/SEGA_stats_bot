@@ -644,7 +644,7 @@ export async function answerMlbbQuestion(text) {
 
     return '⚔️ <b>COUNTERS DE ' + title.toUpperCase() + '</b>\n\n' +
       counters.map(name => '• ' + canonicalHeroName(name)).join('\n') +
-      '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Dados de matchup atualizados para o SEGA Stats.';
+      '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Dados de matchup atualizados para o NOX Stats.';
   }
 
   if (intent === 'items') {

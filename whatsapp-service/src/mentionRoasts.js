@@ -1,4 +1,4 @@
-// Galeria SEGA de menções: humor de jogo, memes e sarcasmo, SEM linguagem vulgar.
+// Galeria NOX de menções: humor de jogo, memes e sarcasmo, SEM linguagem vulgar.
 // Cada combinação é reutilizável e não exige guardar nomes ou telefones.
 import crypto from 'node:crypto';
 
@@ -26,7 +26,7 @@ export const classicRoasts = [
   "💀 {target}, {author} te marcou. Foi bom conhecer você.",
   "{target}, {author} quer sua atenção. Isso nunca termina em coisa produtiva. 😂",
   "🚨 {target}, ameaça detectada: uma notificação de {author}. Nível de perigo: fofoca.",
-  "{target}, {author} te convocou. O tribunal do SEGA está oficialmente em sessão. ⚖️",
+  "{target}, {author} te convocou. O tribunal do NOX está oficialmente em sessão. ⚖️",
   "👀 {target}, eu vi {author} te marcando. Não vou me meter... ainda.",
   "{target}, {author} usou “Marcar Jogador”. Foi super efetivo. 🎮",
   "🧙 {target}, {author} lançou Invocação Nv. 5. Você apareceu contra a sua vontade.",
@@ -47,7 +47,7 @@ export const classicRoasts = [
   "🎲 {target}, {author} rolou um D20 e caiu em “perturbar {target}”.",
   "{target}, {author} chamou. Você tem 5 segundos antes que ele mande “??”. 😂",
   "🧟 {target}, levanta daí: {author} invocou você dos mortos digitais.",
-  "{target}, {author} quer falar contigo. O SEGA Stats não se responsabiliza por danos emocionais.",
+  "{target}, {author} quer falar contigo. O NOX Stats não se responsabiliza por danos emocionais.",
   "🔋 {target}, economize bateria: talvez responder {author} não valha os elétrons.",
   "{target}, {author} te encontrou no mapa. Bush não funciona mais. 🌿",
   "🏴‍☠️ {target}, {author} embarcou no navio da resenha e te colocou na tripulação.",
@@ -292,7 +292,7 @@ export const freshRoasts = [
   "🧋 {target}, {author} quer resolver no papo. Até o canudo já ficou sem paciência.",
   "🐼 {target}, {author} joga de panda: é fofo até descobrir que ele não olha o mapa.",
   "📉 {target}, {author} mostrou o KDA. A planilha pediu permissão pra olhar pro outro lado.",
-  "🚨 {target}, {author} te marcou. A central do SEGA classificou como evento de comédia.",
+  "🚨 {target}, {author} te marcou. A central do NOX classificou como evento de comédia.",
   "🍿 {target}, {author} anunciou uma novidade. Já podemos vender ingresso pro chat.",
   "🧠 {target}, {author} teve uma ideia tão ousada que a lógica preferiu não comentar.",
   "🎮 {target}, {author} quer jogar de suporte. O suporte técnico já bloqueou o número dele.",

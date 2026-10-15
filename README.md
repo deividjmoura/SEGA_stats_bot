@@ -1,6 +1,6 @@
-# 🎮 SEGA Stats Bot
+# 💀 NOX | Clã Tenebrozos
 
-Bot do clã **SEGA** para Telegram + Mobile Legends: Bang Bang.
+Projeto de estatísticas para **Mobile Legends**, agora apresentado como **NOX — Clã Tenebrozos** no WhatsApp. As seções de Telegram abaixo registram componentes legados; o repositório técnico mantém seu endereço original.
 
 O projeto nasceu para centralizar estatísticas dos jogadores do clã, permitindo que cada membro vincule voluntariamente sua conta do MLBB e consulte seus dados pelo Telegram.
 
@@ -31,7 +31,7 @@ Telegram
    ├── Zone ID
    │
    ▼
-SEGA Stats Bot
+NOX Stats Bot
    │
    ├── solicita código de verificação
    │
@@ -48,7 +48,7 @@ API comunitária / Rone Arena
    └── estatísticas / temporadas / partidas
    │
    ▼
-SEGA Stats Bot
+NOX Stats Bot
 ```
 
 O jogador não fornece senha da conta ao bot.
@@ -73,7 +73,7 @@ Alguns endpoints de dados do usuário são considerados legados/deprecated pela 
 A camada de dados será isolada para permitir diferentes provedores:
 
 ```text
-                    SEGA Stats Bot
+                    NOX Stats Bot
                            │
                     Data Provider
                            │
@@ -244,7 +244,7 @@ Para contexto técnico, arquitetura e estado do projeto, consulte a documentaç�
 
 ## 👤 Projeto
 
-**SEGA Stats Bot**  
+**NOX Stats Bot**  
 Telegram + Mobile Legends: Bang Bang  
 Desenvolvido como projeto independente para uma comunidade de jogadores no Brasil.
 
