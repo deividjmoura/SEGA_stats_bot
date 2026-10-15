@@ -37,12 +37,14 @@ async function handleAdminAgenda(sock, message) {
   const match = raw.match(/^!agendar\s+(.+?)\s*\\|\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/i);
   if (match) {
     const [,title,dd,mm,yyyy,hh,min] = match;
+    if (!title.trim()) { await sendText(sock,jid,'⚠️ Informe o nome do evento.'); return true; }
     const date = new Date(yyyy+'-'+mm+'-'+dd+'T'+hh+':'+min+':00-03:00');
     const localDate = new Date(date.getTime() - 3 * 60 * 60 * 1000);
     if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now() || localDate.getUTCFullYear() !== Number(yyyy) || localDate.getUTCMonth()+1 !== Number(mm) || localDate.getUTCDate() !== Number(dd) || localDate.getUTCHours() !== Number(hh) || localDate.getUTCMinutes() !== Number(min)) { await sendText(sock,jid,'⚠️ Data inválida ou passada. Use !agendar Treino | DD/MM/AAAA HH:MM'); return true; }
     if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos ainda não confirmado. Evento não cadastrado.'); return true; }
     const events = await readJson(agendaFile, []);
-    const event = { id: crypto.randomBytes(4).toString('hex'), title: title.slice(0,120), date: date.toISOString() };
+    if (events.some(e => e.title.toLowerCase() === title.trim().toLowerCase() && e.date === date.toISOString())) { await sendText(sock,jid,'⚠️ Este evento já está cadastrado.'); return true; }
+    const event = { id: crypto.randomBytes(4).toString('hex'), title: title.trim().slice(0,120), date: date.toISOString() };
     events.push(event);
     await writeJson(agendaFile,events);
     try { await sendText(sock,announcementsGroup,'📅 *NOVO EVENTO DO CLÃ*\n🎮 '+event.title+'\n🕗 '+date.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\n🆔 '+event.id); }
@@ -55,8 +57,9 @@ async function handleAdminAgenda(sock, message) {
     const events = await readJson(agendaFile, []);
     const event = events.find(e=>e.id===cancel[1]);
     if (!event) { await sendText(sock,jid,'⚠️ Evento não encontrado.'); return true; }
+    if (!announcementsGroup) { await sendText(sock,jid,'⚠️ Canal de Avisos indisponível. Cancelamento não realizado.'); return true; }
+    await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\n'+event.title+' (ID: '+event.id+')');
     await writeJson(agendaFile,events.filter(e=>e.id!==event.id));
-    if (announcementsGroup) await sendText(sock,announcementsGroup,'❌ *EVENTO CANCELADO*\n'+event.title+' (ID: '+event.id+')');
     await sendText(sock,jid,'✅ Evento cancelado.'); return true;
   }
   return false;
