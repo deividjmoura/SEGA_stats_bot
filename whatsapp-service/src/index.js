@@ -11,6 +11,7 @@ import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
 import crypto from 'node:crypto';
 import { makeMentionRoast as roastFor } from './mentionRoasts.js';
 import { isExplicitGroupInteraction } from './groupTriggerPolicy.js';
+import { collectMentionJids } from './mentionDetection.js';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch, fetchPlayerOverview } from './roneApi.js';
@@ -1272,21 +1273,7 @@ async function handleRegistration(sock, message) {
 }
 
 function mentionIds(message) {
-  if (!message) return [];
-  const ids = [];
-  const seen = new Set();
-
-  // Baileys/WhatsApp can place contextInfo in different message wrappers.
-  const visit = (value) => {
-    if (!value || typeof value !== 'object' || seen.has(value)) return;
-    seen.add(value);
-    const mentioned = value?.contextInfo?.mentionedJid;
-    if (Array.isArray(mentioned)) ids.push(...mentioned);
-    for (const child of Object.values(value)) visit(child);
-  };
-  visit(message);
-
-  return [...new Set(ids.filter(Boolean))];
+  return collectMentionJids(message, messageText(message));
 }
 function jidAliases(jid) {
   const raw = String(jid || '');
