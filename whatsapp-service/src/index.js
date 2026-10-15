@@ -326,7 +326,7 @@ async function runAgendaNotificationTick(sock) {
           '🕗 '+new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
           '\n⏳ Faltam aproximadamente '+minutes+' minutos!\n\n'+
           '✅ *PRAZO FINAL: CONFIRME SUA PARTICIPAÇÃO ATÉ '+deadline+'!*\n'+
-          'Toque no menu clicável abaixo e escolha *Vou participar* (ou abra *!agenda*).\n'+
+          'Se o menu não abrir, envie *!agenda*, veja o ID e use *!confirmar ID*.\n'+
           '⚠️ Quem não confirmar até *30 minutos antes* fica fora da lista, salvo aprovação do Conselho.\n'+
           'Quem já confirmou permanece na lista — não precisa confirmar novamente.');
         const state=await readAttendance();
