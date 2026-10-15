@@ -194,11 +194,11 @@ async function notifyAnnouncement(sock, message, type) {
   try {
     let outgoing = { text: ANNOUNCEMENT_NOTICE, mentionAll: false };
     if (announcementMentionsEnabled) {
-      // Check that the destination really is Integrantes; WhatsApp handles current group membership for native @all.
+      // Check that the destination really is Geral; WhatsApp handles current group membership for native @all.
       const metadata = await sock.groupMetadata(targetGroup);
       outgoing = buildAnnouncementMentionMessage(metadata, targetGroup);
       if (!outgoing) {
-        console.warn('Avisos NOX: não foi possível verificar o grupo Integrantes; @all não enviado.');
+        console.warn('Avisos NOX: não foi possível verificar o grupo Geral; @all não enviado.');
         return false;
       }
     }
@@ -208,7 +208,7 @@ async function notifyAnnouncement(sock, message, type) {
     announcedIds.clear();
     for (const id of recent) announcedIds.add(id);
     await writeJson(announcementsFile, recent);
-    console.log('Aviso de comunicado enviado ao grupo Integrantes.');
+    console.log('Aviso de comunicado enviado ao grupo Geral.');
     return true;
   } catch (error) {
     console.error('Falha ao notificar comunicado:', error?.message);
@@ -467,14 +467,14 @@ function fullHelpLines() {
     '🏆 *RANKING E HIGHLIGHTS*',
     'Ainda em desenvolvimento: precisamos de dados consistentes da API para evitar classificações injustas.', '',
     '🧠 *CONHECIMENTO DE MOBILE LEGENDS*',
-    'No Integrantes, escreva *@NOX* com uma pergunta sobre counters, builds, itens, matchup, heróis ou rotas.', '',
+    'No Geral, escreva *@NOX* com uma pergunta sobre counters, builds, itens, matchup, heróis ou rotas.', '',
     '💬 *EXEMPLOS DE PERGUNTAS*',
     ...examples.map(x => '• *@NOX ' + x + '*'), '',
     '😂 *MENÇÕES E ZOEIRAS*',
-    'Ao mencionar outra pessoa no Integrantes, o NOX pode responder com uma zoeira sem revelar identificadores privados.', '',
+    'Ao mencionar outra pessoa no Geral, o NOX pode responder com uma zoeira sem revelar identificadores privados.', '',
     '🤖 *IMPORTANTE*',
     'O NOX está conectado ao número do administrador; respostas automáticas aparecem como mensagens dessa conta.', '',
-    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !nox abre o menu. Cadastro: privado do dono. Stats: no Integrantes ou privado do dono. Conhecimento e zoeiras: NOX Integrantes.'
+    '━━━━━━━━━━━━━━━━', '💡 *Resumo:* !nox abre o menu. Cadastro: privado do dono. Stats: no Geral ou privado do dono. Conhecimento e zoeiras: NOX Geral.'
   ];
 }
 
@@ -516,7 +516,7 @@ async function handleRegistration(sock, message) {
       if (!matches.length) {
         await sendText(sock, jid, '🔎 Não encontrei grupos NOX nesta conta. Confira se a comunidade está neste mesmo WhatsApp.');
       } else {
-        const lines = ['🔐 *GRUPOS NOX — SOMENTE PARA O DONO*', '', 'Copie o ID do 🎮 NOX Integrantes e envie no ChatGPT.', ''];
+        const lines = ['🔐 *GRUPOS NOX — SOMENTE PARA O DONO*', '', 'Copie o ID do 🎮 NOX Geral e envie no ChatGPT.', ''];
         for (const group of matches) {
           const label = group.isCommunityAnnounce ? ' 📢 *(AVISOS OFICIAIS)*'
             : group.isCommunity ? ' 🏠 *(COMUNIDADE)*'
@@ -831,7 +831,7 @@ async function handleGroup(sock, message) {
     return;
   }
   if (/^[!/]battle(?:\s+.*)?$/i.test(text)) {
-    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no Integrantes para consultar seus dados.');
+    await sendText(sock, groupJid, 'ℹ️ O Battle ID foi desativado. Use !stats no Geral para consultar seus dados.');
     return;
   }
   if (/^[!/]stats$/i.test(text)) {
