@@ -135,14 +135,19 @@ async function sendRsvpAgenda(sock, message) {
   const state = await readAttendance();
   const openEvents=events.filter(event=>isRsvpOpen(event));
   const counts = Object.fromEntries(openEvents.map(event => [event.id, attendanceCount(state,event.id)]));
-  await sendText(sock,jid,await agendaText());
+  await sendText(sock,jid,(await agendaText()) +
+    '\n\n📱 *Se o menu clicável não abrir no seu WhatsApp:* envie *!confirmar ID* ou *!desistir ID*, usando o ID exibido no evento.');
   if (!openEvents.length) {
     await sendText(sock,jid,'⏰ O prazo de confirmação dos próximos eventos já encerrou. Só o Conselho pode autorizar exceções.');
     return;
   }
   const session = { step:'pick', page:0, expires:Date.now()+RSVP_SESSION_TTL_MS };
   storeRsvpSession(jid,ids,session);
-  await sendInteractive(sock,jid,buildRsvpEventChoices(openEvents,counts,0),[targetGroup]);
+  try {
+    await sendInteractive(sock,jid,buildRsvpEventChoices(openEvents,counts,0),[targetGroup]);
+  } catch (error) {
+    console.warn('Menu da agenda não renderizado; os comandos de texto permanecem disponíveis:',error?.message);
+  }
 }
 async function handleRsvpChoice(sock, message, action) {
   const jid = message.key.remoteJid;
@@ -1361,6 +1366,7 @@ async function handleGroup(sock, message) {
   const selectedMenuOption = isClick && NOX_MENU_OPTIONS.some(option => option.id === text);
   const selectedRsvpOption = isClick && /^nox:rsvp:(page|event|confirm|decline|withdraw|keep):/.test(text);
   if (!selectedMenuOption && !selectedRsvpOption && !isExplicitGroupInteraction(text, mentionedNow)) return;
+  if (await handleDirectRsvp(sock, message, text)) return;
   if (selectedRsvpOption) {
     await handleRsvpChoice(sock,message,text);
     return;
