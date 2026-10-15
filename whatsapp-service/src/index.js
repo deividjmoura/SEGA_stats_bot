@@ -111,16 +111,33 @@ async function handleRsvpChoice(sock, message, action) {
     await sendText(sock,jid,'⚠️ Não consegui confirmar sua identidade. Abra !agenda novamente.');
     return;
   }
-  const session = findRsvpSession(jid,ids);
-  if (!session || session.expires <= Date.now()) {
-    deleteRsvpSession(jid,ids);
-    await sendText(sock,jid,'⌛ A escolha expirou. Envie !agenda para abrir uma nova lista.');
-    return;
-  }
   const match=action.match(/^nox:rsvp:(page|event|confirm|decline|withdraw|keep):([a-f0-9]{8}|\d+)$/i);
   if (!match) return;
   const [, kind, value] = match;
   const events=(await upcomingAgendaEvents()).filter(event=>isRsvpOpen(event));
+  let session = findRsvpSession(jid,ids);
+  // Reminder menus are shared with the whole Geral. A player can tap one without
+  // first opening a personal !agenda session during the final 30-minute window.
+  if ((!session || session.expires <= Date.now()) && kind==='event') {
+    const reminderEvent=events.find(event=>event.id===value.toLowerCase() &&
+      Date.now()>=Date.parse(event.date)-60*60*1000);
+    if(reminderEvent) {
+      deleteRsvpSession(jid,ids);
+      session={step:'confirm',eventId:reminderEvent.id,
+        expires:Date.now()+RSVP_SESSION_TTL_MS};
+      storeRsvpSession(jid,ids,session);
+      const state=await readAttendance();
+      await sendInteractive(sock,jid,
+        buildRsvpConfirmationChoice(reminderEvent,isAttending(state,reminderEvent.id,ids)),
+        [targetGroup]);
+      return;
+    }
+  }
+  if (!session || session.expires <= Date.now()) {
+    deleteRsvpSession(jid,ids);
+    await sendText(sock,jid,'⌛ Escolha expirada ou prazo encerrado. Envie !agenda para verificar eventos disponíveis.');
+    return;
+  }
   if (kind==='page') {
     const page=Number(value);
     if (session.step!=='pick' || !Number.isInteger(page) || page<0 || page>=Math.ceil(events.length/8)) {
@@ -262,9 +279,13 @@ async function runAgendaNotificationTick(sock) {
           '🕗 '+new Date(event.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
           '\n⏳ Faltam aproximadamente '+minutes+' minutos!\n\n'+
           '✅ *PRAZO FINAL: CONFIRME SUA PARTICIPAÇÃO NOS PRÓXIMOS 30 MINUTOS!*\n'+
-          'Abra *!agenda*, toque no evento e escolha *Vou participar*.\n'+
+          'Toque no menu clicável abaixo e escolha *Vou participar* (ou abra *!agenda*).\n'+
           '⚠️ Quem não confirmar até *30 minutos antes* fica fora da lista, salvo aprovação do Conselho.\n'+
           'Quem já confirmou permanece na lista — não precisa confirmar novamente.');
+        const state=await readAttendance();
+        await sendInteractive(sock,targetGroup,
+          buildRsvpEventChoices([event],{[event.id]:attendanceCount(state,event.id)}),
+          [targetGroup]);
         history[event.id]={...history[event.id],reminderAt:new Date().toISOString()};
       } else if(type==='report') {
         await sendAttendanceReport(sock,event,true);
