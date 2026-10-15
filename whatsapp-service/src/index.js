@@ -34,33 +34,61 @@ const AGENDA_DRAFT_TTL = 15 * 60 * 1000;
 async function handleAgendaWizard(sock, jid, message, raw) {
   const actor = String(message?.key?.participant || message?.key?.participantAlt || (message?.key?.fromMe ? 'owner' : '') || '');
   const key = jid + ':' + actor;
-  if (/^!agendar$/i.test(raw)) {
-    agendaDrafts.set(key, { step: 'title', expires: Date.now() + AGENDA_DRAFT_TTL });
-    await sendText(sock, jid, '📅 *Novo evento* (1/3)\\nQual é o nome do evento?\\nDigite !sair para cancelar.');
+  const events = async () => (await readJson(agendaFile, [])).filter(e => Date.parse(e.date) >= Date.now()).sort((a,b) => a.date.localeCompare(b.date));
+  if (/^!(agendar|editarevento|cancelarevento)$/i.test(raw)) {
+    const mode = raw.slice(1).toLowerCase();
+    if (mode === 'agendar') {
+      agendaDrafts.set(key, { mode, step:'title', expires:Date.now()+AGENDA_DRAFT_TTL });
+      await sendText(sock,jid,'📅 *Novo evento* (1/3)\nQual é o nome do evento?\nDigite !sair para cancelar.');
+    } else {
+      const list = await events();
+      if (!list.length) { await sendText(sock,jid,'📅 Não há eventos futuros cadastrados.'); return true; }
+      agendaDrafts.set(key,{mode,step:'select',list,expires:Date.now()+AGENDA_DRAFT_TTL});
+      await sendText(sock,jid,(mode==='editarevento'?'✏️ *Editar evento*':'❌ *Excluir evento*')+'\nQual evento? Responda com o número:\n'+list.map((e,i)=>(i+1)+'. '+e.title+' — '+new Date(e.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})).join('\n')+'\nDigite !sair para cancelar.');
+    }
     return true;
   }
   const draft = agendaDrafts.get(key);
   if (!draft) return false;
-  if (Date.now() > draft.expires) { agendaDrafts.delete(key); await sendText(sock, jid, '⌛ Agendamento expirou. Envie !agendar para começar novamente.'); return true; }
-  if (/^!sair$/i.test(raw)) { agendaDrafts.delete(key); await sendText(sock, jid, '❌ Agendamento cancelado.'); return true; }
+  if (Date.now()>draft.expires) { agendaDrafts.delete(key); await sendText(sock,jid,'⌛ Operação expirada. Envie o comando novamente.'); return true; }
+  if (/^!sair$/i.test(raw)) { agendaDrafts.delete(key); await sendText(sock,jid,'❌ Operação cancelada.'); return true; }
   if (raw.startsWith('!')) return false;
-  if (draft.step === 'title') {
-    if (!raw || raw.length > 120) { await sendText(sock, jid, '⚠️ Informe um nome com até 120 caracteres.'); return true; }
-    draft.title = raw.trim(); draft.step = 'date';
-    await sendText(sock, jid, '📅 (2/3) Qual a data? Use DD/MM/AAAA.');
+  if (draft.step==='select') {
+    const idx=Number(raw)-1;
+    if (!/^\d+$/.test(raw)||idx<0||idx>=draft.list.length) { await sendText(sock,jid,'⚠️ Responda com um número da lista.'); return true; }
+    draft.event=draft.list[idx];
+    if (draft.mode==='cancelarevento') {
+      draft.step='confirm';
+      await sendText(sock,jid,'⚠️ Confirmar exclusão de *'+draft.event.title+'*? Responda *SIM* ou *NÃO*.');
+    } else {
+      draft.step='title';
+      await sendText(sock,jid,'✏️ Qual será o novo nome de *'+draft.event.title+'*?');
+    }
     return true;
   }
-  if (draft.step === 'date') {
-    if (!/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(raw)) { await sendText(sock, jid, '⚠️ Data inválida. Use DD/MM/AAAA.'); return true; }
-    draft.date = raw; draft.step = 'time';
-    await sendText(sock, jid, '🕗 (3/3) Qual o horário? Use HH:MM (horário de Brasília).');
-    return true;
-  }
-  if (draft.step === 'time') {
-    if (!/^\\d{2}:\\d{2}$/.test(raw)) { await sendText(sock, jid, '⚠️ Horário inválido. Use HH:MM.'); return true; }
+  if (draft.step==='confirm') {
+    if (!/^(sim|não|nao)$/i.test(raw)) { await sendText(sock,jid,'Responda SIM ou NÃO.'); return true; }
     agendaDrafts.delete(key);
-    const synthetic = { ...message, message: { conversation: '!agendar ' + draft.title + ' | ' + draft.date + ' ' + raw } };
-    return handleAdminAgenda(sock, synthetic);
+    if (!/^sim$/i.test(raw)) { await sendText(sock,jid,'Exclusão cancelada.'); return true; }
+    return handleAdminAgenda(sock,{...message,message:{conversation:'!cancelarevento '+draft.event.id}});
+  }
+  if (draft.step==='title') {
+    if (!raw.trim()||raw.length>120) { await sendText(sock,jid,'⚠️ Informe um nome com até 120 caracteres.'); return true; }
+    draft.title=raw.trim();draft.step='date';
+    await sendText(sock,jid,'📅 Qual é a data do evento? Use DD/MM/AAAA.');
+    return true;
+  }
+  if (draft.step==='date') {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) { await sendText(sock,jid,'⚠️ Use a data no formato DD/MM/AAAA.'); return true; }
+    draft.date=raw;draft.step='time';
+    await sendText(sock,jid,'🕗 Qual é o horário? Use HH:MM (Brasília).');
+    return true;
+  }
+  if (draft.step==='time') {
+    if (!/^\d{2}:\d{2}$/.test(raw)) { await sendText(sock,jid,'⚠️ Use o horário HH:MM.'); return true; }
+    const command=draft.mode==='editarevento'?'!editarevento '+draft.event.id+' | '+draft.title+' | '+draft.date+' '+raw:'!agendar '+draft.title+' | '+draft.date+' '+raw;
+    agendaDrafts.delete(key);
+    return handleAdminAgenda(sock,{...message,message:{conversation:command}});
   }
   return false;
 }
