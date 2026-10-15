@@ -1,5 +1,6 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
+import { sendPrivateNoxMenuPrototype } from './clickableMenuPrototype.js';
 import { ANNOUNCEMENT_NOTICE, isAnnouncementPost, selectCommunityAnnouncementsGroup, buildAnnouncementMentionMessage } from './announcementRouting.js';
 import { shouldProcessPrivateMessage, shouldProcessRegistrationPrivateMessage } from './privateChatRouting.js';
 import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
@@ -686,6 +687,12 @@ async function handleRegistration(sock, message) {
       console.error('Falha na lista de grupos do dono:', error?.message);
       await sendText(sock, jid, '⚠️ Não consegui listar os grupos agora. Tente !grupos novamente.');
     }
+    return true;
+  }
+  // Experimental only: opt-in command in the owner's private chat; never groups.
+  if (ownerPrivate && command === '!noxmenu') {
+    try { await sendPrivateNoxMenuPrototype(sock, jid); }
+    catch (error) { await sendText(sock, jid, '⚠️ Menu clicável indisponível neste WhatsApp. Use !nox para abrir o menu por números.'); }
     return true;
   }
   if (ownerPrivate && ['!nox','/nox'].includes(command)) {
