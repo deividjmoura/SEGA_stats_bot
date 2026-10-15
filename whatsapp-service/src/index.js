@@ -244,23 +244,15 @@ async function sendNoxMenu(sock, jid, sessionKey = jid) {
     '🎮 *NOX STATS*',
     '━━━━━━━━━━━━━━━━',
     '',
-    '1️⃣ 📊 *MEUS STATS*',
-    '   `!stats`',
+    '1️⃣ 📊 !stats',
+    '2️⃣ 🏆 !ranking',
+    '3️⃣ 🌟 !highlights',
+    '4️⃣ 🎮 !cadastrar',
+    '5️⃣ ❓ !ajuda',
+    '6️⃣ 📅 !agenda',
+    '7️⃣ 💡 !sugestao',
     '',
-    '2️⃣ 🏆 *RANKING DO CLÃ*',
-    '   `!ranking` _(em desenvolvimento)_',
-    '',
-    '3️⃣ 🌟 *HIGHLIGHTS*',
-    '   `!highlights` _(em desenvolvimento)_',
-    '',
-    '4️⃣ 🎮 *CADASTRO*',
-    '   `!cadastrar` _(somente no privado)_',
-    '',
-    '5️⃣ ❓ *AJUDA*',
-    '   `!ajuda`',
-    '',
-    '━━━━━━━━━━━━━━━━',
-    '⌨️ *Digite 1 a 5 ou escreva o comando diretamente.*'
+    '⌨️ *Digite 1 a 7 ou use o comando.*'
   ].join('\n');
   menuSessions.set(sessionKey, Date.now() + MENU_TTL_MS);
   return sendText(sock, jid, menu);
@@ -454,12 +446,18 @@ function fullHelpLines() {
   const examples = listKnowledgeExamples().slice(0, 12);
   return [
     '🎮 *NOX STATS — AJUDA COMPLETA*', '━━━━━━━━━━━━━━━━', '',
-    '📋 *MENU PRINCIPAL*', 'Digite *!nox*. Escolha uma opção de 1 a 5 ou use o comando diretamente.', '',
+    '📋 *MENU PRINCIPAL*', 'Digite *!nox*. Escolha uma opção de 1 a 7 ou use o comando diretamente.', '',
     '1️⃣ 📊 *MEUS STATS* — !stats',
     '2️⃣ 🏆 *RANKING DO CLÃ* — !ranking _(em desenvolvimento)_',
     '3️⃣ 🌟 *HIGHLIGHTS* — !highlights _(em desenvolvimento)_',
     '4️⃣ 🎮 *CADASTRO* — !cadastrar no privado',
-    '5️⃣ ❓ *AJUDA* — !ajuda', '',
+    '5️⃣ ❓ *AJUDA* — !ajuda',
+    '6️⃣ 📅 *AGENDA* — !agenda',
+    '7️⃣ 💡 *SUGESTÕES* — !sugestao', '',
+    '📅 *AGENDA DO CLÃ*',
+    '*!agenda* mostra os próximos eventos no Geral. Somente membros do grupo de ADMs podem cadastrar ou cancelar eventos, exclusivamente naquele grupo: *!agendar Treino | 17/10/2026 20:00* e *!cancelarevento ID*. O NOX publica os eventos nos Avisos.', '',
+    '💡 *IDEIAS E SUGESTÕES*',
+    '*!sugestao* abre o WhatsApp privado do responsável. Envie sua ideia diretamente na conversa; o NOX não armazena sugestões.', '',
     '🔐 *CADASTRO*',
     'No privado: *!cadastrar* → Role ID → Zone ID → código recebido no correio interno do Mobile Legends. O bot confirma o nick vinculado à conta.', '',
     '📊 *SEUS STATS*',
@@ -501,9 +499,9 @@ async function handleRegistration(sock, message) {
   if (!text) return false;
   let command = text.toLowerCase();
   const menuUntil = menuSessions.get(jid) || 0;
-  if (menuUntil > Date.now() && /^[1-5]$/.test(command) && !registrations.has(jid)) {
+  if (menuUntil > Date.now() && /^[1-7]$/.test(command) && !registrations.has(jid)) {
     menuSessions.delete(jid);
-    command = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda' }[command];
+    command = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda', '6':'!agenda', '7':'!sugestao' }[command];
   } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
 
   if (ownerPrivate && ['!grupos','/grupos'].includes(command)) {
@@ -535,6 +533,8 @@ async function handleRegistration(sock, message) {
     await sendNoxMenu(sock, jid);
     return true;
   }
+  if (ownerPrivate && command === '!agenda') { await sendText(sock, jid, await agendaText()); return true; }
+  if (ownerPrivate && command === '!sugestao') { await sendText(sock, jid, suggestionLink() || '⚠️ Link privado indisponível.'); return true; }
   if (ownerPrivate && command === '!ajuda') {
     await sendText(sock, jid, fullHelpLines().join('\n'));
     return true;
@@ -744,6 +744,10 @@ async function warmGroupParticipantNames(sock, groupJid) {
     console.warn('Não consegui aquecer nomes do grupo:', error?.message);
   }
 }
+function suggestionLink() {
+  const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('💡 Sugestão para o NOX: ') : null;
+}
 function registrationLink() {
   const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('!cadastrar') : null;
@@ -761,9 +765,9 @@ async function handleGroup(sock, message) {
   // This gate runs before contact lookups or other response handlers.
   if (!isExplicitGroupInteraction(text, mentionedNow, (menuSessions.get(menuKey) || 0) > Date.now())) return;
   const until = menuSessions.get(menuKey) || 0;
-  if (until > Date.now() && /^[1-5]$/.test(text)) {
+  if (until > Date.now() && /^[1-7]$/.test(text)) {
     menuSessions.delete(menuKey);
-    text = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda' }[text];
+    text = { '1':'!stats', '2':'!ranking', '3':'!highlights', '4':'!cadastrar', '5':'!ajuda', '6':'!agenda', '7':'!sugestao' }[text];
   } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
   const aliases = aliasesFor(key);
   linkIdentities([key.participant, key.participantAlt].filter(Boolean));
@@ -828,6 +832,14 @@ async function handleGroup(sock, message) {
     : (aliases.map(playerForJid).find(Boolean) || findPlayer(aliases));
   if (/^[!\/]nox$/i.test(text)) {
     await sendNoxMenu(sock, groupJid, menuKey);
+    return;
+  }
+  if (/^[!/]sugestao$/i.test(text)) {
+    await sendText(sock, groupJid, suggestionLink() ? '💡 Envie sua ideia diretamente no privado: ' + suggestionLink() : '⚠️ Link privado indisponível.');
+    return;
+  }
+  if (/^[!/]agenda$/i.test(text)) {
+    await sendText(sock, groupJid, await agendaText());
     return;
   }
   if (/^[!/]battle(?:\s+.*)?$/i.test(text)) {
