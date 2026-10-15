@@ -1,3 +1,5 @@
+import { brandNoxInteractiveTitle } from './noxBranding.js';
+
 // WhatsApp native-flow menus. Callers enforce chat permissions before sending.
 export const NOX_MENU_OPTIONS = Object.freeze([
   { id: '!stats', title: '📊 Minhas estatísticas' },
@@ -16,10 +18,11 @@ export function buildInteractiveList({ title, body, buttonText, rows }) {
   if (new Set(rows.map(row => row.id)).size !== rows.length) {
     throw new Error('A lista interativa possui opções duplicadas');
   }
+  const branded = brandNoxInteractiveTitle(title, body);
   return {
     interactiveMessage: {
-      header: { title, hasMediaAttachment: false },
-      body: { text: body },
+      header: { title: branded.headerTitle, hasMediaAttachment: false },
+      body: { text: branded.bodyText },
       footer: { text: '🐺 Clã Tenebrozos' },
       nativeFlowMessage: {
         buttons: [{
