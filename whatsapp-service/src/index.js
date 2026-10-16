@@ -589,6 +589,8 @@ async function handleAdminAgenda(sock, message) {
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
   if (/^!(comandosadm|ajuda)$/i.test(raw)) {
+    const actor=message.key?.fromMe?'owner':String(message.key?.participant||message.key?.participantAlt||'');
+    if(actor)agendaDrafts.delete(jid+':'+actor);
     await sendRoleCommandsMenu(sock,jid,'conselho');
     return true;
   }
@@ -1221,7 +1223,7 @@ function councilHelpLines() {
     '• *Dono (conversa privada Você):* !revisor listar, !revisor ROLE_ID ZONE_ID, !revisor desativar, !grupos e !comandosdono.',
     'Cada papel só executa esses comandos no grupo ou privado autorizado. O revisor consulta sua lista detalhada com *!comandosrevisor* no Integrantes.',
     '',
-    '❓ Envie *!comandosadm* ou *!ajuda* aqui para ver esta lista.'
+    '📋 Envie *!comandosadm* ou *!ajuda* neste grupo para abrir o menu clicável. Para ver este guia completo por escrito: *!comandosadm detalhes*.'
   ];
 }
 
@@ -1251,7 +1253,7 @@ function reviewerHelpLines() {
     '',
     '🛡️ O conteúdo só fica ativo após aprovação; rejeições e exclusões não são exibidas nas respostas.',
     '📜 Editar e excluir preserva um histórico de revisão.',
-    '❓ Envie *!comandosrevisor* ou *!ajuda* aqui para repetir esta lista.'
+    '📋 Envie *!comandosrevisor* ou *!ajuda* aqui para abrir o menu. Para consultar todas as instruções em texto: *!comandosrevisor detalhes*.'
   ];
 }
 
@@ -1265,7 +1267,7 @@ function ownerHelpLines() {
     '• *!revisor ROLE_ID ZONE_ID* — autoriza apenas esse jogador a revisar no grupo Integrantes.',
     '• *!revisor desativar* — revoga a autorização de revisão.',
     '• *!grupos* — descobre grupos da comunidade e seus IDs.',
-    '• *!comandosdono* — abre esta lista.',
+    '• *!comandosdono* — abre o menu clicável do dono; *!comandosdono detalhes* mostra este guia completo em texto.',
     'O dono pode usar *!ajuda* para conhecer os comandos comuns, mas comandos do Conselho e do revisor continuam restritos aos seus grupos.'
   ];
 }
@@ -2143,6 +2145,7 @@ async function handleKnowledgeReviewGroup(sock,message) {
     return true;
   }
   if(/^!(ajuda|comandosrevisor)$/i.test(raw)){
+    knowledgeReviewDrafts.delete(key);
     await sendRoleCommandsMenu(sock,jid,'revisor');return true;
   }
   if(/^!comandosrevisor detalhes$/i.test(raw)){
