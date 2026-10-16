@@ -151,7 +151,7 @@ a{color:var(--mint)} button.secondary{border:0;color:var(--muted);background:tra
   }
   async function ensurePuterSignIn() {
     if(typeof puter==='undefined')throw Error('O serviço de IA não carregou. Confere a conexão à internet e tente novamente.');
-    if(typeof puter.auth?.isSignedIn==='function' && await puter.auth.isSignedIn())return;
+    if(typeof puter.auth?.isSignedIn==='function' && puter.auth.isSignedIn())return;
     // Called synchronously from the user's send or mode button interaction.
     await puter.auth.signIn();
   }
