@@ -470,6 +470,11 @@ function canonicalHeroName(name) {
   return name;
 }
 
+export function canonicalMlbbHero(text) {
+  const hero = findHero(String(text || '').trim());
+  return hero?.pt || null;
+}
+
 export function intentOf(text) {
   const source = compact(text);
   // Classify the requested detail first: "which item against X" must never
