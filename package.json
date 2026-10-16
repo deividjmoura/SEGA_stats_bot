@@ -2,7 +2,7 @@
   "name": "sega-stats-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "Telegram bot do clã SEGA para estatísticas de Mobile Legends.",
+  "description": "NOX | Clã Tenebrozos — estatísticas e ferramentas para Mobile Legends.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -11,7 +11,7 @@
     "test": "node --test"
   },
   "engines": {
-    "node": ">=20.9"
+    "node": ">=22"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
