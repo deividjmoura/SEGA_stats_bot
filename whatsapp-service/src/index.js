@@ -1726,8 +1726,11 @@ async function submitCommunityKnowledge(sock,message,raw) {
     '\n💬 *Conteúdo:* '+item.content+
     '\n\n⚖️ *Somente '+reviewerLabel+' pode decidir.*\n' +
     '✅ *!aprovarconhecimento '+item.id+'*\n' +
+    '✏️ *!aprovarcomedicao '+item.id+'*\n' +
     '❌ *!rejeitarconhecimento '+item.id+'*\n' +
-    '📋 *!propostas* para listar pendências.';
+    '📋 *!propostas* — sugestões pendentes\n' +
+    '📚 *!conhecimentos* — consultar, editar ou excluir os conhecimentos aprovados.\n' +
+    '❓ *!comandosrevisor* — todas as funções do revisor.';
   try {
     await sendText(sock,membersGroup,reviewNotice);
     try {
