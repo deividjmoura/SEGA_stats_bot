@@ -1384,6 +1384,198 @@ async function warmGroupParticipantNames(sock, groupJid) {
     console.warn('Não consegui aquecer nomes do grupo:', error?.message);
   }
 }
+function suggestionMenuInstructions() {
+  return '💡 *O QUE VOCÊ QUER SUGERIR?*\n\n' +
+    '🛠️ *Melhoria do bot* — vai diretamente para o responsável pelo NOX.\n' +
+    '🧠 *Conhecimento do MLBB* — é enviado para revisão exclusiva do André A. no grupo Integrantes.\n\n' +
+    '📱 Se o menu não abrir, use *!sugestao bot* ou *!sugestao conhecimento*.';
+}
+
+async function sendSuggestionMenu(sock,jid) {
+  await sendText(sock,jid,suggestionMenuInstructions());
+  try {
+    await sendInteractive(sock,jid,buildSuggestionCategoryMenu(),[targetGroup].filter(Boolean));
+  } catch(error) {
+    console.warn('Menu de sugestões indisponível, comandos de texto ativos:',error?.message);
+  }
+}
+
+async function handleSuggestionChoice(sock,jid,kind) {
+  if(kind==='bot') {
+    await sendText(sock,jid,suggestionLink()
+      ? '🛠️ *MELHORIA PARA O NOX*\n\nEnvie sua sugestão diretamente ao responsável no privado:\n'+suggestionLink()
+      : '⚠️ Link privado indisponível. Fale com o administrador do NOX.');
+    return true;
+  }
+  if(kind==='knowledge') {
+    await sendText(sock,jid,
+      '🧠 *SUGERIR CONHECIMENTO PARA O NOX*\n\n' +
+      'Sua dica vai para o grupo *Integrantes* e somente o *André A.* poderá aprovar ou rejeitar.\n\n' +
+      'Envie no *Geral* seguindo este modelo:\n' +
+      '*!conhecimento Harley | counter | Saber é uma boa escolha contra Harley porque sua ultimate pode finalizar o alvo rapidamente.*\n\n' +
+      'Categorias: *counter*, *build*, *item* ou *dica*.\n' +
+      '✅ Sua ideia só aparece nas respostas depois de aprovada; dados da API permanecem separados.');
+    return true;
+  }
+  return false;
+}
+
+async function submitCommunityKnowledge(sock,message,raw) {
+  const jid=message.key.remoteJid;
+  if(jid!==targetGroup || !/^!conhecimento(?:\s|$)/i.test(raw))return false;
+  const parsed=parseKnowledgeSubmission(raw,canonicalMlbbHero);
+  if(!parsed.ok) { await sendText(sock,jid,'⚠️ '+parsed.error);return true; }
+  const ids=rsvpActorIds(message.key);
+  if(!ids.length) {
+    await sendText(sock,jid,'⚠️ Não consegui identificar seu WhatsApp; sugestão não foi enviada.');
+    return true;
+  }
+  const player=ids.map(playerForJid).find(Boolean);
+  const name=player?.name||message.pushName||ids.map(id=>whatsappName(id,'')).find(Boolean)||'Integrante';
+  const proposed=await updateCommunityKnowledge(state=>appendPendingKnowledge(state,{
+    id:crypto.randomBytes(4).toString('hex'),hero:parsed.hero,category:parsed.category,
+    content:parsed.content,authorIds:ids,authorName:name,
+  }));
+  if(!proposed.ok){await sendText(sock,jid,'⚠️ '+proposed.error);return true;}
+  const item=proposed.proposal;
+  await sendText(sock,jid,'📨 *SUGESTÃO RECEBIDA*\n🆔 '+item.id+
+    '\n🎮 '+item.hero+' · '+KNOWLEDGE_CATEGORIES[item.category]+
+    '\n⏳ Aguardando análise do André A. no grupo Integrantes. Ainda NÃO faz parte da base de conhecimento.');
+  const reviewNotice='🧠 *NOVA SUGESTÃO DE CONHECIMENTO*\n\n'+
+    '🆔 *'+item.id+'*\n🎮 *Herói:* '+item.hero+
+    '\n📚 *Assunto:* '+KNOWLEDGE_CATEGORIES[item.category]+
+    '\n👤 *Enviada por:* '+item.authorName+
+    '\n💬 *Conteúdo:* '+item.content+
+    '\n\n⚖️ *Somente o André A. pode decidir.*\n' +
+    '✅ *!aprovarconhecimento '+item.id+'*\n' +
+    '❌ *!rejeitarconhecimento '+item.id+'*\n' +
+    '📋 *!propostas* para listar pendências.';
+  try {
+    await sendText(sock,membersGroup,reviewNotice);
+    try {
+      await sendInteractive(sock,membersGroup,buildKnowledgeReviewMenu(item),[membersGroup]);
+    } catch(error) { console.warn('Menu de revisão não suportado; comandos de texto permanecem disponíveis:',error?.message); }
+  } catch(error) {
+    console.error('Sugestão salva, mas falhou o aviso no grupo Integrantes:',error?.message);
+    await sendText(sock,jid,'⚠️ Sua sugestão foi salva, mas o aviso no grupo Integrantes falhou. O revisor pode recuperá-la com *!propostas*.');
+  }
+  return true;
+}
+
+async function configureKnowledgeReviewer(sock,jid,command) {
+  const requested=String(command).trim();
+  if(!/^!revisor(?:\s|$)/i.test(requested))return false;
+  const match=/^!revisor\s+(\d{6,12})\s+(\d{1,8})$/i.exec(requested);
+  if(requested.toLowerCase()==='!revisor'){
+    const saved=await readCommunityKnowledge();
+    await sendText(sock,jid,saved.reviewer
+      ? '🔐 *REVISOR DE CONHECIMENTO*\n🎮 '+saved.reviewer.nick+
+        '\n✅ Cadastrado como revisor exclusivo.\nPara substituir: *!revisor ROLE_ID ZONE_ID*.\nPara revogar: *!revisor desativar*.'
+      : '🔐 Nenhum revisor autorizado ainda.\nDepois que o André cadastrar a conta dele no NOX, envie aqui no seu privado: *!revisor ROLE_ID ZONE_ID*.');
+    return true;
+  }
+  if(requested.toLowerCase()==='!revisor desativar'){
+    await updateCommunityKnowledge(state=>({ok:true,data:{...state,reviewer:null}}));
+    await sendText(sock,jid,'🔒 Permissão de revisor desativada. Sugestões anteriores permanecem salvas.');
+    return true;
+  }
+  if(!match){
+    await sendText(sock,jid,'⚠️ Use *!revisor ROLE_ID ZONE_ID* depois de cadastrar o André, ou *!revisor desativar*.');
+    return true;
+  }
+  const [,roleId,zoneId]=match;
+  const verified=[...players.entries()].filter(([id,p])=>id!=='self' &&
+    id.includes('@') && p?.nameVerified===true &&
+    String(p.roleId)===roleId && String(p.zoneId)===zoneId);
+  if(!verified.length) {
+    await sendText(sock,jid,'⚠️ Não encontrei uma conta com esse Role ID e Zone ID verificada no NOX. Peça ao André para concluir *!cadastrar* no privado antes.');
+    return true;
+  }
+  const candidate=verified[0][1];
+  await updateCommunityKnowledge(state=>({ok:true,data:{...state,reviewer:{
+    roleId,zoneId,nick:safeKnowledgeText(candidate.name,65),assignedAt:new Date().toISOString()
+  }}}));
+  await sendText(sock,jid,'✅ *REVISOR DEFINIDO*\n🎮 '+safeKnowledgeText(candidate.name,65)+
+    '\n🔐 O NOX verificará a conta registrada, não o nome de WhatsApp. Só esse cadastro poderá aprovar conhecimento no grupo Integrantes.');
+  return true;
+}
+
+async function knowledgeReviewerForMessage(sock,message,state) {
+  if (!state.reviewer || message?.key?.remoteJid!==membersGroup) return null;
+  const key=message.key;
+  const base=[key.participant,key.participantAlt].filter(Boolean);
+  if(!base.length)return null;
+  for(const jid of base.filter(id=>id.endsWith('@lid'))){
+    try{
+      const pn=await sock.signalRepository?.lidMapping?.getPNForLID(jid);
+      if(pn)linkIdentities([jid,pn]);
+    }catch(error){ console.warn('Não foi possível confirmar alias do revisor:',error?.message); }
+  }
+  const actor=base.flatMap(linkedAliases);
+  const player=actor.map(id=>players.get(id)).find(p=>isVerifiedReviewer(p,state.reviewer));
+  return player||null;
+}
+
+async function handleKnowledgeReviewGroup(sock,message) {
+  const jid=message?.key?.remoteJid;
+  if(jid!==membersGroup || !message?.message || botSentMessageIds.has(message.key.id))return false;
+  const raw=messageText(message.message).trim();
+  const click=isInteractiveChoice(message.message);
+  const choice=click ? /^nox:knowledge:(approve|reject):([a-f0-9]{8})$/i.exec(raw) : null;
+  const command=/^!(aprovarconhecimento|rejeitarconhecimento)\s+([a-f0-9]{8})$/i.exec(raw);
+  const pending=/^!propostas$/i.test(raw);
+  if(!choice && !command && !pending)return false;
+  const state=await readCommunityKnowledge();
+  const reviewer=await knowledgeReviewerForMessage(sock,message,state);
+  if(!reviewer) {
+    // Do not reveal authority assignments to arbitrary group members.
+    return true;
+  }
+  if(pending){
+    const awaiting=state.proposals.filter(p=>p.status==='pending');
+    const output=awaiting.slice(-15).map(p=>'• *'+p.id+'* — '+p.hero+
+      ' ('+KNOWLEDGE_CATEGORIES[p.category]+') — '+p.authorName).join('\n');
+    await sendText(sock,jid,'🧠 *SUGESTÕES AGUARDANDO ANÁLISE* ('+awaiting.length+')\n\n'+
+      (output||'Nenhuma sugestão pendente.')+
+      '\n\nPara avaliar, use *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*.');
+    return true;
+  }
+  const verdict=choice ? (choice[1]==='approve'?'approved':'rejected')
+    : (command[1].toLowerCase()==='aprovarconhecimento'?'approved':'rejected');
+  const id=(choice?.[2]||command?.[2]).toLowerCase();
+  // Recheck assignment inside serialized mutation to reject stale approvals.
+  const result=await updateCommunityKnowledge(current=>{
+    if(!isVerifiedReviewer(reviewer,current.reviewer)){
+      return {ok:false,error:'Sua autorização foi revogada.'};
+    }
+    return reviewKnowledge(current,id,verdict,reviewer.name);
+  });
+  if(!result.ok){
+    await sendText(sock,jid,'⚠️ '+result.error);
+    return true;
+  }
+  const p=result.proposal;
+  await sendText(sock,jid,verdict==='approved'
+    ? '✅ *CONHECIMENTO APROVADO*\n🆔 '+p.id+'\n🎮 '+p.hero+
+      ' · '+KNOWLEDGE_CATEGORIES[p.category]+
+      '\n📚 Passará a aparecer nas respostas do NOX como *conhecimento da comunidade (revisado)*, separado da API.'
+    : '❌ *SUGESTÃO REJEITADA*\n🆔 '+p.id+'\n🎮 '+p.hero+
+      '\n🛡️ A informação NÃO será usada nas respostas do NOX.');
+  return true;
+}
+
+async function appendApprovedKnowledgeToAnswer(question,answer) {
+  const hero=canonicalMlbbHero(question);
+  const intent=intentOf(question);
+  if(!hero)return answer;
+  const approved=matchApprovedKnowledge(await readCommunityKnowledge(),hero,intent);
+  if(!approved.length)return answer;
+  const lines=['🧠 *CONHECIMENTO DA COMUNIDADE — REVISADO*',
+    ...approved.map(item=>'• '+safeKnowledgeText(item.content,580))];
+  return (answer ? answer+'\n\n' : '')+lines.join('\n')+
+    '\n📌 Dicas aprovadas pelo revisor do clã, não são dados oficiais da API.';
+}
+
 function suggestionLink() {
   const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('💡 Sugestão para o NOX: ') : null;
