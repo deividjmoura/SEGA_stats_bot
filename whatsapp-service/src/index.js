@@ -2104,16 +2104,27 @@ async function sendKnowledgeDetail(sock,jid,item) {
 async function handleKnowledgeReviewGroup(sock,message) {
   const jid=message?.key?.remoteJid;
   if(jid!==membersGroup || !message?.message || botSentMessageIds.has(message.key.id))return false;
-  const raw=messageText(message.message).trim();
+  let raw=messageText(message.message).trim();
+  const roleChoice=isInteractiveChoice(message.message)?resolveRoleClick(raw,'revisor'):null;
   const clicked=isInteractiveChoice(message.message) && /^nox:knowledge:/.test(raw);
-  const knownCommand=/^!(?:ajuda|comandosrevisor|propostas(?:\s+\d+)?|conhecimentos(?:\s+\d+)?|avaliarconhecimento\s+[a-f0-9]{8}|aprovarconhecimento\s+[a-f0-9]{8}|aprovarcomedi[cç][aã]o\s+[a-f0-9]{8}|aprovarcomedicao\s+[a-f0-9]{8}|rejeitarconhecimento\s+[a-f0-9]{8}|editarconhecimento\s+[a-f0-9]{8}|excluirconhecimento\s+[a-f0-9]{8}|confirmaredicao\s+[a-f0-9]{8}|confirmarexclusao\s+[a-f0-9]{8}|sair)$/i.test(raw);
+  const knownCommand=/^!(?:ajuda|comandosrevisor(?:\s+detalhes)?|propostas(?:\s+\d+)?|conhecimentos(?:\s+\d+)?|avaliarconhecimento\s+[a-f0-9]{8}|aprovarconhecimento\s+[a-f0-9]{8}|aprovarcomedi[cç][aã]o\s+[a-f0-9]{8}|aprovarcomedicao\s+[a-f0-9]{8}|rejeitarconhecimento\s+[a-f0-9]{8}|editarconhecimento\s+[a-f0-9]{8}|excluirconhecimento\s+[a-f0-9]{8}|confirmaredicao\s+[a-f0-9]{8}|confirmarexclusao\s+[a-f0-9]{8}|sair)$/i.test(raw);
   // Never read or reply to unrelated chat in Integrantes.
-  if(!clicked && !knownCommand && ![...knowledgeReviewDrafts.values()].some(d=>d.chat===jid))return false;
+  if(!clicked && !knownCommand && !roleChoice && ![...knowledgeReviewDrafts.values()].some(d=>d.chat===jid))return false;
   const state=await readCommunityKnowledge();
   const reviewer=await knowledgeReviewerForMessage(sock,message,state);
   if(!reviewer) return Boolean(clicked||knownCommand);
   const key=reviewerDraftKey(state);
   let draft=knowledgeReviewDrafts.get(key);
+  if(roleChoice){
+    // All actions originate from a verified reviewer and a role-scoped allowlist.
+    knowledgeReviewDrafts.delete(key);
+    draft=null;
+    if(roleChoice.key==='guia'){
+      await sendText(sock,jid,reviewerHelpLines().join('\n'));
+      return true;
+    }
+    raw=roleChoice.command||'';
+  }
   if(draft && Date.now()>draft.expires) {
     knowledgeReviewDrafts.delete(key);draft=null;
     if(!knownCommand && !clicked){
@@ -2128,6 +2139,9 @@ async function handleKnowledgeReviewGroup(sock,message) {
     return true;
   }
   if(/^!(ajuda|comandosrevisor)$/i.test(raw)){
+    await sendRoleCommandsMenu(sock,jid,'revisor');return true;
+  }
+  if(/^!comandosrevisor detalhes$/i.test(raw)){
     await sendText(sock,jid,reviewerHelpLines().join('\n'));return true;
   }
   const listCommand=/^!(propostas|conhecimentos)(?:\s+(\d+))?$/i.exec(raw);
