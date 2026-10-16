@@ -597,6 +597,8 @@ async function handleAdminAgenda(sock, message) {
     return true;
   }
   const picked=isInteractiveChoice(message.message)?resolveRoleClick(raw,'conselho'):null;
+  // Neither pasted UI IDs nor buttons belonging to another group may enter a wizard.
+  if(/^nox:(?:role|owner):/.test(raw) && !picked) return true;
   if(picked){
     // A newly chosen command supersedes any previous unfinished council flow.
     const actor=message.key?.fromMe?'owner':String(message.key?.participant||message.key?.participantAlt||'');
