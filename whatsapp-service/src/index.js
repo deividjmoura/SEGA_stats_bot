@@ -1118,7 +1118,7 @@ function fullHelpLines() {
     'O Battle ID e o envio de prints não são necessários para as consultas atuais de !stats.',
     '',
     '💡 *SUGESTÕES*',
-    '*!sugestao* — abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise do André A.).',
+    '*!sugestao* — exclusivo para jogadores cadastrados e verificados no NOX. Abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise do André A.).',
     '*!sugestao bot* — envia uma proposta de melhoria diretamente ao responsável.',
     '*!sugestao conhecimento* — inicia a sugestão guiada no Geral (categoria → herói → descrição).',
     '*!conhecimento* — inicia o cadastro guiado: o NOX pergunta a categoria (*counter*, *build*, *item* ou *dica*), depois o herói e por último a descrição.',
@@ -1201,7 +1201,7 @@ async function handleRegistration(sock, message) {
   if (ownerPrivate && /^(?:[!\/]\s*)?sugest(?:a|ã)o(?:\s+(bot|melhoria|conhecimento))?$/i.test(command)) {
     const choice=command.match(/\s+(bot|melhoria|conhecimento)$/i)?.[1];
     if (choice) await handleSuggestionChoice(sock,jid,choice==='conhecimento'?'knowledge':'bot');
-    else await sendSuggestionMenu(sock,jid);
+    else await sendSuggestionMenu(sock,jid,message);
     return true;
   }
   if (ownerPrivate && command === '!ajuda') {
@@ -1426,12 +1426,53 @@ function clearKnowledgeDraft(message) {
     if (value===draft) knowledgeDrafts.delete(key);
   }
 }
+async function verifiedSuggestionPlayer(sock,message) {
+  const ids=rsvpActorIds(message?.key);
+  if (message?.key?.fromMe) {
+    const self=players.get('self');
+    if(self?.nameVerified===true && self?.name && self?.roleId && self?.zoneId) return self;
+  }
+  const find=()=>ids.concat(ids.flatMap(linkedAliases)).map(playerForJid)
+    .find(p=>p?.nameVerified===true && p?.name && p?.roleId && p?.zoneId);
+  let verified=find();
+  if(verified) return verified;
+  // Some group messages use a LID whereas the private registration used a PN
+  // (or vice versa). Ask Baileys for the genuine mapping before rejecting.
+  for(const id of ids) {
+    try {
+      const mapped=id.endsWith('@lid')
+        ? await sock?.signalRepository?.lidMapping?.getPNForLID?.(id)
+        : id.endsWith('@s.whatsapp.net')
+          ? await sock?.signalRepository?.lidMapping?.getLIDForPN?.(id)
+          : null;
+      if(mapped) linkIdentities([id,mapped]);
+    }catch(error){
+      console.warn('Consulta de identidade para sugestão indisponível:',error?.message);
+    }
+  }
+  return find()||null;
+}
+async function requireVerifiedSuggestionPlayer(sock,message) {
+  const registered=await verifiedSuggestionPlayer(sock,message);
+  if(registered)return registered;
+  const jid=message?.key?.remoteJid;
+  const deepLink=registrationLink();
+  await sendText(sock,jid,
+    '🔒 *SUGESTÕES EXCLUSIVAS PARA JOGADORES CADASTRADOS*\n\n' +
+    'Para enviar melhorias ou dicas ao NOX, primeiro verifique sua conta no Mobile Legends.\n' +
+    '📝 Envie *!cadastrar* no privado do NOX e siga as instruções (Role ID, Zone ID e código de verificação).' +
+    (jid?.endsWith('@g.us') && deepLink ? '\n\n📲 *Abrir cadastro no privado:* '+deepLink : '') +
+    '\n\n✅ Depois do cadastro, volte ao Geral e use *!sugestao*.');
+  return null;
+}
+
 async function startKnowledgeWizard(sock,message) {
   const jid=message?.key?.remoteJid;
   if (jid!==targetGroup || !knowledgeDraftKeys(message).length) {
     await sendText(sock,jid,'⚠️ Para sugerir conhecimento, use *!conhecimento* no grupo Geral.');
     return false;
   }
+  if (!await requireVerifiedSuggestionPlayer(sock,message)) return true;
   clearKnowledgeDraft(message);
   setKnowledgeDraft(message,{step:'category',expires:Date.now()+KNOWLEDGE_DRAFT_TTL_MS});
   await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 1/3*\n\n' +
@@ -1498,6 +1539,10 @@ async function handleKnowledgeWizard(sock,message,raw) {
     return true;
   }
   if (draft.step==='content') {
+    if (!await requireVerifiedSuggestionPlayer(sock,message)) {
+      clearKnowledgeDraft(message);
+      return true;
+    }
     const structured='!conhecimento '+draft.hero+' | '+draft.category+' | '+raw;
     const parsed=parseKnowledgeSubmission(structured,canonicalMlbbHero);
     if (!parsed.ok) {
@@ -1519,7 +1564,8 @@ function suggestionMenuInstructions() {
     '📱 Se o menu não abrir, use *!sugestao bot* ou *!sugestao conhecimento*.';
 }
 
-async function sendSuggestionMenu(sock,jid) {
+async function sendSuggestionMenu(sock,jid,message=null) {
+  if (!message || !await requireVerifiedSuggestionPlayer(sock,message)) return;
   await sendText(sock,jid,suggestionMenuInstructions());
   try {
     await sendInteractive(sock,jid,buildSuggestionCategoryMenu(),[targetGroup].filter(Boolean));
@@ -1529,6 +1575,7 @@ async function sendSuggestionMenu(sock,jid) {
 }
 
 async function handleSuggestionChoice(sock,jid,kind,message=null) {
+  if (!message || !await requireVerifiedSuggestionPlayer(sock,message)) return true;
   if(kind==='bot') {
     await sendText(sock,jid,suggestionLink()
       ? '🛠️ *MELHORIA PARA O NOX*\n\nEnvie sua sugestão diretamente ao responsável no privado:\n'+suggestionLink()
@@ -1581,6 +1628,7 @@ async function knowledgeAuthorNick(sock,message,knownIds=null) {
 async function submitCommunityKnowledge(sock,message,raw) {
   const jid=message.key.remoteJid;
   if(jid!==targetGroup || !/^!conhecimento(?:\s|$)/i.test(raw))return false;
+  if (!await requireVerifiedSuggestionPlayer(sock,message)) return true;
   const parsed=parseKnowledgeSubmission(raw,canonicalMlbbHero);
   if(!parsed.ok) { await sendText(sock,jid,'⚠️ '+parsed.error);return true; }
   const ids=rsvpActorIds(message.key);
@@ -1588,7 +1636,9 @@ async function submitCommunityKnowledge(sock,message,raw) {
     await sendText(sock,jid,'⚠️ Não consegui identificar seu WhatsApp; sugestão não foi enviada.');
     return true;
   }
-  const name=await knowledgeAuthorNick(sock,message,ids);
+  const registered=await verifiedSuggestionPlayer(sock,message);
+  const name=safeKnowledgeText(registered?.name,65);
+  if(!name) { await requireVerifiedSuggestionPlayer(sock,message); return true; }
   const proposed=await updateCommunityKnowledge(state=>appendPendingKnowledge(state,{
     id:crypto.randomBytes(4).toString('hex'),hero:parsed.hero,category:parsed.category,
     content:parsed.content,authorIds:ids,authorName:name,
@@ -1863,7 +1913,7 @@ async function handleGroup(sock, message) {
   if (suggestionMatch) {
     const kind=suggestionMatch[1]?.toLowerCase();
     if (kind) await handleSuggestionChoice(sock,groupJid,kind==='conhecimento'?'knowledge':'bot',message);
-    else await sendSuggestionMenu(sock,groupJid);
+    else await sendSuggestionMenu(sock,groupJid,message);
     return;
   }
   if (/^!agenda$/i.test(text)) {
