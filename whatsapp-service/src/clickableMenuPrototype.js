@@ -43,6 +43,31 @@ export function buildInteractiveList({ title, body, buttonText, rows }) {
   };
 }
 
+export function buildSuggestionCategoryMenu() {
+  return buildInteractiveList({
+    title: '💡 SUGESTÕES DO NOX',
+    body: 'O que você quer sugerir? Escolha o destino da sua ideia.',
+    buttonText: '💡 TIPO DE SUGESTÃO',
+    rows: [
+      {id:'nox:suggestion:bot',title:'🛠️ Melhoria do bot',description:'Enviar diretamente ao responsável'},
+      {id:'nox:suggestion:knowledge',title:'🧠 Conhecimento MLBB',description:'Passar pela revisão do André A.'},
+    ],
+  });
+}
+
+export function buildKnowledgeReviewMenu(proposal) {
+  if (!/^[a-f0-9]{8}$/i.test(proposal?.id||'')) throw new Error('ID inválido');
+  return buildInteractiveList({
+    title: '🧠 REVISÃO DE CONHECIMENTO',
+    body: 'Só o revisor autorizado pode aprovar ou rejeitar. Sugestão #'+proposal.id,
+    buttonText: '⚖️ AVALIAR SUGESTÃO',
+    rows: [
+      {id:'nox:knowledge:approve:'+proposal.id,title:'✅ Aprovar conhecimento'},
+      {id:'nox:knowledge:reject:'+proposal.id,title:'❌ Rejeitar sugestão'},
+    ],
+  });
+}
+
 export function buildNoxClickableMenu() {
   return buildInteractiveList({
     title: '🎮 NOX — MENU PRINCIPAL',
