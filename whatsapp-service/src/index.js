@@ -589,7 +589,25 @@ async function handleAdminAgenda(sock, message) {
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
   if (/^!(comandosadm|ajuda)$/i.test(raw)) {
+    await sendRoleCommandsMenu(sock,jid,'conselho');
+    return true;
+  }
+  if (/^!comandosadm detalhes$/i.test(raw)) {
     await sendText(sock,jid,councilHelpLines().join('\n'));
+    return true;
+  }
+  const picked=isInteractiveChoice(message.message)?resolveRoleClick(raw,'conselho'):null;
+  if(picked){
+    // A newly chosen command supersedes any previous unfinished council flow.
+    const actor=message.key?.fromMe?'owner':String(message.key?.participant||message.key?.participantAlt||'');
+    if(actor) agendaDrafts.delete(jid+':'+actor);
+    if(picked.key==='guia'){
+      await sendText(sock,jid,councilHelpLines().join('\n'));
+      return true;
+    }
+    if(picked.command){
+      return handleAdminAgenda(sock,{...message,message:{conversation:picked.command}});
+    }
     return true;
   }
   if (raw.startsWith('!presencas ')) {
@@ -1426,6 +1444,13 @@ async function handleRegistration(sock, message) {
   const text = messageText(message.message);
   if (!text) return false;
   let command = text.toLowerCase();
+  // Native menu IDs are accepted exclusively from a real interactive selection
+  // in the account owner's own self-chat.
+  if (ownerPrivate && isInteractiveChoice(message.message) &&
+    (/^nox:role:dono:[a-z]+$/.test(text) ||
+     /^nox:owner:(?:pick:\d+|page:\d+|confirm:(?:assign|revoke)|cancel)$/.test(text))) {
+    return handleOwnerMenuChoice(sock,message,text);
+  }
   if (ownerPrivate && ['!grupos','/grupos'].includes(command)) {
     // Explicit owner-only group discovery: names and IDs, no group chat content.
     try {
@@ -1466,6 +1491,11 @@ async function handleRegistration(sock, message) {
     return true;
   }
   if (ownerPrivate && command === '!comandosdono') {
+    ownerReviewerSelection.delete(jid);
+    await sendRoleCommandsMenu(sock,jid,'dono');
+    return true;
+  }
+  if (ownerPrivate && command === '!comandosdono detalhes') {
     await sendText(sock,jid,ownerHelpLines().join('\n'));
     return true;
   }
