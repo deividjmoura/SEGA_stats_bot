@@ -62,7 +62,7 @@ async function notifyPersistenceProblem() {
   try {
     await bot.telegram.sendMessage(
       CLAN_CHAT_ID,
-      '🚨 <b>SEGA Stats pausado por segurança</b>\\n\\n' +
+      '🚨 <b>NOX Stats pausado por segurança</b>\\n\\n' +
       'O Railway iniciou esta versão sem armazenamento persistente.\\n\\n' +
       'Para proteger cadastros, prints e estatísticas, o bot não vai operar até um Volume ser montado em <code>/app/data</code> (ou até REQUIRE_PERSISTENT_STORAGE=false, somente para testes).\\n\\n' +
       'Nenhum cadastro deve ser refeito enquanto essa configuração não for corrigida.',
@@ -268,8 +268,8 @@ async function requirePrivateChat(ctx) {
   const link = username ? 'https://t.me/' + username : 'o chat privado deste bot';
   await replyAs(ctx, 'general', 
     '🔐 <b>Cadastro é feito no privado.</b>\n\n' +
-    'Para proteger seu Role ID, Zone ID e o código de verificação, abra o chat privado do SEGA Stats e use <code>/cadastrar</code> por lá.\n\n' +
-    (username ? '👉 <a href="' + link + '?start=cadastro">Abrir cadastro no SEGA Stats</a>' : '👉 Abra o chat privado do bot pelo perfil acima.'),
+    'Para proteger seu Role ID, Zone ID e o código de verificação, abra o chat privado do NOX Stats e use <code>/cadastrar</code> por lá.\n\n' +
+    (username ? '👉 <a href="' + link + '?start=cadastro">Abrir cadastro no NOX Stats</a>' : '👉 Abra o chat privado do bot pelo perfil acima.'),
     { parse_mode: 'HTML', disable_web_page_preview: true }
   );
   return false;
@@ -356,7 +356,7 @@ bot.telegram.setMyCommands([
   { command: 'cadastrar', description: 'Cadastrar jogador' },
   { command: 'ranking', description: 'Ver ranking do clã' },
   { command: 'stats', description: 'Ver minhas estatísticas' },
-  { command: 'clan', description: 'Ver o clã SEGA' },
+  { command: 'clan', description: 'Ver o clã Tenebrozos' },
   { command: 'ajuda', description: 'Mostrar ajuda' },
   { command: 'cancelar', description: 'Cancelar cadastro' },
   { command: 'lore', description: 'Crônicas e heróis' },
@@ -367,11 +367,11 @@ bot.telegram.setMyCommands([
   { command: 'perguntas', description: 'Relatório de perguntas (admin)' }
 ]).catch((error) => console.error('❌ Erro ao registrar comandos:', error));
 
-const startMessage = `🎮 <b>SEGA STATS</b>
+const startMessage = `🎮 <b>NOX STATS</b>
 
 ⚡ <b>Bem-vindo à arena, guerreiro!</b> 👊
 
-Bem-vindo ao bot oficial do clã <b>SEGA</b>.
+Bem-vindo ao bot oficial do clã <b>Tenebrozos</b>.
 
 Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua batalha. Aqui você vai poder:
 
@@ -387,9 +387,9 @@ Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua bat
 
 ⚔️ <i>Entre na arena. Analise a batalha. Evolua.</i> 🔥
 
-<b>SEGA</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
+<b>Tenebrozos</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
 
-const helpMessage = `📚 <b>GUIA DO SEGA STATS</b>
+const helpMessage = `📚 <b>GUIA DO NOX STATS</b>
 
 🎮 <b>1. Primeiro cadastro</b>
 Use <code>/cadastrar</code> no <b>chat privado</b> do bot.
@@ -401,7 +401,7 @@ Você vai informar:
 ⚠️ Nunca mande esses dados no grupo.
 
 📸 <b>2. Enviar relatório/print de partida</b>
-Depois de cadastrado, basta mandar a <b>foto</b> no chat do bot ou no grupo SEGA.
+Depois de cadastrado, basta mandar a <b>foto</b> no chat do bot ou no grupo Tenebrozos.
 
 🥇 O melhor print para registrar uma partida é a <b>tela final</b>, com:
 • resultado (Victory/Defeat)
@@ -430,7 +430,7 @@ Ela é útil para conferência e para melhorar a leitura do histórico. Dependen
 🏆 <b>6. Ranking do clã</b>
 <code>/ranking</code> — ranking dos jogadores vinculados.
 
-👥 <b>7. Grupo SEGA</b>
+👥 <b>7. Grupo Tenebrozos</b>
 No grupo você pode:
 • usar <code>/ranking</code>, <code>/stats</code> e <code>/ajuda</code>
 • mandar seus prints diretamente
@@ -439,11 +439,11 @@ No grupo você pode:
 🔐 <b>Privacidade</b>
 O cadastro fica no privado para não expor Role ID, Zone ID ou código de verificação no grupo.
 
-📜 <code>/lore</code> — crônicas do SEGA
+📜 <code>/lore</code> — crônicas do NOX
 ❌ <code>/cancelar</code> — cancelar cadastro
 🏠 <code>/menu</code> — abrir o menu principal`;
 
-const groupGuideMessage = `📖 <b>GUIA RÁPIDO • SEGA STATS</b>
+const groupGuideMessage = `📖 <b>GUIA RÁPIDO • NOX STATS</b>
 
 📝 <b>1. Cadastre sua conta</b>
 O cadastro é feito no <b>privado</b>. Não mande Role ID, Zone ID ou código de verificação aqui.
@@ -455,7 +455,7 @@ O cadastro é feito no <b>privado</b>. Não mande Role ID, Zone ID ou código de
 
 📊 <b>3. Consulte</b>
 <code>/stats</code> → suas stats
-<code>/ranking</code> → ranking do SEGA
+<code>/ranking</code> → ranking do NOX
 <code>/ajuda</code> → este tutorial
 
 👇 Para ver o guia completo e iniciar o cadastro com segurança, use os botões abaixo.`;
@@ -487,7 +487,7 @@ async function sendHelp(ctx) {
 function mainKeyboard() {
   return Markup.keyboard([
     ['📝 Cadastrar jogador', '📊 Minhas stats'],
-    ['🏆 Ranking', '👥 Clã SEGA'],
+    ['🏆 Ranking', '👥 Clã Tenebrozos'],
     ['📸 Enviar print', '🔢 Enviar Battle ID'],
     ['❓ Ajuda', '📜 Lore']
   ]).resize().persistent();
@@ -515,7 +515,7 @@ async function askForRoleId(ctx) {
 async function sendMenu(ctx) {
   if (isGroupChat(ctx)) {
     await replyAs(ctx, 'general', 
-      '🎮 <b>SEGA STATS ONLINE</b>\n\n' +
+      '🎮 <b>NOX STATS ONLINE</b>\n\n' +
       '🏆 Ranking • 📊 Stats • 📸 Prints\n\n' +
       '🔐 O cadastro de cada jogador é feito no privado, para não expor Role ID, Zone ID ou código de verificação no grupo.\n\n' +
       'Use /cadastrar no privado e, depois de vincular a conta, envie seus prints aqui no grupo.',
@@ -523,7 +523,7 @@ async function sendMenu(ctx) {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
           [Markup.button.callback('🏆 Ranking', 'ranking'), Markup.button.callback('📊 Minhas stats', 'stats')],
-          [Markup.button.callback('👥 Clã SEGA', 'clan'), Markup.button.callback('❓ Ajuda', 'help')]
+          [Markup.button.callback('👥 Clã Tenebrozos', 'clan'), Markup.button.callback('❓ Ajuda', 'help')]
         ])
       }
     );
@@ -536,7 +536,7 @@ async function sendMenu(ctx) {
     ...Markup.inlineKeyboard([
       [Markup.button.callback('📝 Cadastrar jogador', 'register')],
       [Markup.button.callback('📊 Minhas stats', 'stats'), Markup.button.callback('🏆 Ranking', 'ranking')],
-      [Markup.button.callback('👥 Clã SEGA', 'clan'), Markup.button.callback('📜 Lore', 'lore')],
+      [Markup.button.callback('👥 Clã Tenebrozos', 'clan'), Markup.button.callback('📜 Lore', 'lore')],
       [Markup.button.callback('❓ Ajuda', 'help')]
     ])
   });
@@ -572,7 +572,7 @@ bot.on('text', async (ctx, next) => {
   if (state && ctx.chat?.type !== 'private') {
     await replyAs(ctx, 'auth',
       '🔐 <b>Cadastro protegido.</b>\n\n' +
-      'Continue este cadastro somente no chat privado do SEGA Stats. Não envie Role ID, Zone ID ou código de verificação no grupo.',
+      'Continue este cadastro somente no chat privado do NOX Stats. Não envie Role ID, Zone ID ou código de verificação no grupo.',
       { parse_mode: 'HTML' }
     );
     return next();
@@ -737,7 +737,7 @@ bot.on('text', async (ctx, next) => {
         `🎮 Nick confirmado: <b>${escapeHtml(verifiedName)}</b>\n` +
         `🆔 ID: <code>${roleId}</code>\n` +
         `🌐 Zone: <code>${zoneId}</code>\n\n` +
-        '📊 Seu jogador foi vinculado ao <b>SEGA Stats</b>.\n\n' +
+        '📊 Seu jogador foi vinculado ao <b>NOX Stats</b>.\n\n' +
         '📸 <b>Próximo passo:</b> envie alguns prints para começar seu histórico.\n\n' +
         '👇 O atalho <b>📸 Enviar print</b> fica no teclado do bot, na parte inferior da conversa. ' +
         'Se preferir, use o botão destacado logo abaixo desta mensagem.',
@@ -762,7 +762,7 @@ bot.action('register', async (ctx) => {
 
 async function sendClan(ctx) {
   const count = authenticatedPlayers.size;
-  await replyAs(ctx, 'general', '👥 <b>CLÃ SEGA</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await replyAs(ctx, 'general', '👥 <b>CLÃ TENEBROZOS</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 }
 
 async function sendRanking(ctx) {
@@ -804,7 +804,7 @@ async function sendRanking(ctx) {
 
   if (!ranking.length) {
     await replyAs(ctx, 'general', 
-      '🏆 <b>RANKING SEGA</b>\n\n' +
+      '🏆 <b>RANKING NOX</b>\n\n' +
       'Ainda não há jogadores com pelo menos 5 partidas verificadas para montar o ranking com uma amostra mínima.\n\n' +
       '📸 Envie telas finais das partidas pelo botão <b>Enviar print</b>. Assim que houver partidas válidas, o ranking aparece aqui.',
       { parse_mode: 'HTML', ...mainKeyboard() }
@@ -820,7 +820,7 @@ async function sendRanking(ctx) {
 
 bot.command('ranking', sendRanking);
 bot.command('clan', sendClan);
-bot.command('lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.command('lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO NOX</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo NOX, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 async function sendStats(ctx) {
   const records = await getPlayerScreenshots(ctx.from.id);
@@ -1232,7 +1232,7 @@ async function isKnowledgeAdmin(ctx) {
 bot.command('conhecimento', async (ctx) => {
   const summary = knowledgeSummary();
   await replyAs(ctx, 'general', 
-    '🧠 <b>CONHECIMENTO SEGA</b>\n\n' +
+    '🧠 <b>CONHECIMENTO NOX</b>\n\n' +
     '🎮 Heróis reconhecidos: <b>' + summary.heroes + '</b>\n' +
     '🧠 Matchups locais: <b>' + summary.detailedHeroes + '</b>\n' +
     '🛡️ Itens cadastrados: <b>' + summary.items + '</b>\n' +
@@ -1245,7 +1245,7 @@ bot.command('conhecimento', async (ctx) => {
 
 bot.command('perguntas', async (ctx) => {
   if (!(await isKnowledgeAdmin(ctx))) {
-    await replyAs(ctx, 'general', '🔐 Esse relatório é reservado aos administradores do SEGA.');
+    await replyAs(ctx, 'general', '🔐 Esse relatório é reservado aos administradores do NOX.');
     return;
   }
   const report = await getQuestionReport(15);
@@ -1253,7 +1253,7 @@ bot.command('perguntas', async (ctx) => {
     ? report.top.map(item => item.rank + '. <code>' + escapeHtml(item.question) + '</code> — ' + item.count + 'x').join('\n')
     : 'Ainda não há perguntas registradas.';
   await replyAs(ctx, 'general', 
-    '📚 <b>PERGUNTAS DO SEGA</b>\n\n' +
+    '📚 <b>PERGUNTAS DO NOX</b>\n\n' +
     '📝 Total: <b>' + report.total + '</b>\n' +
     '✅ Respondidas: <b>' + report.answered + '</b>\n' +
     '❓ Não respondidas: <b>' + report.unanswered + '</b>\n\n' +
@@ -1269,7 +1269,7 @@ bot.action('ranking', async (ctx) => { await ctx.answerCbQuery(); await sendRank
 bot.action('clan', async (ctx) => { await ctx.answerCbQuery(); await sendClan(ctx); });
 bot.action('lore', async (ctx) => {
   await ctx.answerCbQuery();
-  await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo SEGA, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO NOX</b>\n\n🌎 O Land of Dawn reúne heróis, regiões, ordens e conflitos que se cruzam em novas batalhas.\n\n⚔️ Saber: precisão e evolução.\n🛡️ Tigreal: liderança e união.\n🔥 Alucard: persistência diante da adversidade.\n🎯 Layla: alcance e poder de fogo.\n\nNo NOX, cada jogador escreve sua própria história e o clã escreve o capítulo inteiro.\n\n✨ <i>Da arena para o placar. Do jogador para a lenda.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 });
 
 bot.action('stats', async (ctx) => {
@@ -1301,12 +1301,12 @@ bot.hears(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i, async (ctx) => {
     await replyAs(ctx, 'general', answer, { parse_mode: 'HTML' });
   } else {
     await replyAs(ctx, 'general', 
-      '🧠 <b>SEGA Stats ainda não entendeu essa pergunta.</b>\n\n' +
+      '🧠 <b>NOX Stats ainda não entendeu essa pergunta.</b>\n\n' +
       'Atualmente você pode pedir <b>builds</b>, saber <b>quem countera quem</b>, consultar <b>itens, funções, rotas e dicas</b> de heróis.\n\n' +
       '⚠️ <b>No grupo, é necessário chamar o bot no início da pergunta</b> para ele responder.\n\n' +
       '<b>Exemplos de perguntas aceitas:</b>\n' +
       listKnowledgeExamples().map(item => '• <code>' + item + '</code>').join('\n') +
-      '\n\n💬 <b>Exemplo completo:</b> <code>@SEGA Stats qual build faço de Harley?</code>' +
+      '\n\n💬 <b>Exemplo completo:</b> <code>@NOX Stats qual build faço de Harley?</code>' +
       '\n\n📌 A pergunta foi registrada para podermos ampliar o conhecimento do bot.',
       { parse_mode: 'HTML' }
     );
@@ -1385,9 +1385,9 @@ bot.command('battle', async (ctx) => { await handleBattleId(ctx, String(ctx.mess
 bot.hears(/^\d{10,18}$/, async (ctx) => { await handleBattleId(ctx, ctx.message.text); });
 
 bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await replyAs(ctx, 'general', '📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await replyAs(ctx, 'general', '📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
-bot.hears('👥 Clã SEGA', sendClan);
+bot.hears('👥 Clã Tenebrozos', sendClan);
 bot.hears('❓ Ajuda', sendHelp);
-bot.hears('📜 Lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO SEGA</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
+bot.hears('📜 Lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO NOX</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
 
 bot.catch((error) => console.error('❌ Erro no bot:', error));
 
@@ -1410,7 +1410,7 @@ if (!HAS_PERSISTENT_VOLUME && process.env.RAILWAY_ENVIRONMENT) {
 }
 
 bot.launch(() => {
-  console.log('🎮 SEGA Stats Bot online!');
+  console.log('🎮 NOX Stats Bot online!');
 }).catch((error) => {
   console.error('❌ Falha ao iniciar o bot:', error);
   process.exitCode = 1;
