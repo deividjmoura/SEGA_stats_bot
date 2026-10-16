@@ -9,7 +9,8 @@ function harness() {
   const nodes = new Map();
   function node(id='') {
     return {
-      id,children:[],listeners:{},dataset:{},value:'',className:'',textContent:'',
+      id,children:[],listeners:{},dataset:{},value:id==='player'?'A':'',className:'',
+      textContent:id==='status'?'🧪 Demonstração ativa.':'' ,
       disabled:false,scrollTop:0,scrollHeight:100,
       addEventListener(type,fn) {this.listeners[type]=fn;},
       appendChild(child) {this.children.push(child);},
