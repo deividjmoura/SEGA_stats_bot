@@ -1553,6 +1553,7 @@ async function handleRegistration(sock, message) {
     try {
       const plain = await answerNoxKnowledge(parsed.question,{
         actorKey:'owner',groupKey:'owner-self-chat',
+        allowUnknownReply:parsed.prefixed,
       });
       if (!parsed.prefixed && !plain) return false;
       await sendText(sock, jid, plain);
@@ -2307,7 +2308,7 @@ async function appendApprovedKnowledgeToAnswer(question,answer) {
 const noxConversationalAi = createNoxAiAssistant({
   webSearch: createNoxBraveSearch(),
 });
-async function answerNoxKnowledge(question,{actorKey,groupKey}) {
+async function answerNoxKnowledge(question,{actorKey,groupKey,allowUnknownReply=true}) {
   const vague = isVagueWinQuestion(question);
   let local = null;
   if (!vague) {
@@ -2322,7 +2323,7 @@ async function answerNoxKnowledge(question,{actorKey,groupKey}) {
   const fallback = enriched
     ? enriched.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'')
       .replace(/\\n/g,'\n')
-    : makeUnknownQuestionRoast();
+    : allowUnknownReply ? makeUnknownQuestionRoast() : null;
   if (vague) return fallback;
   let tips = [];
   const hero = canonicalMlbbHero(question);
