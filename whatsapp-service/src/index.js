@@ -364,6 +364,25 @@ async function runAgendaNotificationTick(sock) {
 }
 const agendaDrafts = new Map();
 const AGENDA_DRAFT_TTL = 15 * 60 * 1000;
+async function sendAgendaWizardEventPage(sock,jid,draft) {
+  const page=draft.page||0,list=draft.list||[],pages=Math.ceil(list.length/8);
+  const shown=list.slice(page*8,page*8+8);
+  await sendText(sock,jid,'📅 *SELECIONAR EVENTO — '+(page+1)+'/'+pages+'*\n\n'+
+    shown.map((item,i)=>(i+1)+'. *'+item.title+'* — '+new Date(item.date).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+
+      '\n   ID: '+item.id).join('\n')+
+    '\n\n📱 *Sem menu clicável?* Envie o número da lista (*1 a '+shown.length+'*) ou o ID do evento.'+
+    (pages>1?'\nUse *proxima* ou *anterior* para navegar.':'')+
+    '\nEnvie *!sair* para cancelar.');
+}
+async function sendAgendaWizardMembersPage(sock,jid,draft) {
+  const page=draft.page||0,list=draft.members||[],pages=Math.ceil(list.length/8);
+  const shown=list.slice(page*8,page*8+8);
+  await sendText(sock,jid,'👥 *ESCOLHER INTEGRANTE — '+(page+1)+'/'+pages+'*\n\n'+
+    shown.map((item,i)=>(i+1)+'. '+item.name).join('\n')+
+    '\n\n📱 *Sem botão?* Envie o número do integrante (*1 a '+shown.length+'*).'+
+    (pages>1?'\nUse *proxima* ou *anterior* para navegar.':'')+
+    '\nEnvie *!sair* para cancelar.');
+}
 async function handleAgendaWizard(sock, jid, message, raw) {
   // The linked account can have multiple participant JIDs; it must own one draft.
   // Other admins must never accidentally share a draft when metadata is absent.
@@ -380,7 +399,9 @@ async function handleAgendaWizard(sock, jid, message, raw) {
       const list = await events();
       if (!list.length) { await sendText(sock,jid,'📅 Não há eventos futuros cadastrados.'); return true; }
       agendaDrafts.set(key,{mode,step:'select',list,page:0,expires:Date.now()+AGENDA_DRAFT_TTL});
-      await sendInteractive(sock,jid,buildAgendaEventChoices(list,mode,0),[adminsGroup]);
+      await sendAgendaWizardEventPage(sock,jid,agendaDrafts.get(key));
+      try {await sendInteractive(sock,jid,buildAgendaEventChoices(list,mode,0),[adminsGroup]);}
+      catch(error){console.warn('Menu de evento indisponível, escolha escrita ativa:',error?.message);}
     }
     return true;
   }
@@ -390,24 +411,30 @@ async function handleAgendaWizard(sock, jid, message, raw) {
   if (/^!sair$/i.test(raw)) { agendaDrafts.delete(key); await sendText(sock,jid,'❌ Operação cancelada.'); return true; }
   if (raw.startsWith('!')) return false;
   if (draft.step==='select') {
-    if (!isInteractiveChoice(message.message)) {
-      await sendText(sock,jid,'📅 Toque no botão ESCOLHER EVENTO do menu anterior, ou envie !sair.');
-      return true;
-    }
-    if (/^nox:page:\d+$/.test(raw)) {
-      const page=Number(raw.slice('nox:page:'.length));
-      if (page < 0 || page >= Math.ceil(draft.list.length/8)) {
-        await sendText(sock,jid,'⚠️ Página inválida. Abra a lista novamente.');
-        return true;
+    const clicked=isInteractiveChoice(message.message);
+    const page=draft.page||0, pages=Math.ceil(draft.list.length/8);
+    const lower=raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+    const nextPage=clicked&&/^nox:page:(\d+)$/.test(raw)
+      ? Number(raw.slice('nox:page:'.length))
+      : lower==='proxima'?page+1:lower==='anterior'?page-1:null;
+    if(nextPage!==null){
+      if(!Number.isInteger(nextPage)||nextPage<0||nextPage>=pages){
+        await sendText(sock,jid,'⚠️ Não existe mais uma página nesse sentido.');return true;
       }
-      draft.page=page;
-      await sendInteractive(sock,jid,buildAgendaEventChoices(draft.list,draft.mode,page),[adminsGroup]);
+      draft.page=nextPage;
+      await sendAgendaWizardEventPage(sock,jid,draft);
+      try{await sendInteractive(sock,jid,buildAgendaEventChoices(draft.list,draft.mode,nextPage),[adminsGroup]);}
+      catch(error){console.warn('Menu de evento indisponível; lista em texto ativa:',error?.message);}
       return true;
     }
-    const match=raw.match(/^nox:event:([a-f0-9]{8})$/i);
-    const event=match && draft.list.find(item=>item.id===match[1].toLowerCase());
-    if (!event || !draft.list.slice((draft.page||0)*8,(draft.page||0)*8+8).some(item=>item.id===event.id)) {
-      await sendText(sock,jid,'⚠️ Escolha um evento válido na lista.');
+    const match=clicked?raw.match(/^nox:event:([a-f0-9]{8})$/i):raw.match(/^([a-f0-9]{8})$/i);
+    const current=draft.list.slice(page*8,page*8+8);
+    let event=match?current.find(item=>item.id===(match[1]||'').toLowerCase()):null;
+    if(!event&&!clicked&&/^[1-8]$/.test(raw)){
+      event=current[Number(raw)-1]||null;
+    }
+    if(!event){
+      await sendText(sock,jid,'⚠️ Escolha um evento válido: toque na lista, envie seu número ou o ID mostrado.');
       return true;
     }
     draft.event=event;
@@ -436,12 +463,16 @@ async function handleAgendaWizard(sock, jid, message, raw) {
         return true;
       }
       draft.members=members;draft.step='approve_pick';draft.page=0;
-      await sendInteractive(sock,jid,buildApprovalMemberChoices(members,event,0),[adminsGroup]);
+      await sendAgendaWizardMembersPage(sock,jid,draft);
+      try{await sendInteractive(sock,jid,buildApprovalMemberChoices(members,event,0),[adminsGroup]);}
+      catch(error){console.warn('Menu de participantes indisponível, números em texto ativos:',error?.message);}
       return true;
     }
     if (draft.mode==='cancelarevento') {
       draft.step='confirm';
-      await sendInteractive(sock,jid,buildAgendaConfirmationChoice(event),[adminsGroup]);
+      await sendText(sock,jid,'⚠️ *Cancelar '+event.title+'?*\n📱 Se o menu não funcionar, responda *sim* ou *não*.');
+      try{await sendInteractive(sock,jid,buildAgendaConfirmationChoice(event),[adminsGroup]);}
+      catch(error){console.warn('Menu de cancelamento indisponível; confirmação escrita ativa:',error?.message);}
     } else {
       draft.step='title';
       await sendText(sock,jid,'✏️ Qual será o novo nome de *'+draft.event.title+'*?');
@@ -449,39 +480,46 @@ async function handleAgendaWizard(sock, jid, message, raw) {
     return true;
   }
   if(draft.step==='approve_pick') {
-    if(!isInteractiveChoice(message.message)) {
-      await sendText(sock,jid,'⚖️ Escolha um integrante no menu clicável.');
-      return true;
-    }
-    const pageMatch=raw.match(/^nox:approval:page:(\d+)$/);
-    if(pageMatch) {
-      const page=Number(pageMatch[1]);
-      if(page<0||page>=Math.ceil(draft.members.length/8)){
-        await sendText(sock,jid,'⚠️ Página inválida.');
-        return true;
+    const clicked=isInteractiveChoice(message.message);
+    const page=draft.page||0,pages=Math.ceil(draft.members.length/8);
+    const lower=raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+    const nav=clicked&&/^nox:approval:page:(\d+)$/.test(raw)
+      ? Number(raw.slice('nox:approval:page:'.length))
+      : lower==='proxima'?page+1:lower==='anterior'?page-1:null;
+    if(nav!==null){
+      if(!Number.isInteger(nav)||nav<0||nav>=pages){
+        await sendText(sock,jid,'⚠️ Não existe essa página.');return true;
       }
-      draft.page=page;
-      await sendInteractive(sock,jid,buildApprovalMemberChoices(draft.members,draft.event,page),[adminsGroup]);
+      draft.page=nav;
+      await sendAgendaWizardMembersPage(sock,jid,draft);
+      try{await sendInteractive(sock,jid,buildApprovalMemberChoices(draft.members,draft.event,nav),[adminsGroup]);}
+      catch(error){console.warn('Menu de membros indisponível; números em texto ativos:',error?.message);}
       return true;
     }
-    const memberMatch=raw.match(/^nox:approval:member:(\d+)$/);
-    const index=memberMatch?Number(memberMatch[1]):-1;
-    if(index<draft.page*8||index>=draft.page*8+8||index>=draft.members.length) {
-      await sendText(sock,jid,'⚠️ Escolha uma pessoa exibida na lista.');
+    const memberMatch=clicked?raw.match(/^nox:approval:member:(\d+)$/):null;
+    const index=memberMatch?Number(memberMatch[1]):
+      (!clicked && /^[1-8]$/.test(raw)?page*8+Number(raw)-1:-1);
+    if(index<page*8||index>=page*8+8||index>=draft.members.length){
+      await sendText(sock,jid,'⚠️ Escolha um integrante pelo botão ou envie um número da página.');
       return true;
     }
     draft.member=draft.members[index];draft.step='approve_confirm';
-    await sendInteractive(sock,jid,buildApprovalConfirmationChoice(draft.event,draft.member),[adminsGroup]);
+    await sendText(sock,jid,'⚖️ Autorizar '+draft.member.name+' em *'+draft.event.title+'*?\n'+
+      '📱 Se o botão não funcionar, responda somente *sim* ou *não*.');
+    try{await sendInteractive(sock,jid,buildApprovalConfirmationChoice(draft.event,draft.member),[adminsGroup]);}
+    catch(error){console.warn('Menu de autorização indisponível; confirmação escrita ativa:',error?.message);}
     return true;
   }
   if(draft.step==='approve_confirm') {
-    if(!isInteractiveChoice(message.message) ||
-       !['nox:approval:confirm','nox:approval:cancel'].includes(raw)) {
-      await sendText(sock,jid,'⚠️ Confirme a decisão no menu clicável.');
+    const selected=isInteractiveChoice(message.message) ? raw
+      : (raw.toLowerCase()==='sim'?'nox:approval:confirm':
+          /^n[aã]o$/i.test(raw)?'nox:approval:cancel':null);
+    if(!['nox:approval:confirm','nox:approval:cancel'].includes(selected)) {
+      await sendText(sock,jid,'⚠️ Confirme com o botão ou responda *sim* ou *não*.');
       return true;
     }
     agendaDrafts.delete(key);
-    if(raw==='nox:approval:cancel') {
+    if(selected==='nox:approval:cancel') {
       await sendText(sock,jid,'↩️ Exceção cancelada. Nenhuma presença alterada.');
       return true;
     }
@@ -497,12 +535,14 @@ async function handleAgendaWizard(sock, jid, message, raw) {
     return true;
   }
   if (draft.step==='confirm') {
-    if (!isInteractiveChoice(message.message) || !['nox:confirm:sim','nox:confirm:nao'].includes(raw)) {
-      await sendText(sock,jid,'⚠️ Toque em Sim ou Não no menu de confirmação.');
+    const selected=isInteractiveChoice(message.message)?raw:
+      (raw.toLowerCase()==='sim'?'nox:confirm:sim':/^n[aã]o$/i.test(raw)?'nox:confirm:nao':null);
+    if (!['nox:confirm:sim','nox:confirm:nao'].includes(selected)) {
+      await sendText(sock,jid,'⚠️ Confirme pelo menu ou responda *sim* ou *não*.');
       return true;
     }
     agendaDrafts.delete(key);
-    if (raw==='nox:confirm:nao') { await sendText(sock,jid,'Exclusão cancelada.'); return true; }
+    if (selected==='nox:confirm:nao') { await sendText(sock,jid,'Exclusão cancelada.'); return true; }
     return handleAdminAgenda(sock,{...message,message:{conversation:'!cancelarevento '+draft.event.id}});
   }
   if (draft.step==='title') {
@@ -1149,7 +1189,7 @@ function councilHelpLines() {
     '• !editarevento ID | Novo nome | DD/MM/AAAA HH:MM',
     '• !cancelarevento ID',
     '• !presencas ID',
-    '⚠️ Editar, cancelar e aprovar presença pelo assistente usam botões. Caso a lista não abra, os comandos diretos de evento acima continuam disponíveis.',
+    '📱 Se um botão não abrir, o NOX também mostra eventos e integrantes numerados. Envie o número ou ID solicitado, use *proxima*/*anterior* para navegar e *sim*/*não* para confirmar.',
     '',
     '🕗 Um lembrete é enviado no Geral 1 hora antes; as inscrições fecham 30 minutos antes e o relatório vai ao Conselho.',
     '📢 Eventos criados, editados e cancelados são publicados nos Avisos Oficiais, com notificação no Geral.',
