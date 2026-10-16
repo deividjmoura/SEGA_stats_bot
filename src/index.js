@@ -403,7 +403,7 @@ Na jornada pelo <b>Land of Dawn</b>, seus números contam a história da sua bat
 
 ⚔️ <i>Entre na arena. Analise a batalha. Evolua.</i> 🔥
 
-<b>NOX</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
+<b>Tenebrozos</b> é a nossa guilda. O campo de batalha é o Land of Dawn.`;
 
 const helpMessage = `📚 <b>GUIA DO NOX STATS</b>
 
@@ -503,7 +503,7 @@ async function sendHelp(ctx) {
 function mainKeyboard() {
   return Markup.keyboard([
     ['📝 Cadastrar jogador', '📊 Minhas stats'],
-    ['🏆 Ranking', '👥 Clã NOX'],
+    ['🏆 Ranking', '👥 Clã Tenebrozos'],
     ['📸 Enviar print', '🔢 Enviar Battle ID'],
     ['❓ Ajuda', '📜 Lore']
   ]).resize().persistent();
@@ -539,7 +539,7 @@ async function sendMenu(ctx) {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
           [Markup.button.callback('🏆 Ranking', 'ranking'), Markup.button.callback('📊 Minhas stats', 'stats')],
-          [Markup.button.callback('👥 Clã NOX', 'clan'), Markup.button.callback('❓ Ajuda', 'help')]
+          [Markup.button.callback('👥 Clã Tenebrozos', 'clan'), Markup.button.callback('❓ Ajuda', 'help')]
         ])
       }
     );
@@ -552,7 +552,7 @@ async function sendMenu(ctx) {
     ...Markup.inlineKeyboard([
       [Markup.button.callback('📝 Cadastrar jogador', 'register')],
       [Markup.button.callback('📊 Minhas stats', 'stats'), Markup.button.callback('🏆 Ranking', 'ranking')],
-      [Markup.button.callback('👥 Clã NOX', 'clan'), Markup.button.callback('📜 Lore', 'lore')],
+      [Markup.button.callback('👥 Clã Tenebrozos', 'clan'), Markup.button.callback('📜 Lore', 'lore')],
       [Markup.button.callback('❓ Ajuda', 'help')]
     ])
   });
@@ -778,7 +778,7 @@ bot.action('register', async (ctx) => {
 
 async function sendClan(ctx) {
   const count = authenticatedPlayers.size;
-  await replyAs(ctx, 'general', '👥 <b>CLÃ NOX</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
+  await replyAs(ctx, 'general', '👥 <b>CLÃ TENEBROZOS</b>\n\n🛡️ Jogadores vinculados: <b>' + count + '</b>\n\nO próximo passo é transformar os dados individuais em estatísticas coletivas do clã.\n\n⚔️ <i>Uma equipe forte não depende de um único herói.</i>', { parse_mode: 'HTML', ...mainKeyboard() });
 }
 
 async function sendRanking(ctx) {
@@ -1401,7 +1401,7 @@ bot.command('battle', async (ctx) => { await handleBattleId(ctx, String(ctx.mess
 bot.hears(/^\d{10,18}$/, async (ctx) => { await handleBattleId(ctx, ctx.message.text); });
 
 bot.hears('📋 Dados coletados', async (ctx) => { const player = authenticatedPlayers.get(ctx.from.id); if (!player?.jwt) { await replyAs(ctx, 'general', '📸 Use /cadastrar primeiro.'); return; } const records = await getPlayerScreenshots(ctx.from.id); const summary = summarizePlayerScreenshots(records); await replyAs(ctx, 'general', '📋 <b>DADOS COLETADOS</b>\n\n🖼️ Prints: <b>' + summary.screenshots + '</b>\n⚔️ Partidas identificadas: <b>' + summary.matchResults + '</b>\n🏆 Vitórias: <b>' + summary.wins + '</b>\n💀 Derrotas: <b>' + summary.losses + '</b>\n📊 K/D/A: <b>' + summary.kills + '/' + summary.deaths + '/' + summary.assists + '</b>', { parse_mode: 'HTML', ...mainKeyboard() }); });
-bot.hears('👥 Clã NOX', sendClan);
+bot.hears('👥 Clã Tenebrozos', sendClan);
 bot.hears('❓ Ajuda', sendHelp);
 bot.hears('📜 Lore', async (ctx) => await replyAs(ctx, 'general', '📜 <b>CRÔNICAS DO NOX</b>\n\nCada jogador escreve uma parte da história. O clã escreve o capítulo inteiro. ⚔️', { parse_mode: 'HTML', ...mainKeyboard() }));
 
