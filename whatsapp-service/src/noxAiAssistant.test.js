@@ -148,3 +148,29 @@ test('input filters and topic boundaries are deterministic',()=>{
   assert.equal(wantsNoxAiAnswer(q,'Miya é atiradora.',false),true);
   assert.equal(wantsNoxAiAnswer('Quem countera Miya?','Herói counter X.',false),false);
 });
+
+test('previous hero context never turns weather or finances into an MLBB conversation',async()=>{
+  let clock=Date.parse('2026-10-16T12:00:00Z');
+  const f=fakeModel();
+  const assistant=createNoxAiAssistant({env:enabled,fetchImpl:f.fetchImpl,now:()=>clock});
+  assert.equal((await assistant.reply({question:q,actorKey:'A',hero:'Miya'})).status,'answer');
+  clock+=1100;
+  assert.equal((await assistant.reply({question:'Qual a previsão do tempo hoje?',actorKey:'A'})).status,'off_topic');
+  assert.equal((await assistant.reply({question:'E a cotação do dólar?',actorKey:'A'})).status,'off_topic');
+  assert.equal(f.requests.length,1,'Off-topic messages must never trigger paid API calls');
+});
+
+test('a precise local answer establishes the same-player game context without API cost',async()=>{
+  const f=fakeModel();
+  const assistant=createNoxAiAssistant({env:enabled,fetchImpl:f.fetchImpl});
+  const local=await assistant.reply({
+    question:'Quem countera Miya?',actorKey:'A',hero:'Miya',
+    baseAnswer:'Heróis com controle podem enfrentar Miya.',
+  });
+  assert.equal(local.status,'local');
+  assert.equal(f.requests.length,0);
+  const contextual=await assistant.reply({question:'E como ela funciona?',actorKey:'A'});
+  assert.equal(contextual.status,'answer');
+  assert.equal(f.requests.length,1);
+  assert.equal((await assistant.reply({question:'E como ela funciona?',actorKey:'B'})).status,'off_topic');
+});
