@@ -48,6 +48,11 @@ function safeActorKey(value) {
 export function isNoxAiGameQuestion(question, hero = null, hasRecentContext = false) {
   const text = cleanInput(question, 550);
   if (!text) return false;
+  // "E a build dela?" only makes sense when the same player has already
+  // established which hero was being discussed. Never borrow another player's context.
+  if (!hero && !hasRecentContext &&
+      /\b(?:dela|dele|delas|deles)\b/i.test(text) &&
+      /^(?:e|mas|qual|como)\b/i.test(text)) return false;
   return Boolean(hero || GAME_TERMS.test(text) || (hasRecentContext &&
     /^(?:e\b|mas\b|ent[aã]o\b|qual\b|como\b|por ?qu[eê]\b|e se\b)/i.test(text)));
 }
