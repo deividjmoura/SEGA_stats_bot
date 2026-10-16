@@ -1,9 +1,9 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, buildSuggestionCategoryMenu, buildKnowledgeReviewMenu, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
+import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, buildSuggestionCategoryMenu, buildKnowledgeReviewMenu, buildKnowledgeRecordsMenu, buildKnowledgeApprovedActionsMenu, buildKnowledgeConfirmMenu, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { brandNoxText } from './noxBranding.js';
-import { parseKnowledgeSubmission, normalizeKnowledgeCategory, validKnowledgeState, isVerifiedReviewer, appendPendingKnowledge, reviewKnowledge, matchApprovedKnowledge, KNOWLEDGE_CATEGORIES, safeKnowledgeText } from './communityKnowledge.js';
+import { parseKnowledgeSubmission, normalizeKnowledgeCategory, validKnowledgeState, isVerifiedReviewer, appendPendingKnowledge, reviewKnowledge, approveKnowledgeWithEdit, editApprovedKnowledge, deleteApprovedKnowledge, listKnowledgeByStatus, matchApprovedKnowledge, KNOWLEDGE_CATEGORIES, safeKnowledgeText } from './communityKnowledge.js';
 import { validateAgendaDay, validateAgendaSchedule, agendaValidationMessage } from './agendaDateValidation.js';
 import { isVagueWinQuestion, makeUnknownQuestionRoast } from './unknownQuestionRoasts.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
@@ -547,6 +547,10 @@ async function handleAdminAgenda(sock, message) {
   const jid = message?.key?.remoteJid;
   if (!adminsGroup || jid !== adminsGroup || !message?.message || botSentMessageIds.has(message.key.id)) return false;
   const raw = messageText(message.message).trim();
+  if (/^!(comandosadm|ajuda)$/i.test(raw)) {
+    await sendText(sock,jid,councilHelpLines().join('\n'));
+    return true;
+  }
   if (raw.startsWith('!presencas ')) {
     const eventId = raw.slice('!presencas '.length).trim().toLowerCase();
     const chosen = (await upcomingAgendaEvents()).find(item => item.id === eventId);
@@ -1094,22 +1098,6 @@ function fullHelpLines() {
     '✅ Quem confirmou antes do lembrete NÃO precisa confirmar outra vez.',
     '⚖️ Após o prazo, somente o Conselho pode autorizar uma exceção; o jogador não consegue se incluir sozinho.',
     '',
-    '👑 *AGENDA — EXCLUSIVO DO CONSELHO DE ADMs*',
-    'Os comandos abaixo funcionam no *grupo Conselho*, não no Geral:',
-    '➕ *!agendar* — inicia o cadastro de um evento: informe nome, data (DD/MM/AAAA) e horário (HH:MM, Brasília).',
-    '✏️ *!editarevento* — escolha o evento no menu e informe novo nome, data e horário.',
-    '❌ *!cancelarevento* — escolha o evento e confirme a exclusão pelo menu clicável.',
-    '👥 *!presencas* — selecione um evento para consultar confirmados e ausentes. Se o menu não abrir, envie *!presencas ID* usando o ID mostrado em *!agenda*.',
-    '⚖️ *!aprovarpresenca* — selecione o evento e o integrante; confirme a autorização de presença excepcional, mesmo depois do prazo.',
-    '📅 *!agenda* — consulte os próximos eventos e a contagem de presenças.',
-    '',
-    '📝 *COMANDOS DIRETOS PARA ADMs (OPCIONAIS)*',
-    '• !agendar Treino | DD/MM/AAAA HH:MM',
-    '• !editarevento ID | Novo nome | DD/MM/AAAA HH:MM',
-    '• !cancelarevento ID',
-    '• !sair — interrompe uma operação em andamento.',
-    'Eventos criados, alterados ou cancelados são publicados nos *Avisos Oficiais* e notificados no Geral.',
-    '',
     '📊 *ESTATÍSTICAS E JOGADORES*',
     '• *!stats* — consulta suas estatísticas disponíveis do Mobile Legends.',
     '• *!cadastrar* — cadastro pelo privado: Role ID → Zone ID → código recebido no correio do jogo. A conta fica vinculada ao nick confirmado.',
@@ -1124,8 +1112,6 @@ function fullHelpLines() {
     '*!conhecimento* — inicia o cadastro guiado: o NOX pergunta a categoria (*counter*, *build*, *item* ou *dica*), depois o herói e por último a descrição.',
     'Cada resposta é enviada separadamente, sem barras nem formatos complicados. Use *!sair* para cancelar. A proposta é encaminhada ao grupo Integrantes após as três etapas.',
     'Categorias: *counter*, *build*, *item* e *dica*. Só o revisor autorizado pode aprovar conteúdo. Nenhuma sugestão passa automaticamente a fazer parte da base.',
-    'O revisor autorizado usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita ao cadastro previamente autorizado pelo dono.',
-    'O dono configura o revisor no próprio privado depois do cadastro: *!revisor listar* mostra os jogadores verificados. Depois use *!revisor ROLE_ID ZONE_ID*. Para consultar a configuração: *!revisor*. Para revogar: *!revisor desativar*.',
     '',
     '🧠 *DÚVIDAS SOBRE MOBILE LEGENDS*',
     'No Geral, escreva *@NOX* seguido de sua pergunta sobre heróis, counters, builds, itens ou rotas.',
@@ -1140,6 +1126,80 @@ function fullHelpLines() {
     'O NOX utiliza a conta de WhatsApp do administrador; as mensagens automáticas aparecem como enviadas por essa conta.',
     '━━━━━━━━━━━━━━━━',
     '🐺 *Resumindo:* !nox abre o menu · !agenda cuida das presenças · !ajuda explica tudo.'
+  ];
+}
+
+// Scoped help: the Geral never discloses management commands.
+function councilHelpLines() {
+  return [
+    '👑 *NOX — COMANDOS DO CONSELHO DE ADMs*',
+    '📍 Disponíveis somente no grupo Conselho.',
+    '',
+    '📅 *AGENDA E EVENTOS*',
+    '• *!agenda* — lista próximos eventos, horários, IDs e participantes.',
+    '• *!agendar* — cria um evento perguntando nome, data e horário.',
+    '• *!editarevento* — abre lista clicável para alterar um evento existente.',
+    '• *!cancelarevento* — abre lista clicável e pede confirmação antes de cancelar.',
+    '• *!presencas* — lista eventos e envia relatório de confirmados e ausentes.',
+    '• *!aprovarpresenca* — autoriza um integrante fora do prazo de confirmação.',
+    '• *!sair* — cancela a operação em andamento.',
+    '',
+    '⌨️ *ALTERNATIVAS SEM BOTÃO*',
+    '• !agendar Nome | DD/MM/AAAA HH:MM',
+    '• !editarevento ID | Novo nome | DD/MM/AAAA HH:MM',
+    '• !cancelarevento ID',
+    '• !presencas ID',
+    '⚠️ Editar, cancelar e aprovar presença pelo assistente usam botões. Caso a lista não abra, os comandos diretos de evento acima continuam disponíveis.',
+    '',
+    '🕗 Um lembrete é enviado no Geral 1 hora antes; as inscrições fecham 30 minutos antes e o relatório vai ao Conselho.',
+    '📢 Eventos criados, editados e cancelados são publicados nos Avisos Oficiais, com notificação no Geral.',
+    '',
+    '❓ Envie *!comandosadm* ou *!ajuda* aqui para ver esta lista.'
+  ];
+}
+
+function reviewerHelpLines() {
+  return [
+    '⚖️ *NOX — COMANDOS DO REVISOR DE CONHECIMENTO*',
+    '📍 Exclusivos do revisor verificado no grupo Integrantes.',
+    '',
+    '📥 *PENDÊNCIAS*',
+    '• *!propostas* — lista sugestões pendentes com menu clicável e IDs.',
+    '• *!propostas 2* — página 2 da lista (se houver).',
+    '• *!avaliarconhecimento ID* — abre as 3 opções para uma pendência.',
+    '• *!aprovarconhecimento ID* — aprova a informação exatamente como chegou.',
+    '• *!aprovarcomedicao ID* — solicita novo texto antes de aprovar.',
+    '• *!rejeitarconhecimento ID* — reprova sem adicionar à base.',
+    '',
+    '📚 *CONHECIMENTOS JÁ APROVADOS*',
+    '• *!conhecimentos* — lista todas as dicas aprovadas (paginado).',
+    '• *!conhecimentos 2* — consulta a página 2.',
+    '• *!editarconhecimento ID* — altera descrição já aprovada.',
+    '• *!excluirconhecimento ID* — solicita confirmação e retira a informação da base ativa.',
+    '',
+    '✅ *CONFIRMAÇÕES SEM BOTÃO*',
+    '• *!confirmaredicao ID* — confirma o texto corrigido depois de enviá-lo.',
+    '• *!confirmarexclusao ID* — confirma exclusão de um conhecimento previamente selecionado.',
+    '• *!sair* — abandona uma edição ou exclusão pendente.',
+    '',
+    '🛡️ O conteúdo só fica ativo após aprovação; rejeições e exclusões não são exibidas nas respostas.',
+    '📜 Editar e excluir preserva um histórico de revisão.',
+    '❓ Envie *!comandosrevisor* ou *!ajuda* aqui para repetir esta lista.'
+  ];
+}
+
+function ownerHelpLines() {
+  return [
+    '🔐 *NOX — COMANDOS EXCLUSIVOS DO DONO*',
+    '📍 Apenas na conversa privada Você / conta proprietária.',
+    '',
+    '• *!revisor listar* — relaciona jogadores com nick e cadastro verificados.',
+    '• *!revisor* — mostra o revisor ativo.',
+    '• *!revisor ROLE_ID ZONE_ID* — autoriza apenas esse jogador a revisar no grupo Integrantes.',
+    '• *!revisor desativar* — revoga a autorização de revisão.',
+    '• *!grupos* — descobre grupos da comunidade e seus IDs.',
+    '• *!comandosdono* — abre esta lista.',
+    'O dono pode usar *!ajuda* para conhecer os comandos comuns, mas comandos do Conselho e do revisor continuam restritos aos seus grupos.'
   ];
 }
 
@@ -1202,6 +1262,10 @@ async function handleRegistration(sock, message) {
     const choice=command.match(/\s+(bot|melhoria|conhecimento)$/i)?.[1];
     if (choice) await handleSuggestionChoice(sock,jid,choice==='conhecimento'?'knowledge':'bot');
     else await sendSuggestionMenu(sock,jid,message);
+    return true;
+  }
+  if (ownerPrivate && command === '!comandosdono') {
+    await sendText(sock,jid,ownerHelpLines().join('\n'));
     return true;
   }
   if (ownerPrivate && command === '!ajuda') {
