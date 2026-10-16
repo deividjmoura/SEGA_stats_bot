@@ -12,7 +12,7 @@ let persistencePromise = Promise.resolve();
 
 const phrases = [
   "Chamou pra jogar e o grupo ficou em silêncio. Acho que ativaram o modo espectador. 👀",
-  "Seu convite está aguardando aprovação do conselho dos anciões do SEGA. 😂",
+  "Seu convite está aguardando aprovação do conselho dos anciões do NOX. 😂",
   "Detectei um pedido de companhia. O sistema também detectou zero voluntários. 💀",
   "Esse convite foi tão ignorado que já pode pedir aposentadoria.",
   "O cidadão convocou reforços. Os reforços aparentemente estão no café. ☕",
@@ -26,7 +26,7 @@ const phrases = [
   "O grupo está analisando seu convite com a mesma velocidade de uma partida travada.",
   "Esse convite precisa de um patch urgente. Nenhum jogador encontrado.",
   "Pelo visto, hoje o squad é você, você mesmo e mais ninguém.",
-  "O SEGA recomenda tentar novamente quando os guerreiros saírem da toca. ⚔️",
+  "O NOX recomenda tentar novamente quando os guerreiros saírem da toca. ⚔️",
   "Seu convite foi colocado em análise. O analista também não respondeu.",
   "Se silêncio desse MVP, esse grupo já teria um campeão.",
   "Convite sem resposta detectado. Talvez seja hora de ameaçar um ranked. 😂",
@@ -39,7 +39,7 @@ const phrases = [
   "Seu “bora” foi mais solitário que um jungler sem retri.",
   "Nenhuma resposta. Talvez estejam esperando o convite chegar por correio.",
   "Essa mensagem pede companhia e recebeu apenas contemplação filosófica.",
-  "O radar do SEGA procurou parceiros. Encontrou apenas você. 👀",
+  "O radar do NOX procurou parceiros. Encontrou apenas você. 👀",
   "Tem vaga no squad. Falta o pequeno detalhe chamado squad.",
   "Seu chamado foi tão ignorado que o bot resolveu fazer hora extra.",
   "Se ninguém responder, vou considerar que foi um treino solo.",
@@ -49,7 +49,7 @@ const phrases = [
   "Nenhum guerreiro se apresentou. A fila de desculpas já começou.",
   "Esse chamado está esperando resposta desde a era dos dinossauros.",
   "Grupo online, respostas offline. Um clássico.",
-  "O SEGA confirma: seu convite existe. A cooperação, ainda não.",
+  "O NOX confirma: seu convite existe. A cooperação, ainda não.",
   "Você convocou a tropa. A tropa aparentemente tirou férias.",
   "Nem o buff azul está tão disputado quanto uma vaga nesse squad.",
   "Seu pedido de companhia foi recebido com uma técnica avançada: ignorar.",
@@ -75,7 +75,7 @@ const phrases = [
   "Esse grupo está tão quieto que dá pra ouvir a torre caindo.",
   "Seu convite aguarda guerreiros. Os guerreiros aguardam motivação.",
   "Nenhum “bora” detectado. O sistema recomenda insistência moderada.",
-  "Convocação oficial do SEGA. Comparecimento: preocupantemente baixo.",
+  "Convocação oficial do NOX. Comparecimento: preocupantemente baixo.",
   "Seu squad imaginário já está completo. Falta só a parte real.",
   "Esse silêncio tem potencial para virar estratégia defensiva.",
   "Pedido de companhia registrado. Alguém provavelmente está fingindo não ver.",
@@ -85,7 +85,7 @@ const phrases = [
   "Seu convite está em cooldown emocional. 😂",
   "O grupo recebeu a mensagem e escolheu a diplomacia do silêncio.",
   "Você lançou o chamado. O chamado caiu no mato.",
-  "SEGA Stats informa: ainda não foi encontrado um companheiro de lane.",
+  "NOX Stats informa: ainda não foi encontrado um companheiro de lane.",
   "Esse pedido de duo está mais demorado que algumas filas de ranked.",
   "Seu convite foi enviado com sucesso. A vontade alheia não foi localizada.",
   "Parece que o grupo está economizando palavras para a próxima partida.",
@@ -100,13 +100,13 @@ const phrases = [
   "Se ninguém responder, vou registrar como partida solo oficial.",
   "Você tentou recrutar. O recrutamento entrou em fila infinita.",
   "Esse convite merece uma resposta. Até um “não” já seria assistência.",
-  "Nenhum parceiro apareceu. O SEGA está investigando o desaparecimento.",
+  "Nenhum parceiro apareceu. O NOX está investigando o desaparecimento.",
   "Chamado recebido. Jogadores disponíveis: classificados como lenda urbana.",
   "Seu convite está intacto. A dignidade do grupo, nem tanto. 😂",
   "Parece que todo mundo está ocupado sendo carregado por alguém.",
   "Você quer jogar com alguém. O grupo quer paz. Temos um conflito diplomático.",
   "Esse chamado está tão sozinho que já pode pedir cidadania.",
-  "SEGA Stats recomenda: marcar alguém pode aumentar a taxa de resposta em 0,01%.",
+  "NOX Stats recomenda: marcar alguém pode aumentar a taxa de resposta em 0,01%.",
   "Se o objetivo era chamar atenção, parabéns. O bot percebeu.",
   "Convite enviado. Agora resta esperar o milagre do “bora”.",
   "Mais cinco minutos e esse convite vira patrimônio histórico do grupo.",
@@ -119,7 +119,7 @@ const phrases = [
   "Você convocou reforços. O reforço veio em forma de bot.",
   "Caso alguém esteja procurando uma desculpa para não jogar, o grupo já forneceu o cenário perfeito.",
   "Seu convite continua vivo. Diferente da esperança de resposta. 😂",
-  "Formação do SEGA: vaga aberta, coragem em falta.",
+  "Formação do NOX: vaga aberta, coragem em falta.",
   "Esse chamado foi tão discreto que até o minimapa ignorou.",
   "Você pediu um parceiro. O universo entregou sarcasmo.",
   "Nenhum “partiu” detectado. Alerta amarelo no squad.",
@@ -127,7 +127,7 @@ const phrases = [
   "Convite oficializado. Agora aguardamos o nascimento de um “bora”.",
   "Esse lobby tem potencial. Só faltam os jogadores.",
   "Você chamou o grupo inteiro. O grupo inteiro está estudando a mensagem.",
-  "SEGA Stats concluiu a análise: jogar sozinho continua sendo uma possibilidade.",
+  "NOX Stats concluiu a análise: jogar sozinho continua sendo uma possibilidade.",
   "Mais uma convocação sem resposta. O histórico começa a ficar suspeito.",
   "Seu convite recebeu silêncio premium, edição limitada.",
   "Os guerreiros estão ausentes, mas a zoeira está online.",
@@ -155,7 +155,7 @@ function isCallForPlayers(text) {
     .trim();
 
   // Perguntas dirigidas ao próprio bot nunca entram no monitor de ausência.
-  if (/@sega(?:_?stats)?(?:_?bot)?\b/i.test(String(text || ''))) return false;
+  if (/@nox(?:_?stats)?(?:_?bot)?\b/i.test(String(text || ''))) return false;
 
   return [
     /\bbora\b/,
