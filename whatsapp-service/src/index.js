@@ -1,8 +1,9 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
+import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, buildSuggestionCategoryMenu, buildKnowledgeReviewMenu, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { brandNoxText } from './noxBranding.js';
+import { parseKnowledgeSubmission, validKnowledgeState, isVerifiedReviewer, appendPendingKnowledge, reviewKnowledge, matchApprovedKnowledge, KNOWLEDGE_CATEGORIES, safeKnowledgeText } from './communityKnowledge.js';
 import { validateAgendaDay, validateAgendaSchedule, agendaValidationMessage } from './agendaDateValidation.js';
 import { isVagueWinQuestion, makeUnknownQuestionRoast } from './unknownQuestionRoasts.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
@@ -18,7 +19,7 @@ import { dirname } from 'node:path';
 import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch, fetchPlayerOverview } from './roneApi.js';
 import { loadSeasonStats, formatSeasonStats } from './seasonStats.js';
 import { sendStatsWithOptionalSeason } from './statsReplyFlow.js';
-import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
+import { answerMlbbQuestion, listKnowledgeExamples, canonicalMlbbHero, intentOf } from './mlbbKnowledgeV2.js';
 import { createOutgoingEchoGuard, ownerKnowledgeQuestion } from './messageSafety.js';
 
 const REGISTRATION_TTL_MS = 15 * 60 * 1000;
@@ -30,6 +31,21 @@ const registrationsFile = dataDir + '/whatsapp-registrations.json';
 const battlesFile = dataDir + '/whatsapp-battles.json';
 const announcementsFile = dataDir + '/whatsapp-announcement-deliveries.json';
 const agendaFile = dataDir + '/whatsapp-agenda.json';
+const communityKnowledgeFile = dataDir + '/whatsapp-community-knowledge.json';
+let communityKnowledgeWrites = Promise.resolve();
+async function readCommunityKnowledge() {
+  return validKnowledgeState(await readJson(communityKnowledgeFile,{reviewer:null,proposals:[]}));
+}
+async function updateCommunityKnowledge(transform) {
+  const op = communityKnowledgeWrites.then(async () => {
+    const current = await readCommunityKnowledge();
+    const result = transform(current);
+    if (result?.data) await writeJson(communityKnowledgeFile,result.data);
+    return result;
+  });
+  communityKnowledgeWrites = op.catch(()=>{});
+  return op;
+}
 const attendanceFile = dataDir + '/whatsapp-attendance.json';
 const attendanceAlertsFile = dataDir + '/whatsapp-attendance-alerts.json';
 // The official clan roster is in the Integrantes group; it is never a command destination.
