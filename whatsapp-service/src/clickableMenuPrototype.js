@@ -62,8 +62,60 @@ export function buildKnowledgeReviewMenu(proposal) {
     body: 'Só o revisor autorizado pode aprovar ou rejeitar. Sugestão #'+proposal.id,
     buttonText: '⚖️ AVALIAR SUGESTÃO',
     rows: [
-      {id:'nox:knowledge:approve:'+proposal.id,title:'✅ Aprovar conhecimento'},
+      {id:'nox:knowledge:approve:'+proposal.id,title:'✅ Aprovar direto'},
+      {id:'nox:knowledge:approveedit:'+proposal.id,title:'✏️ Aprovar com edição'},
       {id:'nox:knowledge:reject:'+proposal.id,title:'❌ Rejeitar sugestão'},
+    ],
+  });
+}
+
+// Both pending and published knowledge can be selected from paginated lists.
+export function buildKnowledgeRecordsMenu(records,status,page=0) {
+  if(!['pending','approved'].includes(status))throw new Error('Status inválido');
+  const perPage=8, pages=Math.max(1,Math.ceil(records.length/perPage));
+  if(!Number.isInteger(page)||page<0||page>=pages||!records.length)throw new Error('Página inválida');
+  const rows=records.slice(page*perPage,(page+1)*perPage).map(item=>({
+    id:'nox:knowledge:open:'+status+':'+item.id,
+    title:(String(item.hero||'Herói').slice(0,12)+' · '+String(item.id)).slice(0,24),
+    description:(String(item.category||'')+' · '+String(item.content||'').slice(0,56)).slice(0,72)
+  }));
+  if(page>0)rows.push({id:'nox:knowledge:page:'+status+':'+(page-1),title:'⬅️ Página anterior'});
+  if(page+1<pages)rows.push({id:'nox:knowledge:page:'+status+':'+(page+1),title:'➡️ Próxima página'});
+  return buildInteractiveList({
+    title:status==='pending'?'🧠 SUGESTÕES PENDENTES':'📚 CONHECIMENTOS APROVADOS',
+    body:'Escolha um registro (página '+(page+1)+' de '+pages+'). '+
+      'Se os botões não funcionarem, use o ID no comando de texto.',
+    buttonText:'📚 ESCOLHER REGISTRO',
+    rows,
+  });
+}
+
+export function buildKnowledgeApprovedActionsMenu(item) {
+  if(!/^[a-f0-9]{8}$/i.test(item?.id||''))throw new Error('ID inválido');
+  return buildInteractiveList({
+    title:'📚 CONHECIMENTO APROVADO',
+    body:String(item.hero)+' · '+String(item.category)+' · ID '+item.id+
+      '\n'+String(item.content).slice(0,420),
+    buttonText:'⚙️ GERENCIAR',
+    rows:[
+      {id:'nox:knowledge:edit:'+item.id,title:'✏️ Editar informação'},
+      {id:'nox:knowledge:delete:'+item.id,title:'🗑️ Excluir informação'},
+    ],
+  });
+}
+
+export function buildKnowledgeConfirmMenu(item,action) {
+  if(!/^[a-f0-9]{8}$/i.test(item?.id||''))throw new Error('ID inválido');
+  if(!['approveedit','edit','delete'].includes(action))throw new Error('Ação inválida');
+  return buildInteractiveList({
+    title:action==='delete'?'🗑️ CONFIRMAR EXCLUSÃO':'✏️ CONFIRMAR ALTERAÇÃO',
+    body:String(item.hero)+' · '+item.id+'\n'+
+      (action==='delete'?'Retirar esta informação das respostas do NOX?':
+      'Confirmar o novo texto enviado na conversa?'),
+    buttonText:'⚖️ CONFIRMAR',
+    rows:[
+      {id:'nox:knowledge:save:'+item.id,title:action==='delete'?'✅ Sim, excluir':'✅ Confirmar mudança'},
+      {id:'nox:knowledge:cancel:'+item.id,title:'↩️ Cancelar'},
     ],
   });
 }
