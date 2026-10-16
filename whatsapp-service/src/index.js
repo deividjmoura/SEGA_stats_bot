@@ -1809,52 +1809,229 @@ async function knowledgeReviewerForMessage(sock,message,state) {
   return player||null;
 }
 
+const knowledgeReviewDrafts = new Map();
+const KNOWLEDGE_REVIEW_TTL_MS = 10 * 60 * 1000;
+function reviewerDraftKey(state) {
+  const reviewer=state?.reviewer;
+  return membersGroup+':'+String(reviewer?.roleId||'')+':'+String(reviewer?.zoneId||'');
+}
+function knowledgeRow(item) {
+  return '*'+item.id+'* — '+safeKnowledgeText(item.hero,35)+' ('+
+    (KNOWLEDGE_CATEGORIES[item.category]||item.category)+') — '+safeKnowledgeText(item.authorName,55);
+}
+async function sendKnowledgeRecords(sock,jid,state,status,page) {
+  const all=listKnowledgeByStatus(state,status);
+  const perPage=8;
+  const pages=Math.max(1,Math.ceil(all.length/perPage));
+  if(!Number.isInteger(page)||page<0||page>=pages){
+    await sendText(sock,jid,'⚠️ Página inexistente. Use *!'+(status==='pending'?'propostas':'conhecimentos')+'*.');
+    return;
+  }
+  const title=status==='pending'?'🧠 *PROPOSTAS PENDENTES*':'📚 *CONHECIMENTOS APROVADOS*';
+  const shown=all.slice(page*perPage,(page+1)*perPage);
+  const explanation=status==='pending'
+    ? 'Avalie com *!avaliarconhecimento ID* ou use *!aprovarconhecimento ID*, *!aprovarcomedicao ID*, *!rejeitarconhecimento ID*.'
+    : 'Gerencie com *!editarconhecimento ID* ou *!excluirconhecimento ID*.';
+  await sendText(sock,jid,title+' — '+all.length+' registro(s)\n' +
+    'Página '+(page+1)+'/'+pages+'\n\n'+
+    (shown.map(knowledgeRow).join('\n')||'Nenhum registro encontrado.')+
+    '\n\n'+explanation+
+    (pages>1?'\n📄 Próxima página: *!'+(status==='pending'?'propostas':'conhecimentos')+' '+(page+2)+'* (se disponível).':''));
+  if(all.length) {
+    try{
+      await sendInteractive(sock,jid,buildKnowledgeRecordsMenu(all,status,page),[membersGroup]);
+    }catch(error){
+      console.warn('Lista interativa de conhecimento indisponível; alternativa escrita ativa:',error?.message);
+    }
+  }
+}
+async function sendKnowledgeDetail(sock,jid,item) {
+  if(!item) {
+    await sendText(sock,jid,'⚠️ ID não encontrado nesse grupo. Use !propostas ou !conhecimentos.');
+    return;
+  }
+  await sendText(sock,jid,'🧠 *CONHECIMENTO #'+item.id+'*\n' +
+    '📚 '+(KNOWLEDGE_CATEGORIES[item.category]||item.category)+
+    ' · 🎮 '+safeKnowledgeText(item.hero,55)+
+    '\n👤 Enviada por: '+safeKnowledgeText(item.authorName,65)+
+    '\n📋 Situação: '+(item.status==='pending'?'Pendente':'Aprovado')+
+    '\n\n💬 *Descrição:*\n'+safeKnowledgeText(item.content,580)+
+    (item.status==='pending'
+      ? '\n\n✅ *!aprovarconhecimento '+item.id+'*\n✏️ *!aprovarcomedicao '+item.id+'*\n❌ *!rejeitarconhecimento '+item.id+'*'
+      : '\n\n✏️ *!editarconhecimento '+item.id+'*\n🗑️ *!excluirconhecimento '+item.id+'*'));
+  try {
+    await sendInteractive(sock,jid,item.status==='pending'
+      ? buildKnowledgeReviewMenu(item)
+      : buildKnowledgeApprovedActionsMenu(item),[membersGroup]);
+  }catch(error){
+    console.warn('Menu de conhecimento indisponível; comandos de texto ativos:',error?.message);
+  }
+}
 async function handleKnowledgeReviewGroup(sock,message) {
   const jid=message?.key?.remoteJid;
   if(jid!==membersGroup || !message?.message || botSentMessageIds.has(message.key.id))return false;
   const raw=messageText(message.message).trim();
-  const click=isInteractiveChoice(message.message);
-  const choice=click ? /^nox:knowledge:(approve|reject):([a-f0-9]{8})$/i.exec(raw) : null;
-  const command=/^!(aprovarconhecimento|rejeitarconhecimento)\s+([a-f0-9]{8})$/i.exec(raw);
-  const pending=/^!propostas$/i.test(raw);
-  if(!choice && !command && !pending)return false;
+  const clicked=isInteractiveChoice(message.message) && /^nox:knowledge:/.test(raw);
+  const knownCommand=/^!(?:ajuda|comandosrevisor|propostas(?:\s+\d+)?|conhecimentos(?:\s+\d+)?|avaliarconhecimento\s+[a-f0-9]{8}|aprovarconhecimento\s+[a-f0-9]{8}|aprovarcomedi[cç][aã]o\s+[a-f0-9]{8}|aprovarcomedicao\s+[a-f0-9]{8}|rejeitarconhecimento\s+[a-f0-9]{8}|editarconhecimento\s+[a-f0-9]{8}|excluirconhecimento\s+[a-f0-9]{8}|confirmaredicao\s+[a-f0-9]{8}|confirmarexclusao\s+[a-f0-9]{8}|sair)$/i.test(raw);
+  // Never read or reply to unrelated chat in Integrantes.
+  if(!clicked && !knownCommand && ![...knowledgeReviewDrafts.values()].some(d=>d.chat===jid))return false;
   const state=await readCommunityKnowledge();
   const reviewer=await knowledgeReviewerForMessage(sock,message,state);
-  if(!reviewer) {
-    // Do not reveal authority assignments to arbitrary group members.
-    return true;
-  }
-  if(pending){
-    const awaiting=state.proposals.filter(p=>p.status==='pending');
-    const output=awaiting.slice(-15).map(p=>'• *'+p.id+'* — '+p.hero+
-      ' ('+KNOWLEDGE_CATEGORIES[p.category]+') — '+p.authorName).join('\n');
-    await sendText(sock,jid,'🧠 *SUGESTÕES AGUARDANDO ANÁLISE* ('+awaiting.length+')\n\n'+
-      (output||'Nenhuma sugestão pendente.')+
-      '\n\nPara avaliar, use *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*.');
-    return true;
-  }
-  const verdict=choice ? (choice[1]==='approve'?'approved':'rejected')
-    : (command[1].toLowerCase()==='aprovarconhecimento'?'approved':'rejected');
-  const id=(choice?.[2]||command?.[2]).toLowerCase();
-  // Recheck assignment inside serialized mutation to reject stale approvals.
-  const result=await updateCommunityKnowledge(current=>{
-    if(!isVerifiedReviewer(reviewer,current.reviewer)){
-      return {ok:false,error:'Sua autorização foi revogada.'};
+  if(!reviewer) return Boolean(clicked||knownCommand);
+  const key=reviewerDraftKey(state);
+  let draft=knowledgeReviewDrafts.get(key);
+  if(draft && Date.now()>draft.expires) {
+    knowledgeReviewDrafts.delete(key);draft=null;
+    if(!knownCommand && !clicked){
+      await sendText(sock,jid,'⌛ Edição expirada. Abra novamente !propostas ou !conhecimentos.');
+      return true;
     }
-    return reviewKnowledge(current,id,verdict,reviewer.name);
-  });
-  if(!result.ok){
-    await sendText(sock,jid,'⚠️ '+result.error);
+  }
+  const cancel=clicked && /^nox:knowledge:cancel:([a-f0-9]{8})$/i.exec(raw);
+  if(/^!sair$/i.test(raw)||cancel){
+    knowledgeReviewDrafts.delete(key);
+    await sendText(sock,jid,'↩️ Operação cancelada. Nenhuma informação foi alterada.');
     return true;
   }
-  const p=result.proposal;
-  await sendText(sock,jid,verdict==='approved'
-    ? '✅ *CONHECIMENTO APROVADO*\n🆔 '+p.id+'\n🎮 '+p.hero+
-      ' · '+KNOWLEDGE_CATEGORIES[p.category]+
-      '\n📚 Passará a aparecer nas respostas do NOX como *conhecimento da comunidade (revisado)*, separado da API.'
-    : '❌ *SUGESTÃO REJEITADA*\n🆔 '+p.id+'\n🎮 '+p.hero+
-      '\n🛡️ A informação NÃO será usada nas respostas do NOX.');
-  return true;
+  if(/^!(ajuda|comandosrevisor)$/i.test(raw)){
+    await sendText(sock,jid,reviewerHelpLines().join('\n'));return true;
+  }
+  const listCommand=/^!(propostas|conhecimentos)(?:\s+(\d+))?$/i.exec(raw);
+  const pageClick=clicked && /^nox:knowledge:page:(pending|approved):(\d+)$/i.exec(raw);
+  if(listCommand||pageClick){
+    knowledgeReviewDrafts.delete(key);
+    const status=pageClick?pageClick[1]:listCommand[1].toLowerCase()==='propostas'?'pending':'approved';
+    const page=pageClick?Number(pageClick[2]):Number(listCommand[2]||1)-1;
+    await sendKnowledgeRecords(sock,jid,state,status,page);
+    return true;
+  }
+  const openClick=clicked && /^nox:knowledge:open:(pending|approved):([a-f0-9]{8})$/i.exec(raw);
+  const openText=/^!avaliarconhecimento\s+([a-f0-9]{8})$/i.exec(raw);
+  if(openClick||openText){
+    knowledgeReviewDrafts.delete(key);
+    const status=openClick?openClick[1]:'pending';
+    const id=(openClick?.[2]||openText?.[1]).toLowerCase();
+    const item=state.proposals.find(p=>p.id===id && p.status===status);
+    await sendKnowledgeDetail(sock,jid,item);
+    return true;
+  }
+  const clickAction=clicked && /^nox:knowledge:(approve|approveedit|reject|edit|delete):([a-f0-9]{8})$/i.exec(raw);
+  const textAction=/^!(aprovarconhecimento|aprovarcomedi[cç][aã]o|aprovarcomedicao|rejeitarconhecimento|editarconhecimento|excluirconhecimento)\s+([a-f0-9]{8})$/i.exec(raw);
+  if(clickAction||textAction){
+    knowledgeReviewDrafts.delete(key);
+    const action=clickAction?clickAction[1]:
+      ({aprovarconhecimento:'approve',aprovarcomedicao:'approveedit',aprovarcomedição:'approveedit',
+        rejeitarconhecimento:'reject',editarconhecimento:'edit',excluirconhecimento:'delete'})[textAction[1].toLowerCase()];
+    const id=(clickAction?.[2]||textAction?.[2]).toLowerCase();
+    const requiredStatus=['approve','approveedit','reject'].includes(action)?'pending':'approved';
+    const item=state.proposals.find(p=>p.id===id && p.status===requiredStatus);
+    if(!item){
+      await sendText(sock,jid,'⚠️ ID não encontrado ou já alterado. Use !propostas ou !conhecimentos.');
+      return true;
+    }
+    if(action==='approve'||action==='reject'){
+      const verdict=action==='approve'?'approved':'rejected';
+      const result=await updateCommunityKnowledge(current=>{
+        if(!isVerifiedReviewer(reviewer,current.reviewer))
+          return {ok:false,error:'Sua autorização foi revogada.'};
+        return reviewKnowledge(current,id,verdict,reviewer.name);
+      });
+      await sendText(sock,jid,result.ok
+        ? (verdict==='approved'?'✅ *CONHECIMENTO APROVADO*':'❌ *SUGESTÃO REPROVADA*')+
+            '\n🆔 '+id+'\n🎮 '+item.hero+
+            '\n'+(verdict==='approved'?'Já está disponível como conhecimento revisado.':'Não será usada nas respostas do NOX.')
+        : '⚠️ '+result.error);
+      return true;
+    }
+    if(action==='approveedit'||action==='edit'){
+      const kind=action;
+      knowledgeReviewDrafts.set(key,{chat:jid,id,kind,step:'text',
+        expires:Date.now()+KNOWLEDGE_REVIEW_TTL_MS});
+      await sendText(sock,jid,(kind==='approveedit'
+        ? '✏️ *APROVAR COM EDIÇÃO*':'✏️ *EDITAR CONHECIMENTO APROVADO*')+
+        '\n🆔 '+id+' · 🎮 '+item.hero+
+        '\n\n📝 *Texto atual:*\n'+safeKnowledgeText(item.content,580)+
+        '\n\n✍️ Envie agora o *novo texto completo* (20 a 580 caracteres).'+
+        '\nVocê poderá revisar antes de confirmar. Envie *!sair* para cancelar.');
+      return true;
+    }
+    if(action==='delete'){
+      knowledgeReviewDrafts.set(key,{chat:jid,id,kind:'delete',step:'confirm',
+        expires:Date.now()+KNOWLEDGE_REVIEW_TTL_MS});
+      await sendText(sock,jid,'🗑️ *EXCLUIR CONHECIMENTO APROVADO?*\n' +
+        '🆔 '+id+' · 🎮 '+item.hero+
+        '\n💬 '+safeKnowledgeText(item.content,400)+
+        '\n\n⚠️ A dica deixará de aparecer nas respostas do NOX, mas seu histórico será preservado.'+
+        '\n✅ Confirme com *!confirmarexclusao '+id+'* ou escolha no menu.\n↩️ Envie *!sair* para cancelar.');
+      try {await sendInteractive(sock,jid,buildKnowledgeConfirmMenu(item,'delete'),[membersGroup]);}
+      catch(error){console.warn('Confirmação clicável indisponível; texto ativo:',error?.message);}
+      return true;
+    }
+  }
+  const saveClick=clicked && /^nox:knowledge:save:([a-f0-9]{8})$/i.exec(raw);
+  const saveEdit=/^!confirmaredicao\s+([a-f0-9]{8})$/i.exec(raw);
+  const saveDelete=/^!confirmarexclusao\s+([a-f0-9]{8})$/i.exec(raw);
+  if(saveClick||saveEdit||saveDelete){
+    const id=(saveClick?.[1]||saveEdit?.[1]||saveDelete?.[1]).toLowerCase();
+    if(!draft || draft.id!==id || draft.step!=='confirm' ||
+      ((saveDelete && draft.kind!=='delete') || (saveEdit && draft.kind==='delete'))){
+      await sendText(sock,jid,'⚠️ Não há uma alteração desse ID aguardando confirmação. Abra a lista novamente.');
+      return true;
+    }
+    const result=await updateCommunityKnowledge(current=>{
+      if(!isVerifiedReviewer(reviewer,current.reviewer))
+        return {ok:false,error:'Sua autorização foi revogada.'};
+      if(draft.kind==='delete')return deleteApprovedKnowledge(current,id,reviewer.name);
+      if(draft.kind==='approveedit')
+        return approveKnowledgeWithEdit(current,id,draft.corrected,reviewer.name);
+      return editApprovedKnowledge(current,id,draft.corrected,reviewer.name);
+    });
+    knowledgeReviewDrafts.delete(key);
+    if(!result.ok){
+      await sendText(sock,jid,'⚠️ '+result.error);
+      return true;
+    }
+    await sendText(sock,jid,(draft.kind==='delete'?'🗑️ *CONHECIMENTO EXCLUÍDO*':
+      draft.kind==='approveedit'?'✅ *SUGESTÃO APROVADA COM EDIÇÃO*':
+      '✅ *CONHECIMENTO ATUALIZADO*')+
+      '\n🆔 '+id+' · 🎮 '+result.proposal.hero+
+      '\n📚 '+(KNOWLEDGE_CATEGORIES[result.proposal.category]||result.proposal.category)+
+      '\n🛡️ Histórico de revisão preservado.'+
+      (draft.kind==='delete'?'\nA informação não será mais usada pelo NOX.':
+        '\nAs próximas respostas usarão a versão revisada.'));
+    return true;
+  }
+  if(draft && draft.step==='text' && !raw.startsWith('!') && !clicked){
+    if(!raw || raw.length>580 || /(?:https?:\/\/|www\.)\S+/i.test(raw)){
+      await sendText(sock,jid,'⚠️ Digite um texto de 20 a 580 caracteres, sem links. Envie !sair para cancelar.');
+      return true;
+    }
+    const corrected=safeKnowledgeText(raw,580);
+    if(corrected.length<20){
+      await sendText(sock,jid,'⚠️ Descrição muito curta. Explique a dica em pelo menos 20 caracteres.');
+      return true;
+    }
+    draft.corrected=corrected;draft.step='confirm';
+    draft.expires=Date.now()+KNOWLEDGE_REVIEW_TTL_MS;
+    const item=state.proposals.find(p=>p.id===draft.id);
+    if(!item){
+      knowledgeReviewDrafts.delete(key);
+      await sendText(sock,jid,'⚠️ O registro não está mais disponível. Nenhuma alteração realizada.');
+      return true;
+    }
+    await sendText(sock,jid,'✏️ *CONFIRMAR TEXTO REVISADO?*\n🆔 '+draft.id+
+      '\n\n💬 '+corrected+
+      '\n\n✅ Envie *!confirmaredicao '+draft.id+'* ou escolha no menu.'+
+      '\n↩️ Para cancelar, envie *!sair*.');
+    try{await sendInteractive(sock,jid,buildKnowledgeConfirmMenu(item,draft.kind),[membersGroup]);}
+    catch(error){console.warn('Confirmação da edição sem botão; comando de texto ativo:',error?.message);}
+    return true;
+  }
+  if(draft && !knownCommand && !clicked){
+    await sendText(sock,jid,'⚠️ Ainda falta confirmar a operação. Use o botão exibido, o comando com ID ou *!sair*.');
+    return true;
+  }
+  return Boolean(knownCommand||clicked);
 }
 
 async function appendApprovedKnowledgeToAnswer(question,answer) {
