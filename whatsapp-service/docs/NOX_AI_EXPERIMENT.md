@@ -53,6 +53,43 @@ Não configurar `NOX_AI_ENABLED=true` no serviço atual durante desenvolvimento.
 
 O auto-chat do proprietário pode ter perguntas explícitas em formatos já aceitos pelo código antigo. Chats privados de terceiros continuam fora de escopo.
 
+## Laboratório sem WhatsApp — primeiro teste seguro
+
+Criado em 2026-10-16: `src/noxAiPlayground.js`. A ferramenta **não carrega Baileys, não lê as conversas e não conecta o número atual**; conversa diretamente com `noxAiAssistant.js`.
+
+### Modo simulado, sem chave e sem custo
+
+No terminal, usando **fish** no CachyOS:
+
+```fish
+git fetch origin
+git switch feat/nox-ai-collab-20261016
+cd whatsapp-service
+node src/noxAiPlayground.js --self-test
+node src/noxAiPlayground.js --demo
+```
+
+No `--demo`, teste `Quais informações você tem sobre Miya?`, depois `E a build dela?`. Digite `/trocar` para alternar entre jogadores A e B, `/ajuda` para ver todos os comandos e `/sair` para encerrar. **Respostas do demo são um simulador offline, não vêm de modelo generativo**, por isso não avaliam qualidade factual nem humor de uma IA real.
+
+### IA de verdade, ainda sem WhatsApp
+
+Depois de escolher provedor e modelo (Groq, OpenRouter ou OpenAI) e obter uma chave própria, use **somente no seu terminal privado**, nunca mande segredos ao GitHub/WhatsApp/ChatGPT:
+
+```fish
+set -gx NOX_AI_PROVIDER groq
+set -gx NOX_AI_MODEL modelo-exato-disponivel-no-provedor
+read --silent --prompt-str 'Chave da API: ' NOX_AI_API_KEY
+set -gx NOX_AI_API_KEY $NOX_AI_API_KEY
+node src/noxAiPlayground.js --live
+set -e NOX_AI_API_KEY
+```
+
+`NOX_AI_MODEL` é um exemplo: substituir pelo identificador exato do modelo contratado/disponível, antes de executar. Se não tiver chave ou quiser evitar cobrança, **use somente `--demo`**. Para pesquisa web adicional (custo/serviço separados), precisa `NOX_AI_WEB_SEARCH_ENABLED=true` e `NOX_AI_SEARCH_API_KEY`; deixe desativada nos primeiros testes.
+
+Para inspecionar testes automatizados da ferramenta, execute `node --test src/noxAiPlayground.test.js` ou `npm test` dentro de `whatsapp-service`.
+
+**Limitação:** o laboratório usa apenas fatos demonstrativos no modo offline. No modo live consulta a base MLBB pública, mas **não acessa o volume produtivo de propostas aprovadas do clã**, portanto não valida dados privados da produção.
+
 ## Fluxo de testes recomendado, sem tocar produção
 
 1. Executar localmente `cd whatsapp-service && npm test` com Node compatível e dependências do repo. O CI do PR draft também pode validar.
