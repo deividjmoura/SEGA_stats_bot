@@ -3,6 +3,7 @@ import pino from 'pino';
 import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, buildSuggestionCategoryMenu, buildKnowledgeReviewMenu, buildKnowledgeRecordsMenu, buildKnowledgeApprovedActionsMenu, buildKnowledgeConfirmMenu, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { brandNoxText } from './noxBranding.js';
+import { buildRoleCommandsMenu, resolveRoleClick, ROLE_MENU_ITEMS, buildOwnerReviewerPicker, buildOwnerConfirmMenu } from './roleCommandMenus.js';
 import { parseKnowledgeSubmission, normalizeKnowledgeCategory, validKnowledgeState, isVerifiedReviewer, appendPendingKnowledge, reviewKnowledge, approveKnowledgeWithEdit, editApprovedKnowledge, deleteApprovedKnowledge, listKnowledgeByStatus, matchApprovedKnowledge, KNOWLEDGE_CATEGORIES, safeKnowledgeText } from './communityKnowledge.js';
 import { validateAgendaDay, validateAgendaSchedule, agendaValidationMessage } from './agendaDateValidation.js';
 import { isVagueWinQuestion, makeUnknownQuestionRoast } from './unknownQuestionRoasts.js';
@@ -1247,6 +1248,160 @@ function ownerHelpLines() {
     '• *!comandosdono* — abre esta lista.',
     'O dono pode usar *!ajuda* para conhecer os comandos comuns, mas comandos do Conselho e do revisor continuam restritos aos seus grupos.'
   ];
+}
+
+async function sendRoleCommandsMenu(sock,jid,role) {
+  const entries=ROLE_MENU_ITEMS[role];
+  if(!entries)return false;
+  const heading=({conselho:'👑 *COMANDOS DO CONSELHO*',
+    revisor:'⚖️ *COMANDOS DO REVISOR*',dono:'🔐 *COMANDOS DO DONO*'})[role];
+  const guide=({conselho:'!comandosadm detalhes',
+    revisor:'!comandosrevisor detalhes',dono:'!comandosdono detalhes'})[role];
+  // Deliver accessible commands first: native-flow UI isn't compatible with all clients.
+  await sendText(sock,jid,heading+'\n\n'+entries.map(e=>
+    '• '+e.title+' — '+(e.command?.includes(' detalhes')?'ver instruções':
+      e.command||({autorizar:'!revisor listar e !revisor ROLE_ID ZONE_ID',
+        revogar:'!revisor desativar'})[e.key]||'escolher função')).join('\n')+
+    '\n\n📱 Use a lista clicável abaixo ou envie o comando escrito.'+
+    '\n📖 Lista detalhada: *'+guide+'*.');
+  try {
+    await sendInteractive(sock,jid,buildRoleCommandsMenu(role),
+      role==='conselho'?[adminsGroup]:role==='revisor'?[membersGroup]:[]);
+  }catch(error){
+    console.warn('Menu de comandos '+role+' indisponível; comandos escritos ativos:',error?.message);
+  }
+  return true;
+}
+
+// Menu actions are accepted only in the owner's own WhatsApp chat.
+const ownerReviewerSelection = new Map();
+const OWNER_MENU_TTL_MS = 10*60*1000;
+function verifiedReviewerCandidates(){
+  const unique=new Map();
+  for(const [jid,p] of players.entries()){
+    if(jid==='self'||!jid.includes('@')||p?.nameVerified!==true||
+      !/^\d{6,12}$/.test(String(p.roleId||''))||
+      !/^\d{1,8}$/.test(String(p.zoneId||''))||!p.name)continue;
+    const id=String(p.roleId)+':'+String(p.zoneId);
+    if(!unique.has(id))unique.set(id,{
+      roleId:String(p.roleId),zoneId:String(p.zoneId),nick:safeKnowledgeText(p.name,65)
+    });
+  }
+  return [...unique.values()].sort((a,b)=>a.nick.localeCompare(b.nick,'pt-BR')).slice(0,120);
+}
+async function sendOwnerReviewerPage(sock,jid,draft) {
+  const page=draft.page||0,total=Math.ceil(draft.candidates.length/8);
+  const shown=draft.candidates.slice(page*8,page*8+8);
+  await sendText(sock,jid,'🔐 *DEFINIR REVISOR — '+(page+1)+'/'+total+'*\n\n'+
+    shown.map((p,i)=>(i+1)+'. *'+p.nick+'* — Role '+p.roleId+' · Zone '+p.zoneId).join('\n')+
+    '\n\n📱 Escolha na lista clicável. Sem botão, use *!revisor ROLE_ID ZONE_ID* com os IDs acima.'+
+    (total>1?'\nUse os botões Anterior/Próxima para navegar.':'')+
+    '\nPara desistir, envie *!comandosdono*.');
+  try{await sendInteractive(sock,jid,buildOwnerReviewerPicker(draft.candidates,page));}
+  catch(error){console.warn('Seletor de revisor indisponível; instruções escritas disponíveis:',error?.message);}
+}
+async function startOwnerReviewerSelection(sock,jid) {
+  const candidates=verifiedReviewerCandidates();
+  if(!candidates.length){
+    await sendText(sock,jid,'⚠️ Nenhum jogador com conta MLBB verificada disponível. Peça ao revisor para concluir *!cadastrar* no privado.');
+    return true;
+  }
+  const draft={step:'pick',candidates,page:0,expires:Date.now()+OWNER_MENU_TTL_MS};
+  ownerReviewerSelection.set(jid,draft);
+  await sendOwnerReviewerPage(sock,jid,draft);
+  return true;
+}
+async function startOwnerRevocation(sock,jid) {
+  const current=await readCommunityKnowledge();
+  if(!current.reviewer){
+    await sendText(sock,jid,'ℹ️ Nenhum revisor está autorizado no momento.');
+    return true;
+  }
+  ownerReviewerSelection.set(jid,{step:'revoke',expires:Date.now()+OWNER_MENU_TTL_MS});
+  await sendText(sock,jid,'🚫 *REVOGAR O REVISOR '+safeKnowledgeText(current.reviewer.nick,65)+'?*\n'+
+    'Nenhuma dica já aprovada será apagada.\n' +
+    'Confirme pelo botão abaixo ou envie *!revisor desativar*.\n' +
+    'Para cancelar, envie *!comandosdono*.');
+  try{await sendInteractive(sock,jid,buildOwnerConfirmMenu('revoke'));}
+  catch(error){console.warn('Confirmação clicável indisponível; comando escrito disponível:',error?.message);}
+  return true;
+}
+async function handleOwnerMenuChoice(sock,message,selected) {
+  const jid=message?.key?.remoteJid;
+  const menu=resolveRoleClick(selected,'dono');
+  if(menu){
+    ownerReviewerSelection.delete(jid);
+    if(menu.key==='autorizar')return startOwnerReviewerSelection(sock,jid);
+    if(menu.key==='revogar')return startOwnerRevocation(sock,jid);
+    if(menu.key==='guia'){
+      await sendText(sock,jid,ownerHelpLines().join('\n'));return true;
+    }
+    // Fixed allowlist; process only commands already authorized in self-chat.
+    if(menu.command)return handleRegistration(sock,{...message,
+      message:{conversation:menu.command}});
+    return true;
+  }
+  const match=/^nox:owner:(?:pick:(\d+)|page:(\d+)|confirm:(assign|revoke)|cancel)$/.exec(selected);
+  if(!match)return false;
+  const draft=ownerReviewerSelection.get(jid);
+  if(!draft||Date.now()>draft.expires){
+    ownerReviewerSelection.delete(jid);
+    await sendText(sock,jid,'⌛ Seleção expirada. Abra *!comandosdono* novamente.');
+    return true;
+  }
+  if(selected==='nox:owner:cancel'){
+    ownerReviewerSelection.delete(jid);
+    await sendText(sock,jid,'↩️ Operação cancelada. Nenhuma permissão alterada.');
+    return true;
+  }
+  if(match[2]!=null){
+    const page=Number(match[2]);
+    if(draft.step!=='pick'||page<0||page>=Math.ceil(draft.candidates.length/8)){
+      await sendText(sock,jid,'⚠️ Página inválida. Abra *!comandosdono* novamente.');return true;
+    }
+    draft.page=page;draft.expires=Date.now()+OWNER_MENU_TTL_MS;
+    await sendOwnerReviewerPage(sock,jid,draft);
+    return true;
+  }
+  if(match[1]!=null){
+    const idx=Number(match[1]);
+    if(draft.step!=='pick'||idx<draft.page*8||idx>=draft.page*8+8||idx>=draft.candidates.length){
+      await sendText(sock,jid,'⚠️ Jogador não consta na página atual.');return true;
+    }
+    const chosen=draft.candidates[idx];
+    const live=verifiedReviewerCandidates().some(p=>p.roleId===chosen.roleId&&p.zoneId===chosen.zoneId);
+    if(!live){
+      ownerReviewerSelection.delete(jid);
+      await sendText(sock,jid,'⚠️ Cadastro não está mais verificado. Nenhuma permissão alterada.');return true;
+    }
+    draft.step='assign';draft.chosen=chosen;draft.expires=Date.now()+OWNER_MENU_TTL_MS;
+    await sendText(sock,jid,'🔐 *CONFIRMAR REVISOR*\n🎮 '+chosen.nick+
+      '\nRole ID: '+chosen.roleId+' · Zone ID: '+chosen.zoneId+
+      '\n\nConfirme no botão abaixo ou envie *!revisor '+chosen.roleId+' '+chosen.zoneId+'*.');
+    try{await sendInteractive(sock,jid,buildOwnerConfirmMenu('assign',chosen.nick));}
+    catch(error){console.warn('Confirmação clicável não suportada; instrução escrita disponível:',error?.message);}
+    return true;
+  }
+  if(match[3]==='assign'){
+    if(draft.step!=='assign'||!draft.chosen){
+      await sendText(sock,jid,'⚠️ Primeiro escolha um jogador verificado.');return true;
+    }
+    const chosen=draft.chosen;
+    if(!verifiedReviewerCandidates().some(p=>p.roleId===chosen.roleId&&p.zoneId===chosen.zoneId)){
+      ownerReviewerSelection.delete(jid);
+      await sendText(sock,jid,'⚠️ Cadastro não verificado. Nenhuma permissão alterada.');return true;
+    }
+    ownerReviewerSelection.delete(jid);
+    return configureKnowledgeReviewer(sock,jid,'!revisor '+chosen.roleId+' '+chosen.zoneId);
+  }
+  if(match[3]==='revoke'){
+    if(draft.step!=='revoke'){
+      await sendText(sock,jid,'⚠️ Não há revogação aguardando confirmação.');return true;
+    }
+    ownerReviewerSelection.delete(jid);
+    return configureKnowledgeReviewer(sock,jid,'!revisor desativar');
+  }
+  return true;
 }
 
 function activeRegistrationJids() {
