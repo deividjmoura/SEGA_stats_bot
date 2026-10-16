@@ -94,6 +94,71 @@ export function reviewKnowledge(state,id,verdict,reviewerName,now=Date.now(),cor
   return {ok:true,data:{...doc,proposals},proposal};
 }
 
+// The reviewer may correct text before approval, revise previously approved
+// knowledge or remove it from answers. Original submissions are never erased.
+function updatedKnowledgeText(input) {
+  const text=safeKnowledgeText(input,600);
+  if(text.length<20 || text.length>580 || text.includes('[link removido]'))
+    return {ok:false,error:'A descrição deve ter entre 20 e 580 caracteres, sem links.'};
+  return {ok:true,text};
+}
+function updatedKnowledgeProposal(state,id,requiredStatus,actor,change,now=Date.now()) {
+  const doc=validKnowledgeState(state);
+  const index=doc.proposals.findIndex(p=>p.id===id && p.status===requiredStatus);
+  if(index<0) return {ok:false,error:'Conhecimento não encontrado nesse status ou já alterado.'};
+  const before=doc.proposals[index];
+  const after=change(before,new Date(now).toISOString(),safeKnowledgeText(actor,65));
+  if(!after?.ok) return {ok:false,error:after?.error||'Alteração inválida.'};
+  const proposals=[...doc.proposals];
+  proposals[index]=after.proposal;
+  return {ok:true,data:{...doc,proposals},proposal:after.proposal};
+}
+
+export function approveKnowledgeWithEdit(state,id,text,reviewer,now=Date.now()) {
+  const checked=updatedKnowledgeText(text);
+  if(!checked.ok)return checked;
+  return updatedKnowledgeProposal(state,id,'pending',reviewer,(before,time,name)=>({
+    ok:true,proposal:{
+      ...before,
+      originalContent:before.originalContent||before.content,
+      content:checked.text,status:'approved',reviewedBy:name,reviewedAt:time,
+      revisions:[...(before.revisions||[]).slice(-19),
+        {kind:'approval_edit',before:before.content,after:checked.text,by:name,at:time}]
+    }
+  }),now);
+}
+
+export function editApprovedKnowledge(state,id,text,reviewer,now=Date.now()) {
+  const checked=updatedKnowledgeText(text);
+  if(!checked.ok)return checked;
+  return updatedKnowledgeProposal(state,id,'approved',reviewer,(before,time,name)=>{
+    if(checked.text===before.content)return {ok:false,error:'A nova descrição é igual à atual.'};
+    return {ok:true,proposal:{
+      ...before,
+      content:checked.text,
+      updatedAt:time,updatedBy:name,
+      revisions:[...(before.revisions||[]).slice(-19),
+        {kind:'edit',before:before.content,after:checked.text,by:name,at:time}]
+    }};
+  },now);
+}
+
+export function deleteApprovedKnowledge(state,id,reviewer,now=Date.now()) {
+  return updatedKnowledgeProposal(state,id,'approved',reviewer,(before,time,name)=>({
+    ok:true,proposal:{
+      ...before,status:'deleted',deletedAt:time,deletedBy:name,
+      revisions:[...(before.revisions||[]).slice(-19),
+        {kind:'delete',before:before.content,by:name,at:time}]
+    }
+  }),now);
+}
+
+export function listKnowledgeByStatus(state,status) {
+  return validKnowledgeState(state).proposals
+    .filter(p=>p.status===status && /^[a-f0-9]{8}$/i.test(p.id||''))
+    .sort((a,b)=>String(b.submittedAt||'').localeCompare(String(a.submittedAt||'')));
+}
+
 export function matchApprovedKnowledge(state,hero,intent){
   const category=({counter:'counter',items:'item',build:'build',tips:'dica'})[intent];
   if(!category||!hero)return [];
