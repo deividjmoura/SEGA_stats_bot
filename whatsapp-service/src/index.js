@@ -3,7 +3,7 @@ import pino from 'pino';
 import { NOX_MENU_OPTIONS, buildNoxClickableMenu, buildAgendaEventChoices, buildAgendaConfirmationChoice, buildRsvpEventChoices, buildRsvpConfirmationChoice, buildApprovalMemberChoices, buildApprovalConfirmationChoice, buildSuggestionCategoryMenu, buildKnowledgeReviewMenu, sendNoxInteractiveMenu, isInteractiveChoice } from './clickableMenuPrototype.js';
 import { dueAgendaActions, isRsvpOpen, participantAliases, partitionRoster, RSVP_CLOSE_BEFORE_MS } from './agendaTiming.js';
 import { brandNoxText } from './noxBranding.js';
-import { parseKnowledgeSubmission, validKnowledgeState, isVerifiedReviewer, appendPendingKnowledge, reviewKnowledge, matchApprovedKnowledge, KNOWLEDGE_CATEGORIES, safeKnowledgeText } from './communityKnowledge.js';
+import { parseKnowledgeSubmission, normalizeKnowledgeCategory, validKnowledgeState, isVerifiedReviewer, appendPendingKnowledge, reviewKnowledge, matchApprovedKnowledge, KNOWLEDGE_CATEGORIES, safeKnowledgeText } from './communityKnowledge.js';
 import { validateAgendaDay, validateAgendaSchedule, agendaValidationMessage } from './agendaDateValidation.js';
 import { isVagueWinQuestion, makeUnknownQuestionRoast } from './unknownQuestionRoasts.js';
 import { attendeeIds, attendanceFor, attendanceCount, isAttending, changeAttendance, removeEventAttendance } from './agendaAttendance.js';
@@ -1120,9 +1120,9 @@ function fullHelpLines() {
     '💡 *SUGESTÕES*',
     '*!sugestao* — abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise do André A.).',
     '*!sugestao bot* — envia uma proposta de melhoria diretamente ao responsável.',
-    '*!sugestao conhecimento* — explica como propor uma dica para revisão.',
-    '*!conhecimento Herói | Categoria | Informação* — cadastra a dica, que ficará pendente no grupo Integrantes.',
-    'Exemplo: *!conhecimento Harley | counter | Saber consegue pressionar Harley com sua ultimate se houver visão do alvo.*',
+    '*!sugestao conhecimento* — inicia a sugestão guiada no Geral (herói → categoria → descrição).',
+    '*!conhecimento* — inicia o cadastro guiado: o NOX pergunta o herói, depois a categoria (*counter*, *build*, *item* ou *dica*) e por último a descrição.',
+    'Cada resposta é enviada separadamente, sem barras nem formatos complicados. Use *!sair* para cancelar. A proposta é encaminhada ao grupo Integrantes após as três etapas.',
     'Categorias: *counter*, *build*, *item* e *dica*. Só o revisor autorizado pode aprovar conteúdo. Nenhuma sugestão passa automaticamente a fazer parte da base.',
     'O André A. usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita à conta dele, previamente autorizada pelo dono.',
     'O dono configura o revisor no próprio privado depois do cadastro: *!revisor listar* mostra os jogadores verificados. Depois use *!revisor ROLE_ID ZONE_ID*. Para consultar a configuração: *!revisor*. Para revogar: *!revisor desativar*.',
@@ -1400,6 +1400,116 @@ async function warmGroupParticipantNames(sock, groupJid) {
     console.warn('Não consegui aquecer nomes do grupo:', error?.message);
   }
 }
+// Knowledge submissions use the same guided three-step conversation as !agendar.
+// Each member's draft belongs only to their authenticated group JID aliases.
+const knowledgeDrafts = new Map();
+const KNOWLEDGE_DRAFT_TTL_MS = 15 * 60 * 1000;
+function knowledgeDraftKeys(message) {
+  if (message?.key?.remoteJid !== targetGroup) return [];
+  if (message.key.fromMe) return [targetGroup+':owner'];
+  return rsvpActorIds(message.key).map(id=>targetGroup+':'+id);
+}
+function currentKnowledgeDraft(message) {
+  for (const key of knowledgeDraftKeys(message)) {
+    const found=knowledgeDrafts.get(key);
+    if (found) return found;
+  }
+  return null;
+}
+function setKnowledgeDraft(message,draft) {
+  for (const key of knowledgeDraftKeys(message)) knowledgeDrafts.set(key,draft);
+}
+function clearKnowledgeDraft(message) {
+  const draft=currentKnowledgeDraft(message);
+  if (!draft) return;
+  for (const [key,value] of knowledgeDrafts) {
+    if (value===draft) knowledgeDrafts.delete(key);
+  }
+}
+async function startKnowledgeWizard(sock,message) {
+  const jid=message?.key?.remoteJid;
+  if (jid!==targetGroup || !knowledgeDraftKeys(message).length) {
+    await sendText(sock,jid,'⚠️ Para sugerir conhecimento, use *!conhecimento* no grupo Geral.');
+    return false;
+  }
+  clearKnowledgeDraft(message);
+  setKnowledgeDraft(message,{step:'hero',expires:Date.now()+KNOWLEDGE_DRAFT_TTL_MS});
+  await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 1/3*\n\n' +
+    '🎮 Qual é o *herói* dessa dica?\n' +
+    'Responda somente com o nome (ex.: *Harley*).\n\n' +
+    'Digite *!sair* a qualquer momento para cancelar.');
+  return true;
+}
+async function handleKnowledgeWizard(sock,message,raw) {
+  const jid=message?.key?.remoteJid;
+  if (jid!==targetGroup) return false;
+  if (/^!conhecimento$/i.test(raw)) {
+    await startKnowledgeWizard(sock,message);
+    return true;
+  }
+  const draft=currentKnowledgeDraft(message);
+  if (!draft) return false;
+  if (Date.now()>draft.expires) {
+    clearKnowledgeDraft(message);
+    await sendText(sock,jid,'⌛ Sua sugestão expirou após 15 minutos. Envie *!conhecimento* para recomeçar.');
+    return true;
+  }
+  if (/^!sair$/i.test(raw)) {
+    clearKnowledgeDraft(message);
+    await sendText(sock,jid,'❌ Sugestão cancelada. Nenhum conhecimento foi enviado para análise.');
+    return true;
+  }
+  // Normal NOX commands always take precedence over an unfinished suggestion.
+  if (raw.startsWith('!') || raw.startsWith('nox:')) return false;
+  draft.expires=Date.now()+KNOWLEDGE_DRAFT_TTL_MS;
+  if (draft.step==='hero') {
+    const hero=canonicalMlbbHero(raw);
+    if (!hero) {
+      await sendText(sock,jid,'⚠️ Não encontrei esse herói no Mobile Legends.\n' +
+        '🎮 Digite o *nome do herói* novamente (ex.: *Harley*) ou *!sair*.');
+      return true;
+    }
+    draft.hero=hero; draft.step='category';
+    await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 2/3*\n\n' +
+      '🎮 Herói: *'+hero+'*\n\n' +
+      '📚 Qual o *tipo de conhecimento*?\n\n' +
+      '• *counter* — heróis que enfrentam esse personagem\n' +
+      '• *build* — equipamentos e emblemas\n' +
+      '• *item* — itens específicos\n' +
+      '• *dica* — estratégia e jogabilidade\n\n' +
+      'Responda com uma dessas quatro palavras.');
+    return true;
+  }
+  if (draft.step==='category') {
+    const category=normalizeKnowledgeCategory(raw);
+    if (!category) {
+      await sendText(sock,jid,'⚠️ Categoria não reconhecida.\n' +
+        'Digite somente *counter*, *build*, *item* ou *dica* (ou *!sair*).');
+      return true;
+    }
+    draft.category=category; draft.step='content';
+    await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 3/3*\n\n' +
+      '🎮 Herói: *'+draft.hero+'*\n' +
+      '📚 Categoria: *'+KNOWLEDGE_CATEGORIES[category]+'*\n\n' +
+      '✍️ Agora descreva sua sugestão e explique *por que ela funciona* (20 a 580 caracteres).\n' +
+      'Envie apenas o texto. André A. vai avaliar antes de integrar à base.');
+    return true;
+  }
+  if (draft.step==='content') {
+    const structured='!conhecimento '+draft.hero+' | '+draft.category+' | '+raw;
+    const parsed=parseKnowledgeSubmission(structured,canonicalMlbbHero);
+    if (!parsed.ok) {
+      await sendText(sock,jid,'⚠️ '+parsed.error+
+        '\n\n✍️ Corrija *somente a descrição*. O herói e a categoria foram preservados.');
+      return true;
+    }
+    // Reuse the existing save, notify Integrantes and restricted review flow.
+    clearKnowledgeDraft(message);
+    return submitCommunityKnowledge(sock,message,structured);
+  }
+  return false;
+}
+
 function suggestionMenuInstructions() {
   return '💡 *O QUE VOCÊ QUER SUGERIR?*\n\n' +
     '🛠️ *Melhoria do bot* — vai diretamente para o responsável pelo NOX.\n' +
@@ -1416,7 +1526,7 @@ async function sendSuggestionMenu(sock,jid) {
   }
 }
 
-async function handleSuggestionChoice(sock,jid,kind) {
+async function handleSuggestionChoice(sock,jid,kind,message=null) {
   if(kind==='bot') {
     await sendText(sock,jid,suggestionLink()
       ? '🛠️ *MELHORIA PARA O NOX*\n\nEnvie sua sugestão diretamente ao responsável no privado:\n'+suggestionLink()
@@ -1424,13 +1534,12 @@ async function handleSuggestionChoice(sock,jid,kind) {
     return true;
   }
   if(kind==='knowledge') {
+    if (message?.key?.remoteJid===targetGroup) {
+      return startKnowledgeWizard(sock,message);
+    }
     await sendText(sock,jid,
-      '🧠 *SUGERIR CONHECIMENTO PARA O NOX*\n\n' +
-      'Sua dica vai para o grupo *Integrantes* e somente o *André A.* poderá aprovar ou rejeitar.\n\n' +
-      'Envie no *Geral* seguindo este modelo:\n' +
-      '*!conhecimento Harley | counter | Saber é uma boa escolha contra Harley porque sua ultimate pode finalizar o alvo rapidamente.*\n\n' +
-      'Categorias: *counter*, *build*, *item* ou *dica*.\n' +
-      '✅ Sua ideia só aparece nas respostas depois de aprovada; dados da API permanecem separados.');
+      '🧠 Para enviar conhecimento para análise do André A., abra o grupo *Geral* e envie *!conhecimento*.\n' +
+      'O NOX fará três perguntas: herói, categoria e descrição.');
     return true;
   }
   return false;
@@ -1629,12 +1738,16 @@ async function handleGroup(sock, message) {
   const selectedMenuOption = isClick && NOX_MENU_OPTIONS.some(option => option.id === text);
   const selectedRsvpOption = isClick && /^nox:rsvp:(page|event|confirm|decline|withdraw|keep):/.test(text);
   const selectedSuggestionOption = isClick && /^nox:suggestion:(bot|knowledge)$/i.test(text);
+  const knowledgeDraftActive = Boolean(currentKnowledgeDraft(message));
+  const startingKnowledge = /^!conhecimento$/i.test(text);
   if (!selectedMenuOption && !selectedRsvpOption && !selectedSuggestionOption &&
+      !knowledgeDraftActive && !startingKnowledge &&
       !isExplicitGroupInteraction(text, mentionedNow)) return;
   if (selectedSuggestionOption) {
-    await handleSuggestionChoice(sock,groupJid,text.split(':')[2]);
+    await handleSuggestionChoice(sock,groupJid,text.split(':')[2],message);
     return;
   }
+  if (await handleKnowledgeWizard(sock,message,text)) return;
   if (await submitCommunityKnowledge(sock,message,text)) return;
   if (await handleDirectRsvp(sock, message, text)) return;
   if (selectedRsvpOption) {
@@ -1716,7 +1829,7 @@ async function handleGroup(sock, message) {
   const suggestionMatch=/^(?:[!\/]\s*)?sugest(?:a|ã)o(?:\s+(bot|melhoria|conhecimento))?$/i.exec(text);
   if (suggestionMatch) {
     const kind=suggestionMatch[1]?.toLowerCase();
-    if (kind) await handleSuggestionChoice(sock,groupJid,kind==='conhecimento'?'knowledge':'bot');
+    if (kind) await handleSuggestionChoice(sock,groupJid,kind==='conhecimento'?'knowledge':'bot',message);
     else await sendSuggestionMenu(sock,groupJid);
     return;
   }
