@@ -1188,7 +1188,15 @@ async function handleRegistration(sock, message) {
     return true;
   }
   if (ownerPrivate && command === '!agenda') { await sendText(sock, jid, await agendaText()); return true; }
-  if (ownerPrivate && ['sugestao','!sugestao','/sugestao'].includes(command)) { await sendText(sock, jid, suggestionLink() || '⚠️ Link privado indisponível.'); return true; }
+  if (ownerPrivate && /^!revisor(?:\s|$)/i.test(command)) {
+    return configureKnowledgeReviewer(sock,jid,text);
+  }
+  if (ownerPrivate && /^(?:[!\/]\s*)?sugest(?:a|ã)o(?:\s+(bot|melhoria|conhecimento))?$/i.test(command)) {
+    const choice=command.match(/\s+(bot|melhoria|conhecimento)$/i)?.[1];
+    if (choice) await handleSuggestionChoice(sock,jid,choice==='conhecimento'?'knowledge':'bot');
+    else await sendSuggestionMenu(sock,jid);
+    return true;
+  }
   if (ownerPrivate && command === '!ajuda') {
     await sendText(sock, jid, fullHelpLines().join('\n'));
     return true;
@@ -1597,7 +1605,14 @@ async function handleGroup(sock, message) {
   const isClick = isInteractiveChoice(message.message);
   const selectedMenuOption = isClick && NOX_MENU_OPTIONS.some(option => option.id === text);
   const selectedRsvpOption = isClick && /^nox:rsvp:(page|event|confirm|decline|withdraw|keep):/.test(text);
-  if (!selectedMenuOption && !selectedRsvpOption && !isExplicitGroupInteraction(text, mentionedNow)) return;
+  const selectedSuggestionOption = isClick && /^nox:suggestion:(bot|knowledge)$/i.test(text);
+  if (!selectedMenuOption && !selectedRsvpOption && !selectedSuggestionOption &&
+      !isExplicitGroupInteraction(text, mentionedNow)) return;
+  if (selectedSuggestionOption) {
+    await handleSuggestionChoice(sock,groupJid,text.split(':')[2]);
+    return;
+  }
+  if (await submitCommunityKnowledge(sock,message,text)) return;
   if (await handleDirectRsvp(sock, message, text)) return;
   if (selectedRsvpOption) {
     await handleRsvpChoice(sock,message,text);
@@ -1674,8 +1689,11 @@ async function handleGroup(sock, message) {
       : '🎮 O cadastro é feito no privado. Envie !cadastrar ao responsável.');
     return;
   }
-  if (/^(?:[!\/]\s*)?sugestao$/i.test(text)) {
-    await sendText(sock, groupJid, suggestionLink() ? '💡 Envie sua ideia diretamente no privado: ' + suggestionLink() : '⚠️ Link privado indisponível.');
+  const suggestionMatch=/^(?:[!\/]\s*)?sugest(?:a|ã)o(?:\s+(bot|melhoria|conhecimento))?$/i.exec(text);
+  if (suggestionMatch) {
+    const kind=suggestionMatch[1]?.toLowerCase();
+    if (kind) await handleSuggestionChoice(sock,groupJid,kind==='conhecimento'?'knowledge':'bot');
+    else await sendSuggestionMenu(sock,groupJid);
     return;
   }
   if (/^!agenda$/i.test(text)) {
@@ -1830,7 +1848,7 @@ async function connect() {
         // Filter before inspecting message text or logging anything about the chat.
         // Private chats with third parties are strictly out of scope.
         if (isGroup) {
-          if (chatJid !== targetGroup && chatJid !== announcementsGroup && chatJid !== adminsGroup) continue;
+          if (chatJid !== targetGroup && chatJid !== announcementsGroup && chatJid !== adminsGroup && chatJid !== membersGroup) continue;
         } else if (!canHandleRegistrationMessage(message)) continue;
         if (botSentMessageIds.has(key.id)) continue;
         const raw = message?.message || {};
@@ -1842,6 +1860,7 @@ async function connect() {
           messageTypes: Object.keys(raw)
         }));
         if (isGroup && chatJid === adminsGroup) { await handleAdminAgenda(sock, message); continue; }
+        if (isGroup && chatJid === membersGroup) { await handleKnowledgeReviewGroup(sock,message); continue; }
         if (await notifyAnnouncement(sock, message, type)) continue;
         if (await handleRegistration(sock, message)) continue;
         await handleGroup(sock, message);
