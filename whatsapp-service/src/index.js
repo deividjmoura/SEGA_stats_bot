@@ -1118,13 +1118,13 @@ function fullHelpLines() {
     'O Battle ID e o envio de prints não são necessários para as consultas atuais de !stats.',
     '',
     '💡 *SUGESTÕES*',
-    '*!sugestao* — exclusivo para jogadores cadastrados e verificados no NOX. Abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise do André A.).',
+    '*!sugestao* — exclusivo para jogadores cadastrados e verificados no NOX. Abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise pelo revisor autorizado).',
     '*!sugestao bot* — envia uma proposta de melhoria diretamente ao responsável.',
     '*!sugestao conhecimento* — inicia a sugestão guiada no Geral (categoria → herói → descrição).',
     '*!conhecimento* — inicia o cadastro guiado: o NOX pergunta a categoria (*counter*, *build*, *item* ou *dica*), depois o herói e por último a descrição.',
     'Cada resposta é enviada separadamente, sem barras nem formatos complicados. Use *!sair* para cancelar. A proposta é encaminhada ao grupo Integrantes após as três etapas.',
     'Categorias: *counter*, *build*, *item* e *dica*. Só o revisor autorizado pode aprovar conteúdo. Nenhuma sugestão passa automaticamente a fazer parte da base.',
-    'O André A. usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita à conta dele, previamente autorizada pelo dono.',
+    'O revisor autorizado usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita ao cadastro previamente autorizado pelo dono.',
     'O dono configura o revisor no próprio privado depois do cadastro: *!revisor listar* mostra os jogadores verificados. Depois use *!revisor ROLE_ID ZONE_ID*. Para consultar a configuração: *!revisor*. Para revogar: *!revisor desativar*.',
     '',
     '🧠 *DÚVIDAS SOBRE MOBILE LEGENDS*',
@@ -1535,7 +1535,7 @@ async function handleKnowledgeWizard(sock,message,raw) {
       '🎮 Herói: *'+hero+'*\n' +
       '👤 Enviada por: *'+author+'*\n\n' +
       '✍️ Agora descreva sua sugestão e explique *por que ela funciona* (20 a 580 caracteres).\n' +
-      'Envie apenas o texto. André A. vai avaliar antes de integrar à base.');
+      'Envie apenas o texto. *'+await knowledgeReviewerLabel()+'* vai avaliar antes de integrar à base.');
     return true;
   }
   if (draft.step==='content') {
@@ -1557,16 +1557,21 @@ async function handleKnowledgeWizard(sock,message,raw) {
   return false;
 }
 
-function suggestionMenuInstructions() {
+async function knowledgeReviewerLabel() {
+  const state=await readCommunityKnowledge();
+  return safeKnowledgeText(state.reviewer?.nick,65)||'revisor autorizado';
+}
+function suggestionMenuInstructions(reviewerLabel='revisor autorizado') {
   return '💡 *O QUE VOCÊ QUER SUGERIR?*\n\n' +
     '🛠️ *Melhoria do bot* — vai diretamente para o responsável pelo NOX.\n' +
-    '🧠 *Conhecimento do MLBB* — é enviado para revisão exclusiva do André A. no grupo Integrantes.\n\n' +
+    '🧠 *Conhecimento do MLBB* — é enviado para revisão exclusiva de *'+reviewerLabel+'* no grupo Integrantes.\n\n' +
     '📱 Se o menu não abrir, use *!sugestao bot* ou *!sugestao conhecimento*.';
 }
 
 async function sendSuggestionMenu(sock,jid,message=null) {
   if (!message || !await requireVerifiedSuggestionPlayer(sock,message)) return;
-  await sendText(sock,jid,suggestionMenuInstructions());
+  const reviewerLabel=await knowledgeReviewerLabel();
+  await sendText(sock,jid,suggestionMenuInstructions(reviewerLabel));
   try {
     await sendInteractive(sock,jid,buildSuggestionCategoryMenu(),[targetGroup].filter(Boolean));
   } catch(error) {
@@ -1587,7 +1592,7 @@ async function handleSuggestionChoice(sock,jid,kind,message=null) {
       return startKnowledgeWizard(sock,message);
     }
     await sendText(sock,jid,
-      '🧠 Para enviar conhecimento para análise do André A., abra o grupo *Geral* e envie *!conhecimento*.\n' +
+      '🧠 Para enviar conhecimento para análise de *'+await knowledgeReviewerLabel()+'*, abra o grupo *Geral* e envie *!conhecimento*.\n' +
       'O NOX fará três perguntas: categoria, herói e descrição.');
     return true;
   }
@@ -1645,16 +1650,17 @@ async function submitCommunityKnowledge(sock,message,raw) {
   }));
   if(!proposed.ok){await sendText(sock,jid,'⚠️ '+proposed.error);return true;}
   const item=proposed.proposal;
+  const reviewerLabel=await knowledgeReviewerLabel();
   await sendText(sock,jid,'📨 *SUGESTÃO RECEBIDA*\n🆔 '+item.id+
     '\n🎮 '+item.hero+' · '+KNOWLEDGE_CATEGORIES[item.category]+
-    '\n⏳ Aguardando análise do André A. no grupo Integrantes. Ainda NÃO faz parte da base de conhecimento.');
+    '\n⏳ Aguardando análise de *'+reviewerLabel+'* no grupo Integrantes. Ainda NÃO faz parte da base de conhecimento.');
   const reviewNotice='🧠 *NOVA SUGESTÃO DE CONHECIMENTO*\n\n'+
     '📚 *Tipo:* '+KNOWLEDGE_CATEGORIES[item.category]+
     '\n🎮 *Herói:* '+item.hero+
     '\n👤 *Enviada por (nick MLBB):* '+item.authorName+
     '\n🆔 *ID:* '+item.id+
     '\n💬 *Conteúdo:* '+item.content+
-    '\n\n⚖️ *Somente o André A. pode decidir.*\n' +
+    '\n\n⚖️ *Somente '+reviewerLabel+' pode decidir.*\n' +
     '✅ *!aprovarconhecimento '+item.id+'*\n' +
     '❌ *!rejeitarconhecimento '+item.id+'*\n' +
     '📋 *!propostas* para listar pendências.';
