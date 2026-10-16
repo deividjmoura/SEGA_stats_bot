@@ -53,6 +53,18 @@ Não configurar `NOX_AI_ENABLED=true` no serviço atual durante desenvolvimento.
 
 O auto-chat do proprietário pode ter perguntas explícitas em formatos já aceitos pelo código antigo. Chats privados de terceiros continuam fora de escopo.
 
+## Teste no celular, sem instalar nada (Puter.js)
+
+**Novo em 2026-10-16:** página estática responsiva em `whatsapp-service/lab/index.html`, no mesmo branch experimental. Essa página **não importa Baileys, não acessa chats ou dados do clã e não controla Railway**.
+
+- **Modo Demonstração:** respostas determinísticas simuladas, identificadas como simulação; não exige API nem conta e não consulta a internet.
+- **Modo IA de verdade:** Puter.js carrega um modelo através da conta **do usuário que fizer login**, com `puter.ai.chat` no próprio navegador. **Não é uma integração de Puter no backend do NOX**; é uma prova de conceito visual e conversacional independente. O modelo selecionado no protótipo é `gpt-5.4-nano`; não há chave de API embutida.
+- **Franquia gratuita:** Puter oferece uma cota mensal inicial, sujeita a limites e mudanças. A gratuidade não é ilimitada; quando a cota acabar, o usuário deve **parar sem aceitar pagamento**. Puter recebe o conteúdo das perguntas enviadas enquanto IA real estiver ativa; **não insira informações privadas**. Consulte https://docs.puter.com/user-pays-model/ e https://docs.puter.com/AI/chat/.
+- **Hospedagem provisória:** o repositório de código é público e ainda não tem GitHub Pages habilitado. O HTML pode ser visualizado pelo CDN externo raw.githack.com, que serve o arquivo com MIME de HTML e **pode exibir uma página de confirmação anti-phishing**. Não há garantia de disponibilidade desse CDN nem teste de login Puter com navegador móvel nesta sessão. Se o CDN não funcionar, publicar pelo GitHub Pages exige ativação/configuração pelo titular ou credenciais administrativas específicas.
+- **Link para o protótipo (commit fixo, independente do deploy produtivo):** https://raw.githack.com/deividjmoura/SEGA_stats_bot/31bb384e1972fade1c9d08945ae1282eb6ce4429/whatsapp-service/lab/index.html
+- **Acompanhamento no GitHub:** [Actions 38903967313](https://github.com/deividjmoura/SEGA_stats_bot/actions/runs/38903967313) concluiu com `success`, incluindo `src/noxMobileLab.test.js`. Tests simularam DOM e respostas do Puter, **não comprovaram login, limite gratuito ou disponibilidade do modelo real**.
+- **Próximo passo do titular:** abrir a página no celular, selecionar **Demonstração** e testar Miya/Harley. Se a página abrir e quiser IA de verdade, selecionar o segundo botão e entrar na conta Puter. **Não colocar cartão ou aceitar cobrança**; informar se aparecer erro, login bloqueado ou popup impedido.
+
 ## Laboratório sem WhatsApp — primeiro teste seguro
 
 Criado em 2026-10-16: `src/noxAiPlayground.js`. A ferramenta **não carrega Baileys, não lê as conversas e não conecta o número atual**; conversa diretamente com `noxAiAssistant.js`.
