@@ -1,255 +1,110 @@
-# 💀 NOX | Clã Tenebrozos
+# 💀 NOX — Clã Tenebrozos
 
-Projeto de estatísticas para **Mobile Legends**, agora apresentado como **NOX — Clã Tenebrozos** no WhatsApp. As seções de Telegram abaixo registram componentes legados; o repositório técnico mantém seu endereço original.
+**Nosso companheiro de Mobile Legends, direto na comunidade do WhatsApp.**
 
-O projeto nasceu para centralizar estatísticas dos jogadores do clã, permitindo que cada membro vincule voluntariamente sua conta do MLBB e consulte seus dados pelo Telegram.
+> 🩸 **Respeito • União • Foco • Evolução**  
+> ⚔️ **Juntos somos imbatíveis!**
 
-> **Status:** 🟡 Em desenvolvimento  
-> **Objetivo atual:** encontrar uma fonte de dados de MLBB estável e autorizada para substituir ou complementar a integração comunitária atual.
+O **NOX** é um projeto independente criado para facilitar a organização do **Clã Tenebrozos**, acompanhar o desempenho dos jogadores e trazer informação e resenha para o grupo. Ele não é um produto oficial da MOONTON nem do WhatsApp.
 
-## ✨ O que o bot pretende oferecer
+**Em funcionamento:** integração com WhatsApp, comandos, menu interativo com alternativa por texto, consultas de estatísticas disponíveis, agenda e presenças, sugestões e interações. Algumas consultas dependem da disponibilidade de uma API comunitária.
 
-- 🔗 Vinculação do jogador do MLBB ao Telegram
-- 🔐 Verificação de propriedade da conta usando Role ID + Zone ID + código enviado ao correio interno do jogo
-- 📊 Estatísticas individuais
-- ⚔️ Histórico e desempenho em partidas
-- 🏆 Ranking interno do clã
-- 🛡️ Estatísticas por rota e herói
-- 👥 Comparação entre jogadores
-- 📈 Evolução e indicadores do clã
+## 🎮 Comece por aqui
 
-A autenticação já está implementada. O principal ponto em investigação é a disponibilidade e estabilidade dos dados de estatísticas e histórico de partidas.
+No grupo **💀 Clã Tenebrozos | Geral 🔥**, envie `!nox`. Se o menu de botões não abrir no seu WhatsApp, o bot apresenta os comandos em texto.
 
-## 🧭 Como funciona hoje
+| Comando | O que faz |
+| --- | --- |
+| `!nox` | Abre o menu principal |
+| `!ajuda` | Explica os comandos com exemplos |
+| `!stats` | Consulta os dados disponíveis do jogador cadastrado |
+| `!cadastrar` | Orienta o cadastro, concluído **no privado** |
+| `!agenda` | Mostra eventos e permite confirmar ou retirar presença |
+| `!sugestao` | Abre sugestões de melhorias ou conhecimento de MLBB |
+| `!conhecimento` | Inicia o envio guiado de uma informação sobre o jogo |
+| `!ranking` | Ranking do clã — **em desenvolvimento** |
+| `!highlights` | Destaques — **em desenvolvimento** |
 
-Fluxo atual de vinculação:
+Também é possível perguntar sobre o jogo com `@NOX`, por exemplo: **`@NOX quem countera Fanny?`**. Mencionar um integrante no Geral pode render uma zoeira, sempre no clima de resenha.
 
-```text
-Telegram
-   │
-   ├── Role ID
-   ├── Zone ID
-   │
-   ▼
-NOX Stats Bot
-   │
-   ├── solicita código de verificação
-   │
-   ▼
-Correio interno do Mobile Legends
-   │
-   ├── jogador informa o código no Telegram
-   │
-   ▼
-API comunitária / Rone Arena
-   │
-   ├── autenticação
-   ├── perfil
-   └── estatísticas / temporadas / partidas
-   │
-   ▼
-NOX Stats Bot
-```
+### 📊 Cadastro e estatísticas
 
-O jogador não fornece senha da conta ao bot.
+1. Envie `!cadastrar` e siga o link para a conversa privada.
+2. Informe **Role ID** e **Zone ID** do Mobile Legends.
+3. Utilize o código de verificação enviado ao correio interno do jogo.
+4. Após a confirmação, use `!stats` para consultar as informações disponíveis.
 
-## 🔎 Integração de dados
+**Nunca publique códigos de verificação no grupo.** A consulta depende dos dados realmente fornecidos pela integração; o NOX não inventa partidas, rankings ou estatísticas ausentes.
 
-A implementação atual utiliza a API comunitária da **Rone Arena** como fonte de dados.
+### 📅 Agenda e eventos
 
-Endpoints utilizados pelo projeto:
+No Geral, `!agenda` lista eventos e permite confirmar presença. Como alternativa aos botões, há comandos por ID indicados na ajuda. Em regra, as confirmações se encerram **30 minutos antes** do evento; o NOX pode lembrar o grupo **1 hora antes**. O Conselho administra eventos e autoriza exceções pelas opções restritas aos ADMs.
 
-- `POST /user/auth/send-vc`
-- `POST /user/auth/login`
-- `GET /user/info`
-- `GET /user/stats`
-- `GET /user/season`
-- `GET /user/matches`
+### 💡 Sugestões e conhecimento
 
-Alguns endpoints de dados do usuário são considerados legados/deprecated pela própria evolução do serviço. Por isso, o projeto não deve ficar permanentemente acoplado a um único provedor.
+Jogadores cadastrados podem sugerir melhorias e enviar informações sobre heróis, itens, builds e counters. O conteúdo passa por revisão autorizada antes de entrar na base de conhecimento. A proposta não é aprovada automaticamente.
 
-### Estratégia planejada
+## 🏠 Como a comunidade está organizada
 
-A camada de dados será isolada para permitir diferentes provedores:
+| Espaço | Comportamento do NOX |
+| --- | --- |
+| **💀 Geral** | Menu, comandos, estatísticas, perguntas, agenda e zoeiras |
+| **⚔️ Integrantes** | Não recebe comandos gerais nem zoeiras; pode receber fluxos restritos de revisão |
+| **👑 Conselho (ADMs)** | Ferramentas específicas de organização, agenda e autorizações |
+| **📢 Avisos oficiais** | Publicações podem gerar um lembrete automático no Geral |
 
-```text
-                    NOX Stats Bot
-                           │
-                    Data Provider
-                           │
-             ┌─────────────┼─────────────┐
-             ▼             ▼             ▼
-          Rone/API     API externa    MOONTON
-          atual        compatível     oficial
-             │             │             │
-             └─────────────┼─────────────┘
-                           ▼
-                    Dados normalizados
-                           │
-                           ▼
-                    Telegram / Ranking
-```
+O processamento é limitado aos grupos configurados e às permissões específicas de cada fluxo. Uma conversa normal no Geral **não deve provocar respostas automáticas** sem comando ou interação dirigida ao bot.
 
-O objetivo é poder trocar a fonte de dados sem reescrever a lógica do bot.
+## 🔐 Privacidade e confiabilidade
 
-## 🔐 Privacidade e segurança
+- O NOX usa a conta do WhatsApp do responsável; mensagens automáticas aparecem enviadas por essa conta e são identificadas como **NOX bot**.
+- O cadastro de jogador é voluntário e ocorre por fluxo privado. O NOX não pede a senha do Mobile Legends.
+- Sessões e dados de jogadores são preservados em um volume persistente e os tokens são criptografados.
+- Conversas privadas pessoais não relacionadas ao bot são ignoradas.
+- A integração com WhatsApp utiliza **Baileys**, uma biblioteca não oficial: pode haver instabilidade ou restrições da plataforma.
+- Informações de jogo usam uma integração comunitária e podem ficar indisponíveis. Rankings e destaques continuam em desenvolvimento.
 
-- O bot não solicita senha do Mobile Legends.
-- O vínculo é iniciado pelo próprio jogador.
-- O jogador fornece Role ID e Zone ID.
-- O código de verificação é enviado pelo sistema do jogo.
-- Tokens de sessão são armazenados criptografados com uma `SESSION_ENCRYPTION_KEY` própria, separada do `BOT_TOKEN`.
-- Segredos como `BOT_TOKEN` e `SESSION_ENCRYPTION_KEY` devem permanecer somente em variáveis de ambiente.
-- Dados de autenticação não devem ser commitados no Git.
-- Role ID, Zone ID e código de verificação são aceitos somente no chat privado.
-- No grupo, imagens só são processadas quando têm a legenda `#print` ou respondem a uma mensagem do bot.
-- Prints classificados como desconhecidos são descartados; prints processados podem conter nicks de outros jogadores visíveis na imagem.
-- O OCR é usado para localizar/validar a tela e o Battle ID; depois da confirmação, K/D/A, resultado, MVP, herói e pontuação vêm da API de partidas como fonte de verdade.
-- Dados de OCR e screenshots têm retenção padrão de 90 dias e são limpos na inicialização; ajuste com `SCREENSHOT_RETENTION_DAYS` se necessário.
-- O texto OCR armazenado é limitado a 2500 caracteres por print.
-- Planejamos migrar esse armazenamento para banco de dados.
+## ☁️ Como o projeto fica online
 
-**Importante:** qualquer integração oficial futura deverá respeitar os termos, requisitos técnicos, privacidade e regras de acesso da MOONTON.
+O serviço WhatsApp roda em **Node.js** e é hospedado na **Railway**, que mantém o processo disponível mesmo quando o computador do responsável está desligado. O preço depende do plano e do consumo.
 
-## 🤖 Comandos
+O plano **Hobby** da Railway custa **US$ 5/mês** e inclui US$ 5 de consumo; uso adicional pode aumentar o total. Confira sempre os [preços oficiais](https://railway.com/pricing).
 
-| Comando | Função |
-|---|---|
-| `/start` | Abre o menu principal |
-| `/cadastrar` | Inicia o vínculo do jogador |
-| `/stats` | Consulta as estatísticas do jogador autenticado |
-| `/ranking` | Exibe o ranking dos jogadores vinculados |
-| `/clan` | Painel do clã |
-| `/ajuda` | Lista os comandos |
-| `/cancelar` | Cancela o cadastro atual |
-| `/lore` | Conteúdo temático do clã |
-| `/menu` | Abre novamente o menu |
+A contribuição coletiva para manter o NOX online é uma proposta de organização do clã, não uma cobrança feita pelo próprio bot.
 
-## 🧱 Estrutura
+### Para desenvolvedores
 
 ```text
-SEGA_stats_bot/
-├── src/
-│   ├── index.js          # Orquestração do bot e handlers
-│   ├── ocr.js            # Parser OCR e funções puras de reconhecimento
-│   ├── screenshotStats.js # Download, OCR e armazenamento de screenshots
-│   ├── storage/
-│   │   └── jsonStore.js  # Escrita JSON atômica e serializada
-│   └── ...
-
-│
-├── docs/
-│   ├── ARCHITECTURE.md   # Arquitetura e responsabilidades
-│   └── INTEGRATION.md    # Estratégia de provedores e integração
-│
-├── .env.example
-├── .gitignore
+whatsapp-service/
+├── src/             # Integração WhatsApp e funcionalidades NOX
+├── test/            # Testes de integração e segurança de fluxos
 ├── package.json
-└── README.md
+└── README.md        # Operação e configuração da ponte
+
+src/                  # Implementação histórica do bot Telegram
+docs/                 # Arquitetura e documentação complementar
+.github/workflows/    # Testes automatizados
 ```
 
-## 🛠️ Stack
+O código da aplicação WhatsApp está em [`whatsapp-service/`](whatsapp-service/); o [guia de operação](whatsapp-service/README.md) reúne configuração, permissões, persistência e testes. Para executar os testes desse serviço:
 
-- **Node.js 20.9+**
-- **Telegraf 4**
-- **Telegram Bot API**
-- **Fetch nativo do Node.js**
-- **AES-256-GCM** para armazenamento local dos tokens de sessão
-- **Rone Arena API** como integração comunitária atual
-
-## ☁️ Deploy
-
-A implementação de produção em `src/index.js` utiliza **polling** e é adequada para um processo Node.js persistente, como Railway ou outro serviço equivalente.
-
-O antigo stub experimental de webhook/Vercel foi removido para evitar duas implementações divergentes do bot. O serviço de produção atual é o processo de polling no Railway.
-
-### Persistência obrigatória no Railway
-
-O bot grava cadastros, sessões, prints, perguntas e estatísticas derivadas em arquivos dentro de `DATA_DIR`.
-As escritas dos JSONs runtime são serializadas e feitas de forma atômica (arquivo temporário + rename), evitando corrupção por escrita concorrente ou interrupção no meio da gravação.
-Em Railway, esses arquivos só sobrevivem a redeploys se o serviço tiver um **Volume** anexado.
-
-Configuração recomendada:
-- anexe um Railway Volume ao serviço do bot;
-- use **mount path `/app/data`** se o bot estiver usando o fallback `./data`;
-- o Railway fornece automaticamente `RAILWAY_VOLUME_MOUNT_PATH`, e o bot passa a gravar tudo nesse volume;
-- mantenha `REQUIRE_PERSISTENT_STORAGE=true`.
-
-Sem Volume, um redeploy pode apagar `sessions.json`, `registrations.json`, `matches.json`, `questions.json` e as imagens salvas. **O bot agora detecta essa situação no Railway e se recusa a iniciar**, em vez de ficar online e induzir os jogadores a refazer cadastro achando que os dados continuam seguros.
-
-Para receber o aviso no grupo caso isso aconteça:
-
-```env
-CLAN_CHAT_ID=-100xxxxxxxxxx
+```bash
+cd whatsapp-service
+npm install
+npm test
 ```
 
-### Recuperação após recadastro
+Não publique arquivos de autenticação, IDs privados de usuários nem valores de variáveis secretas. Alterações de implantação devem preservar o volume persistente e a chave criptográfica.
 
-Os registros de partidas são indexados pelo `telegramId` do jogador. Portanto, com o Volume funcionando, se um jogador precisar autenticar novamente, o novo cadastro **não apaga nem recria seus prints**: os registros anteriores continuam associados ao mesmo usuário do Telegram.
+## 🛠️ Desenvolvimento e próximos passos
 
-A nova sessão apenas substitui a autenticação atual. Os dados históricos permanecem em `matches.json`.
+**Já implementado:** comandos NOX, menu com alternativa por texto, cadastro verificado, consultas disponíveis, ajuda de Mobile Legends, zoeiras de menções, agenda e confirmação de presenças, sugestões com revisão e alertas de comunicados.
 
-Se a conta do jogo for trocada de propósito, não devemos misturar automaticamente as duas contas; nesse caso, os registros antigos continuam associados ao histórico anterior.
+**Em evolução:** ranking confiável, highlights, cobertura de estatísticas e fontes de dados mais estáveis, além de refinamentos de usabilidade e segurança.
 
-**Importante:** dados que já foram gravados apenas no filesystem efêmero de um deployment antigo não podem ser recuperados depois que aquele deployment é removido. Por isso, antes do próximo deploy de produção, configure o Volume e faça um backup do estado atual que ainda existir.
-
-## 🧪 Estado atual
-
-### Funcionando
-
-- [x] Bot Telegram
-- [x] Menu e comandos
-- [x] Cadastro por Role ID
-- [x] Cadastro por Zone ID
-- [x] Solicitação do código de verificação
-- [x] Login com código
-- [x] Validação do perfil
-- [x] Persistência local das sessões
-- [x] Consulta de estatísticas quando a API fornece os dados
-- [x] Fallback por temporada e partidas
-- [x] Ranking básico dos jogadores autenticados
-
-### Em desenvolvimento
-
-- [ ] Abstração formal da camada de dados
-- [ ] Teste de provedores alternativos
-- [ ] Histórico completo de partidas
-- [ ] Detalhes individuais das partidas
-- [ ] Estatísticas por rota
-- [ ] Estatísticas por herói
-- [ ] Evolução histórica do jogador
-- [ ] Banco de dados para jogadores e resultados
-- [ ] Integração oficial ou autorizada com a MOONTON, caso disponível
-- [ ] Testes automatizados da camada de dados
-
-## 🤝 Busca por integração oficial
-
-Estamos investigando a possibilidade de utilizar uma API ou programa oficial da MOONTON para acesso autorizado a estatísticas de jogadores e histórico de partidas.
-
-O objetivo não é contornar mecanismos de segurança ou acessar dados de terceiros sem autorização.
-
-A proposta é construir uma integração em que:
-
-1. o próprio jogador solicita o vínculo;
-2. a identidade do jogador é confirmada;
-3. somente os dados permitidos pela plataforma são consultados;
-4. a aplicação respeita os termos e requisitos técnicos da MOONTON.
-
-Para contexto técnico, arquitetura e estado do projeto, consulte a documentação em `docs/`.
-
-## 📄 Documentação
-
-- [Arquitetura](docs/ARCHITECTURE.md)
-- [Estratégia de integração](docs/INTEGRATION.md)
-
-## 👤 Projeto
-
-**NOX Stats Bot**  
-Telegram + Mobile Legends: Bang Bang  
-Desenvolvido como projeto independente para uma comunidade de jogadores no Brasil.
+O projeto nasceu com outro nome. **O endereço técnico do repositório foi mantido para preservar links, referências e integrações existentes**; a identidade atual do bot e do clã é **NOX | Tenebrozos**.
 
 ---
 
-### Repositório
-
-https://github.com/deividjmoura/SEGA_stats_bot
+**💀 Clã Tenebrozos • Respeito, União, Foco e Evolução.**  
+Desenvolvimento independente, feito para a comunidade de jogadores.
