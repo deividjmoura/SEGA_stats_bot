@@ -14,6 +14,8 @@ import { ownerIdentityMatchesPhone } from './ownerIdentity.js';
 import crypto from 'node:crypto';
 import { makeMentionRoast as roastFor } from './mentionRoasts.js';
 import { isExplicitGroupInteraction } from './groupTriggerPolicy.js';
+import { createNoxAiAssistant } from './noxAiAssistant.js';
+import { createNoxBraveSearch } from './noxAiSearch.js';
 import { collectMentionJids } from './mentionDetection.js';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
@@ -1549,12 +1551,10 @@ async function handleRegistration(sock, message) {
     const parsed = ownerKnowledgeQuestion(text);
     if (!parsed) return false;
     try {
-      const answer = isVagueWinQuestion(parsed.question) ? null : await answerMlbbQuestion(parsed.question);
-      const enriched = await appendApprovedKnowledgeToAnswer(parsed.question,answer);
-      if (!enriched && !parsed.prefixed) return false;
-      const plain = enriched
-        ? enriched.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : makeUnknownQuestionRoast();
+      const plain = await answerNoxKnowledge(parsed.question,{
+        actorKey:'owner',groupKey:'owner-self-chat',
+      });
+      if (!parsed.prefixed && !plain) return false;
       await sendText(sock, jid, plain);
     } catch (error) {
       console.error('Falha ao responder conhecimento no autochat:', error?.message);
@@ -2301,6 +2301,49 @@ async function appendApprovedKnowledgeToAnswer(question,answer) {
     '\n📌 Dicas aprovadas pelo revisor do clã, não são dados oficiais da API.';
 }
 
+// AI is strictly opt-in and isolated from WhatsApp transport. It never observes
+// general group chatter, only questions explicitly addressed to @NOX or
+// owner-only questions already permitted by the existing routing policy.
+const noxConversationalAi = createNoxAiAssistant({
+  webSearch: createNoxBraveSearch(),
+});
+async function answerNoxKnowledge(question,{actorKey,groupKey}) {
+  const vague = isVagueWinQuestion(question);
+  let local = null;
+  if (!vague) {
+    try { local = await answerMlbbQuestion(question); }
+    catch (error) {
+      // Existing public knowledge APIs are best-effort; an outage should not
+      // take down commands or prevent a configured model from responding.
+      console.warn('Consulta da base MLBB indisponível:',error?.message);
+    }
+  }
+  const enriched = await appendApprovedKnowledgeToAnswer(question,local);
+  const fallback = enriched
+    ? enriched.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'')
+      .replace(/\\n/g,'\n')
+    : makeUnknownQuestionRoast();
+  if (vague) return fallback;
+  let tips = [];
+  const hero = canonicalMlbbHero(question);
+  if (hero) {
+    try { tips = matchApprovedKnowledge(await readCommunityKnowledge(),hero,intentOf(question)); }
+    catch { /* answer still uses existing local fallback */ }
+  }
+  const response = await noxConversationalAi.reply({
+    question,actorKey,groupKey,hero,baseAnswer:local||'',
+    approvedTips:tips.map(t=>({content:t.content})),
+  });
+  if (!response?.text) return fallback;
+  // Reviewed clan tips remain visibly distinct from AI generated answers.
+  const reviewed=tips.length
+    ? '\n\n🧠 *CONHECIMENTO DO CLÃ — REVISADO*\n' +
+      tips.map(item=>'• '+safeKnowledgeText(item.content,580)).join('\n') +
+      '\n📌 Dicas da comunidade; não são informação oficial.'
+    : '';
+  return (response.text+reviewed).slice(0,3200);
+}
+
 function suggestionLink() {
   const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
   return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('💡 Sugestão para o NOX: ') : null;
@@ -2351,11 +2394,10 @@ async function handleGroup(sock, message) {
       return;
     }
     try {
-      const answer = isVagueWinQuestion(question) ? null : await answerMlbbQuestion(question);
-      const enriched = await appendApprovedKnowledgeToAnswer(question,answer);
-      const plain = enriched
-        ? enriched.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : makeUnknownQuestionRoast();
+      const plain = await answerNoxKnowledge(question,{
+        actorKey:key.fromMe?'owner':String(key.participant||key.participantAlt||''),
+        groupKey:'nox-general',
+      });
       await sendText(sock, groupJid, plain);
     } catch (error) {
       console.error('Falha no conhecimento WhatsApp:', error?.message);
@@ -2469,11 +2511,10 @@ async function handleGroup(sock, message) {
       return;
     }
     try {
-      const answer = isVagueWinQuestion(question) ? null : await answerMlbbQuestion(question);
-      const enriched = await appendApprovedKnowledgeToAnswer(question,answer);
-      const plain = enriched
-        ? enriched.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
-        : makeUnknownQuestionRoast();
+      const plain = await answerNoxKnowledge(question,{
+        actorKey:key.fromMe?'owner':String(key.participant||key.participantAlt||''),
+        groupKey:'nox-general',
+      });
       await sendText(sock, groupJid, plain);
     } catch (error) {
       console.error('Falha no conhecimento WhatsApp:', error?.message);
