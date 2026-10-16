@@ -1657,7 +1657,7 @@ async function submitCommunityKnowledge(sock,message,raw) {
   const reviewNotice='🧠 *NOVA SUGESTÃO DE CONHECIMENTO*\n\n'+
     '📚 *Tipo:* '+KNOWLEDGE_CATEGORIES[item.category]+
     '\n🎮 *Herói:* '+item.hero+
-    '\n👤 *Enviada por (nick MLBB):* '+item.authorName+
+    '\n👤 *Enviada por:* '+item.authorName+
     '\n🆔 *ID:* '+item.id+
     '\n💬 *Conteúdo:* '+item.content+
     '\n\n⚖️ *Somente '+reviewerLabel+' pode decidir.*\n' +
