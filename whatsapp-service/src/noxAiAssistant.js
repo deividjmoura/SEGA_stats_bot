@@ -14,6 +14,10 @@ const DEFAULTS = Object.freeze({
 const FRESH_INFO = /\b(?:patch|atualiza(?:c|ç)(?:a|ã)o|mudou|hoje|agora|recente|novidade|nova temporada|meta atual|build atual|buff|nerf)\b/i;
 const GAME_TERMS = /\b(?:mlbb|mobile legends|her[oó]i|campe[aã]o|build|counter|item|itens|rota[cç][aã]o|ult(?:imate)?|skill|feiti[cç]o|emblema|marksman|atirador|mago|assassino|tanque|jungler|exp lane|mid lane|gold lane|lord|turtle|ranqueada|rank|ban(?:ir)?|dano|lane)\b/i;
 const CONVERSATION_TERMS = /(?:\b(?:me explica|me fale|me conta|pode explicar|quais informa[cç][oõ]es|o que (?:voc[eê] )?(?:sabe|acha)|por que|porque|como funciona|me detalh[ae]|qual a hist[oó]ria|e (?:quanto|sobre|contra|se eu)|continua|e depois)\b|[?])/i;
+const NON_GAME_TOPIC = /\b(?:previs[aã]o do tempo|meteorologia|clima|chuva|temperatura|d[oó]lar|cota[cç][aã]o|bitcoin|bolsa de valores|trânsito|receita culin[aá]ria|not[ií]cias pol[ií]ticas)\b/i;
+const FOLLOW_UP_REFERENCE = /\b(?:ela|ele|dela|dele|delas|deles|dessa|desse|nisso|sobre isso|o mesmo|essa habilidade|esse item)\b/i;
+const FOLLOW_UP_START = /^(?:e\b|mas\b|ent[aã]o\b|qual\b|como\b|por qu[eê]\b|me explica\b|me conta\b|continua\b)/i;
+const SHORT_FOLLOW_UP = /^(?:e )?(?:por qu[eê]|como assim|pode explicar melhor|e depois|continua)[?!.\s]*$/i;
 const SOURCE_BOUNDARY = '\n--- FIM DE DADOS DE REFERÊNCIA NÃO CONFIÁVEIS ---\n';
 const SYSTEM_INSTRUCTIONS = [
   'Você é o NOX, assistente do Clã Tenebrozos, especializado em Mobile Legends: Bang Bang.',
@@ -48,13 +52,17 @@ function safeActorKey(value) {
 export function isNoxAiGameQuestion(question, hero = null, hasRecentContext = false) {
   const text = cleanInput(question, 550);
   if (!text) return false;
-  // "E a build dela?" only makes sense when the same player has already
-  // established which hero was being discussed. Never borrow another player's context.
+  // A mention of a hero in *this* question is explicit context. A remembered
+  // hero from a previous turn cannot by itself classify any new sentence as MLBB.
+  if (!hero && NON_GAME_TOPIC.test(text) && !GAME_TERMS.test(text)) return false;
+  // A follow-up about "her build" from a different player must never inherit
+  // the previous player's identity or hero.
   if (!hero && !hasRecentContext &&
-      /\b(?:dela|dele|delas|deles)\b/i.test(text) &&
-      /^(?:e|mas|qual|como)\b/i.test(text)) return false;
-  return Boolean(hero || GAME_TERMS.test(text) || (hasRecentContext &&
-    /^(?:e\b|mas\b|ent[aã]o\b|qual\b|como\b|por ?qu[eê]\b|e se\b)/i.test(text)));
+      FOLLOW_UP_REFERENCE.test(text) && FOLLOW_UP_START.test(text)) return false;
+  if (hero || GAME_TERMS.test(text)) return true;
+  if (!hasRecentContext) return false;
+  return Boolean((FOLLOW_UP_START.test(text) && FOLLOW_UP_REFERENCE.test(text)) ||
+    SHORT_FOLLOW_UP.test(text));
 }
 export function wantsNoxAiAnswer(question, localAnswer, hasRecentContext = false) {
   const text = cleanInput(question, 550);
@@ -130,10 +138,14 @@ export function createNoxAiAssistant({
     const time = now();
     const previous = sessionFor(key, time);
     const resolvedHero = hero || previous?.hero || null;
-    if (!isNoxAiGameQuestion(text, resolvedHero, Boolean(previous)))
+    if (!isNoxAiGameQuestion(text, hero, Boolean(previous)))
       return { status: 'off_topic', text: null };
-    if (!wantsNoxAiAnswer(text, baseAnswer, Boolean(previous)))
+    if (!wantsNoxAiAnswer(text, baseAnswer, Boolean(previous))) {
+      // A precise local counter/build answer can establish hero context for
+      // later conversational follow-ups without calling the paid provider.
+      if (resolvedHero && baseAnswer) remember(key, time, text, baseAnswer, resolvedHero);
       return { status: 'local', text: null };
+    }
     if (!ready) return { status: 'disabled', text: null };
     if (typeof fetchImpl !== 'function') return { status: 'provider_error', text: null };
     const day = todayUtc(time);
