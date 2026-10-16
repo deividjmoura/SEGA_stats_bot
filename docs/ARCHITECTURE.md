@@ -2,7 +2,7 @@
 
 ## Visão geral
 
-O SEGA Stats Bot possui três responsabilidades principais:
+O NOX Stats Bot possui três responsabilidades principais:
 
 1. conversar com o usuário pelo Telegram;
 2. autenticar e identificar o jogador do MLBB;
