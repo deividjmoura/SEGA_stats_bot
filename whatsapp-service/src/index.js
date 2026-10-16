@@ -1118,7 +1118,14 @@ function fullHelpLines() {
     'O Battle ID e o envio de prints não são necessários para as consultas atuais de !stats.',
     '',
     '💡 *SUGESTÕES*',
-    '*!sugestao* — recebe um link para conversar diretamente com o responsável pelo NOX no WhatsApp. A sugestão não é armazenada pelo bot.',
+    '*!sugestao* — abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise do André A.).',
+    '*!sugestao bot* — envia uma proposta de melhoria diretamente ao responsável.',
+    '*!sugestao conhecimento* — explica como propor uma dica para revisão.',
+    '*!conhecimento Herói | Categoria | Informação* — cadastra a dica, que ficará pendente no grupo Integrantes.',
+    'Exemplo: *!conhecimento Harley | counter | Saber consegue pressionar Harley com sua ultimate se houver visão do alvo.*',
+    'Categorias: *counter*, *build*, *item* e *dica*. Só o revisor autorizado pode aprovar conteúdo. Nenhuma sugestão passa automaticamente a fazer parte da base.',
+    'O André A. usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita à conta dele, previamente autorizada pelo dono.',
+    'O dono configura o revisor no próprio privado depois do cadastro: *!revisor ROLE_ID ZONE_ID*. Pode consultar *!revisor* ou revogar com *!revisor desativar*.',
     '',
     '🧠 *DÚVIDAS SOBRE MOBILE LEGENDS*',
     'No Geral, escreva *@NOX* seguido de sua pergunta sobre heróis, counters, builds, itens ou rotas.',
@@ -1243,9 +1250,10 @@ async function handleRegistration(sock, message) {
     if (!parsed) return false;
     try {
       const answer = isVagueWinQuestion(parsed.question) ? null : await answerMlbbQuestion(parsed.question);
-      if (!answer && !parsed.prefixed) return false;
-      const plain = answer
-        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
+      const enriched = await appendApprovedKnowledgeToAnswer(parsed.question,answer);
+      if (!enriched && !parsed.prefixed) return false;
+      const plain = enriched
+        ? enriched.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
         : makeUnknownQuestionRoast();
       await sendText(sock, jid, plain);
     } catch (error) {
@@ -1631,8 +1639,9 @@ async function handleGroup(sock, message) {
     }
     try {
       const answer = isVagueWinQuestion(question) ? null : await answerMlbbQuestion(question);
-      const plain = answer
-        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
+      const enriched = await appendApprovedKnowledgeToAnswer(question,answer);
+      const plain = enriched
+        ? enriched.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
         : makeUnknownQuestionRoast();
       await sendText(sock, groupJid, plain);
     } catch (error) {
@@ -1748,8 +1757,9 @@ async function handleGroup(sock, message) {
     }
     try {
       const answer = isVagueWinQuestion(question) ? null : await answerMlbbQuestion(question);
-      const plain = answer
-        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
+      const enriched = await appendApprovedKnowledgeToAnswer(question,answer);
+      const plain = enriched
+        ? enriched.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
         : makeUnknownQuestionRoast();
       await sendText(sock, groupJid, plain);
     } catch (error) {
