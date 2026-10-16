@@ -1194,6 +1194,12 @@ function councilHelpLines() {
     '🕗 Um lembrete é enviado no Geral 1 hora antes; as inscrições fecham 30 minutos antes e o relatório vai ao Conselho.',
     '📢 Eventos criados, editados e cancelados são publicados nos Avisos Oficiais, com notificação no Geral.',
     '',
+    '🔐 *QUEM PODE FAZER O QUÊ?*',
+    '• *Conselho de ADMs (este grupo):* organiza eventos, consulta presenças, cancela e autoriza exceções.',
+    '• *Revisor autorizado (grupo Integrantes):* !propostas, !avaliarconhecimento ID, !aprovarconhecimento ID, !aprovarcomedicao ID, !rejeitarconhecimento ID, !conhecimentos, !editarconhecimento ID e !excluirconhecimento ID.',
+    '• *Dono (conversa privada Você):* !revisor listar, !revisor ROLE_ID ZONE_ID, !revisor desativar, !grupos e !comandosdono.',
+    'Cada papel só executa esses comandos no grupo ou privado autorizado. O revisor consulta sua lista detalhada com *!comandosrevisor* no Integrantes.',
+    '',
     '❓ Envie *!comandosadm* ou *!ajuda* aqui para ver esta lista.'
   ];
 }
