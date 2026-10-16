@@ -59,7 +59,7 @@ export function buildKnowledgeReviewMenu(proposal) {
   if (!/^[a-f0-9]{8}$/i.test(proposal?.id||'')) throw new Error('ID inválido');
   return buildInteractiveList({
     title: '🧠 REVISÃO DE CONHECIMENTO',
-    body: 'Só o revisor autorizado pode aprovar ou rejeitar. Sugestão #'+proposal.id,
+    body: 'Revisor autorizado: aprove, aprove com edição ou rejeite. Sugestão #'+proposal.id,
     buttonText: '⚖️ AVALIAR SUGESTÃO',
     rows: [
       {id:'nox:knowledge:approve:'+proposal.id,title:'✅ Aprovar direto'},
