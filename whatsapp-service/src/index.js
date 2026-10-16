@@ -1453,6 +1453,7 @@ async function handleRegistration(sock, message) {
      /^nox:owner:(?:pick:\d+|page:\d+|confirm:(?:assign|revoke)|cancel)$/.test(text))) {
     return handleOwnerMenuChoice(sock,message,text);
   }
+  if (/^nox:(?:role|owner):/.test(text)) return true;
   if (ownerPrivate && ['!grupos','/grupos'].includes(command)) {
     // Explicit owner-only group discovery: names and IDs, no group chat content.
     try {
@@ -2108,6 +2109,7 @@ async function handleKnowledgeReviewGroup(sock,message) {
   if(jid!==membersGroup || !message?.message || botSentMessageIds.has(message.key.id))return false;
   let raw=messageText(message.message).trim();
   const roleChoice=isInteractiveChoice(message.message)?resolveRoleClick(raw,'revisor'):null;
+  if(/^nox:(?:role|owner):/.test(raw) && !roleChoice) return true;
   const clicked=isInteractiveChoice(message.message) && /^nox:knowledge:/.test(raw);
   const knownCommand=/^!(?:ajuda|comandosrevisor(?:\s+detalhes)?|propostas(?:\s+\d+)?|conhecimentos(?:\s+\d+)?|avaliarconhecimento\s+[a-f0-9]{8}|aprovarconhecimento\s+[a-f0-9]{8}|aprovarcomedi[cç][aã]o\s+[a-f0-9]{8}|aprovarcomedicao\s+[a-f0-9]{8}|rejeitarconhecimento\s+[a-f0-9]{8}|editarconhecimento\s+[a-f0-9]{8}|excluirconhecimento\s+[a-f0-9]{8}|confirmaredicao\s+[a-f0-9]{8}|confirmarexclusao\s+[a-f0-9]{8}|sair)$/i.test(raw);
   // Never read or reply to unrelated chat in Integrantes.
