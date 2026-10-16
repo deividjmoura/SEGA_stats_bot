@@ -1120,8 +1120,8 @@ function fullHelpLines() {
     '💡 *SUGESTÕES*',
     '*!sugestao* — abre duas opções: *Melhoria do bot* (link privado para o responsável) e *Conhecimento MLBB* (análise do André A.).',
     '*!sugestao bot* — envia uma proposta de melhoria diretamente ao responsável.',
-    '*!sugestao conhecimento* — inicia a sugestão guiada no Geral (herói → categoria → descrição).',
-    '*!conhecimento* — inicia o cadastro guiado: o NOX pergunta o herói, depois a categoria (*counter*, *build*, *item* ou *dica*) e por último a descrição.',
+    '*!sugestao conhecimento* — inicia a sugestão guiada no Geral (categoria → herói → descrição).',
+    '*!conhecimento* — inicia o cadastro guiado: o NOX pergunta a categoria (*counter*, *build*, *item* ou *dica*), depois o herói e por último a descrição.',
     'Cada resposta é enviada separadamente, sem barras nem formatos complicados. Use *!sair* para cancelar. A proposta é encaminhada ao grupo Integrantes após as três etapas.',
     'Categorias: *counter*, *build*, *item* e *dica*. Só o revisor autorizado pode aprovar conteúdo. Nenhuma sugestão passa automaticamente a fazer parte da base.',
     'O André A. usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita à conta dele, previamente autorizada pelo dono.',
@@ -1433,10 +1433,14 @@ async function startKnowledgeWizard(sock,message) {
     return false;
   }
   clearKnowledgeDraft(message);
-  setKnowledgeDraft(message,{step:'hero',expires:Date.now()+KNOWLEDGE_DRAFT_TTL_MS});
+  setKnowledgeDraft(message,{step:'category',expires:Date.now()+KNOWLEDGE_DRAFT_TTL_MS});
   await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 1/3*\n\n' +
-    '🎮 Qual é o *herói* dessa dica?\n' +
-    'Responda somente com o nome (ex.: *Harley*).\n\n' +
+    '📚 Qual o *tipo de conhecimento*?\n\n' +
+    '• *counter* — heróis que enfrentam um personagem\n' +
+    '• *build* — equipamentos e emblemas\n' +
+    '• *item* — itens específicos\n' +
+    '• *dica* — estratégia e jogabilidade\n\n' +
+    'Responda com uma dessas quatro palavras.\n' +
     'Digite *!sair* a qualquer momento para cancelar.');
   return true;
 }
@@ -1462,24 +1466,6 @@ async function handleKnowledgeWizard(sock,message,raw) {
   // Normal NOX commands always take precedence over an unfinished suggestion.
   if (raw.startsWith('!') || raw.startsWith('nox:')) return false;
   draft.expires=Date.now()+KNOWLEDGE_DRAFT_TTL_MS;
-  if (draft.step==='hero') {
-    const hero=canonicalMlbbHero(raw);
-    if (!hero) {
-      await sendText(sock,jid,'⚠️ Não encontrei esse herói no Mobile Legends.\n' +
-        '🎮 Digite o *nome do herói* novamente (ex.: *Harley*) ou *!sair*.');
-      return true;
-    }
-    draft.hero=hero; draft.step='category';
-    await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 2/3*\n\n' +
-      '🎮 Herói: *'+hero+'*\n\n' +
-      '📚 Qual o *tipo de conhecimento*?\n\n' +
-      '• *counter* — heróis que enfrentam esse personagem\n' +
-      '• *build* — equipamentos e emblemas\n' +
-      '• *item* — itens específicos\n' +
-      '• *dica* — estratégia e jogabilidade\n\n' +
-      'Responda com uma dessas quatro palavras.');
-    return true;
-  }
   if (draft.step==='category') {
     const category=normalizeKnowledgeCategory(raw);
     if (!category) {
@@ -1487,10 +1473,26 @@ async function handleKnowledgeWizard(sock,message,raw) {
         'Digite somente *counter*, *build*, *item* ou *dica* (ou *!sair*).');
       return true;
     }
-    draft.category=category; draft.step='content';
+    draft.category=category; draft.step='hero';
+    await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 2/3*\n\n' +
+      '📚 Tipo: *'+KNOWLEDGE_CATEGORIES[category]+'*\n\n' +
+      '🎮 Qual é o *herói* dessa dica?\n' +
+      'Responda somente com o nome (ex.: *Harley*).');
+    return true;
+  }
+  if (draft.step==='hero') {
+    const hero=canonicalMlbbHero(raw);
+    if (!hero) {
+      await sendText(sock,jid,'⚠️ Não encontrei esse herói no Mobile Legends.\n' +
+        '🎮 Digite o *nome do herói* novamente (ex.: *Harley*) ou *!sair*.');
+      return true;
+    }
+    draft.hero=hero; draft.step='content';
+    const author=await knowledgeAuthorNick(sock,message);
     await sendText(sock,jid,'🧠 *SUGESTÃO DE CONHECIMENTO — 3/3*\n\n' +
-      '🎮 Herói: *'+draft.hero+'*\n' +
-      '📚 Categoria: *'+KNOWLEDGE_CATEGORIES[category]+'*\n\n' +
+      '📚 Tipo: *'+KNOWLEDGE_CATEGORIES[draft.category]+'*\n' +
+      '🎮 Herói: *'+hero+'*\n' +
+      '👤 Enviada por: *'+author+'*\n\n' +
       '✍️ Agora descreva sua sugestão e explique *por que ela funciona* (20 a 580 caracteres).\n' +
       'Envie apenas o texto. André A. vai avaliar antes de integrar à base.');
     return true;
@@ -1539,10 +1541,41 @@ async function handleSuggestionChoice(sock,jid,kind,message=null) {
     }
     await sendText(sock,jid,
       '🧠 Para enviar conhecimento para análise do André A., abra o grupo *Geral* e envie *!conhecimento*.\n' +
-      'O NOX fará três perguntas: herói, categoria e descrição.');
+      'O NOX fará três perguntas: categoria, herói e descrição.');
     return true;
   }
   return false;
+}
+
+async function knowledgeAuthorNick(sock,message,knownIds=null) {
+  const ids=knownIds||rsvpActorIds(message?.key);
+  const isOwner=Boolean(message?.key?.fromMe);
+  // A verified MLBB nick takes precedence over any mutable WhatsApp display name.
+  let player=ids.map(playerForJid).find(p=>p?.nameVerified && p?.name);
+  if (!player && isOwner) {
+    const self=players.get('self');
+    if (self?.nameVerified && self?.name) player=self;
+  }
+  if (!player) {
+    for (const lid of ids.filter(id=>id.endsWith('@lid'))) {
+      try {
+        const pn=await sock.signalRepository?.lidMapping?.getPNForLID(lid);
+        if (pn) {
+          linkIdentities([lid,pn]);
+          player=linkedAliases(pn).map(playerForJid).find(p=>p?.nameVerified && p?.name);
+          if (player) break;
+        }
+      } catch(error) {
+        console.warn('Não foi possível resolver o nick MLBB da sugestão:',error?.message);
+      }
+    }
+  }
+  if (player?.name) return safeKnowledgeText(player.name,65);
+  const whatsAppName=ids.map(id=>whatsappName(id,'')).find(Boolean) ||
+    (typeof message?.pushName==='string' ? message.pushName : '') ||
+    (typeof message?.key?.pushName==='string' ? message.key.pushName : '');
+  return whatsAppName ? 'Sem nick cadastrado ('+safeKnowledgeText(whatsAppName,40)+')'
+    : 'Sem nick cadastrado no NOX';
 }
 
 async function submitCommunityKnowledge(sock,message,raw) {
@@ -1555,8 +1588,7 @@ async function submitCommunityKnowledge(sock,message,raw) {
     await sendText(sock,jid,'⚠️ Não consegui identificar seu WhatsApp; sugestão não foi enviada.');
     return true;
   }
-  const player=ids.map(playerForJid).find(Boolean);
-  const name=player?.name||message.pushName||ids.map(id=>whatsappName(id,'')).find(Boolean)||'Integrante';
+  const name=await knowledgeAuthorNick(sock,message,ids);
   const proposed=await updateCommunityKnowledge(state=>appendPendingKnowledge(state,{
     id:crypto.randomBytes(4).toString('hex'),hero:parsed.hero,category:parsed.category,
     content:parsed.content,authorIds:ids,authorName:name,
@@ -1567,9 +1599,10 @@ async function submitCommunityKnowledge(sock,message,raw) {
     '\n🎮 '+item.hero+' · '+KNOWLEDGE_CATEGORIES[item.category]+
     '\n⏳ Aguardando análise do André A. no grupo Integrantes. Ainda NÃO faz parte da base de conhecimento.');
   const reviewNotice='🧠 *NOVA SUGESTÃO DE CONHECIMENTO*\n\n'+
-    '🆔 *'+item.id+'*\n🎮 *Herói:* '+item.hero+
-    '\n📚 *Assunto:* '+KNOWLEDGE_CATEGORIES[item.category]+
-    '\n👤 *Enviada por:* '+item.authorName+
+    '📚 *Tipo:* '+KNOWLEDGE_CATEGORIES[item.category]+
+    '\n🎮 *Herói:* '+item.hero+
+    '\n👤 *Enviada por (nick MLBB):* '+item.authorName+
+    '\n🆔 *ID:* '+item.id+
     '\n💬 *Conteúdo:* '+item.content+
     '\n\n⚖️ *Somente o André A. pode decidir.*\n' +
     '✅ *!aprovarconhecimento '+item.id+'*\n' +
