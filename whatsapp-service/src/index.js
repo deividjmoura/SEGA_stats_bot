@@ -1125,7 +1125,7 @@ function fullHelpLines() {
     'Exemplo: *!conhecimento Harley | counter | Saber consegue pressionar Harley com sua ultimate se houver visão do alvo.*',
     'Categorias: *counter*, *build*, *item* e *dica*. Só o revisor autorizado pode aprovar conteúdo. Nenhuma sugestão passa automaticamente a fazer parte da base.',
     'O André A. usa no grupo Integrantes *!propostas*, *!aprovarconhecimento ID* ou *!rejeitarconhecimento ID*. A função é restrita à conta dele, previamente autorizada pelo dono.',
-    'O dono configura o revisor no próprio privado depois do cadastro: *!revisor ROLE_ID ZONE_ID*. Pode consultar *!revisor* ou revogar com *!revisor desativar*.',
+    'O dono configura o revisor no próprio privado depois do cadastro: *!revisor listar* mostra os jogadores verificados. Depois use *!revisor ROLE_ID ZONE_ID*. Para consultar a configuração: *!revisor*. Para revogar: *!revisor desativar*.',
     '',
     '🧠 *DÚVIDAS SOBRE MOBILE LEGENDS*',
     'No Geral, escreva *@NOX* seguido de sua pergunta sobre heróis, counters, builds, itens ou rotas.',
@@ -1488,6 +1488,21 @@ async function configureKnowledgeReviewer(sock,jid,command) {
       ? '🔐 *REVISOR DE CONHECIMENTO*\n🎮 '+saved.reviewer.nick+
         '\n✅ Cadastrado como revisor exclusivo.\nPara substituir: *!revisor ROLE_ID ZONE_ID*.\nPara revogar: *!revisor desativar*.'
       : '🔐 Nenhum revisor autorizado ainda.\nDepois que o André cadastrar a conta dele no NOX, envie aqui no seu privado: *!revisor ROLE_ID ZONE_ID*.');
+    return true;
+  }
+  if(requested.toLowerCase()==='!revisor listar'){
+    const unique=new Map();
+    for(const [jid,p] of players.entries()){
+      if(jid==='self'||!jid.includes('@')||p?.nameVerified!==true||
+        !/^\d+$/.test(String(p.roleId||''))||!/^\d+$/.test(String(p.zoneId||'')))continue;
+      const key=String(p.roleId)+':'+String(p.zoneId);
+      if(!unique.has(key))unique.set(key,p);
+    }
+    const matches=[...unique.values()].slice(0,30);
+    await sendText(sock,jid,'🔎 *JOGADORES VERIFICADOS NO NOX*\n\n'+
+      (matches.map((p,i)=>(i+1)+'. *'+safeKnowledgeText(p.name,65)+'* — Role ID: '+
+        p.roleId+' · Zone ID: '+p.zoneId).join('\n') || 'Ainda não há cadastros verificados.')+
+      '\n\nDepois que o André aparecer na lista, envie *!revisor ROLE_ID ZONE_ID* para autorizá-lo.');
     return true;
   }
   if(requested.toLowerCase()==='!revisor desativar'){
