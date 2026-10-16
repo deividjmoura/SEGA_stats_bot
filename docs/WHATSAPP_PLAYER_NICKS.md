@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Publicar no grupo do WhatsApp uma lista dos nicks dos jogadores que já estão cadastrados no SEGA Stats Bot. Esta etapa não implementa respostas automáticas nem IA e não altera os handlers do Telegram.
+Publicar no grupo do WhatsApp uma lista dos nicks dos jogadores que já estão cadastrados no NOX Stats Bot. Esta etapa não implementa respostas automáticas nem IA e não altera os handlers do Telegram.
 
 ## Função implementada
 

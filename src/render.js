@@ -15,7 +15,7 @@ export function renderRanking(ranking) {
       (player.averageScore > 0 ? '  •  ⭐ ' + player.averageScore.toFixed(1) : '');
   });
 
-  return '🏆 <b>RANKING SEGA</b>\n\n' +
+  return '🏆 <b>RANKING NOX</b>\n\n' +
     lines.join('\n\n') +
     '\n\n<i>Ranking calculado exclusivamente com partidas verificadas a partir dos prints salvos.</i>';
 }

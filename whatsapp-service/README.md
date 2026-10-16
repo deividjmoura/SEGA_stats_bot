@@ -1,38 +1,80 @@
-# Integração WhatsApp — Clã Tenebrozos
+# 🤖 NOX — Integração com WhatsApp
 
-Esta ponte usa Baileys (biblioteca WhatsApp **não oficial**) e é separada do bot principal do Telegram. O uso de automação em conta pessoal envolve risco de instabilidade e restrições da plataforma.
+Este diretório contém a ponte do **NOX | Clã Tenebrozos** com o WhatsApp. O projeto utiliza **Node.js**, **Baileys** e um volume persistente na Railway. A biblioteca Baileys não é uma integração oficial do WhatsApp e seu uso pode sofrer instabilidades ou restrições.
 
-## Migração para o Clã Tenebrozos
+> Documentação pública e visão geral: [README principal](../README.md).
 
-- **Bot público:** NOX; chamada principal `!nox` e perguntas em `@NOX`.
-- **Grupo ativo:** Geral do Clã Tenebrozos, indicado pela variável `WHATSAPP_GROUP_JID`. Os comandos e brincadeiras continuam restritos a **um** grupo ativo por vez.
-- **Avisos da comunidade:** detectados a partir do grupo ativo quando ele está vinculado à comunidade; enviados ao grupo Geral com menção coletiva, se os recursos já estiverem ativados.
-- **Integrantes e ADMs:** sem respostas automáticas. O grupo Integrantes não deve ser definido como `WHATSAPP_GROUP_JID`.
-- `WHATSAPP_GROUP_JID` só deve ser alterada **depois** de identificar e confirmar o JID do grupo correto. Um link de convite não é o JID.
-- **Preservar** `WHATSAPP_AUTH_DIR`, `WHATSAPP_DATA_DIR`, `WHATSAPP_SESSION_ENCRYPTION_KEY` e o volume persistente. Não refazer pareamento por causa de uma troca de clã.
-- O nome técnico do serviço `SEGA_WhatsApp_Bridge` e o nome existente do volume não devem ser alterados na migração; não aparecem como nome do bot.
-- Em caso de escolha de outro nome, mudar os textos/comandos e testar **antes** de publicar; não alterar as variáveis do grupo antigo às cegas.
+## 🏠 Grupos e limites de atuação
 
-## Conversas privadas e privacidade
+| Canal | Identificação | Ações permitidas |
+| --- | --- | --- |
+| **Geral** | `WHATSAPP_GROUP_JID` | Menu, ajuda, stats, agenda, perguntas e menções |
+| **Conselho (ADMs)** | `WHATSAPP_ADMINS_GROUP_JID` | Fluxos restritos de eventos, presenças e autorizações |
+| **Integrantes** | `WHATSAPP_MEMBERS_GROUP_JID` | Não recebe comandos gerais; somente ações específicas de revisão/organização previstas no código |
+| **Avisos oficiais** | `WHATSAPP_ANNOUNCEMENTS_GROUP_JID` | O bot pode anunciar um novo comunicado no Geral, após confirmar o vínculo da comunidade |
 
-O número de WhatsApp conectado pertence ao administrador. **O bot ignora qualquer conversa privada com terceiros**, mesmo números soltos, comandos, respostas a mensagens anteriores e textos que parecem Battle ID. Somente a conversa “mensagens para você mesmo”, identificada pelo JID da própria conta conectada, pode acionar comandos do NOX para testes. O filtro é aplicado antes de chamar a lógica antiga de cadastro e de consultar APIs.
+Os nomes dos grupos são informativos; o serviço utiliza **identificadores internos (JIDs)** para evitar enviar mensagens ao destino errado. **Link de convite não substitui JID.** Não publique IDs reais da comunidade em arquivos públicos.
 
-Essa política evita que o bot entre no meio das conversas pessoais do administrador; pode ser revista posteriormente caso se decida usar um número exclusivo para a automação.
+## 🎮 Comandos principais no Geral
 
-## Variáveis de ambiente
+| Comando | Uso |
+| --- | --- |
+| `!nox` | Menu interativo, com comandos de texto como alternativa |
+| `!ajuda` | Guia completo, atualizado com funções de agenda e sugestões |
+| `!stats` | Estatísticas disponíveis de jogador com cadastro verificado |
+| `!cadastrar` | Encaminha para cadastro privado (Role ID, Zone ID e código de verificação) |
+| `!agenda` | Próximos eventos e confirmação de presença |
+| `!confirmar ID` / `!desistir ID` | Alternativa de texto para responder a eventos |
+| `!sugestao` / `!conhecimento` | Envio de propostas e conhecimento, sujeito a revisão |
+| `!ranking` / `!highlights` | Funcionalidades ainda em desenvolvimento |
 
-- `WHATSAPP_CONNECT_ENABLED=false` até a autorização explícita para estabelecer a sessão. Mesmo após a implantação do serviço, o processo fica estacionado sem abrir conexão enquanto esta variável estiver desativada.
-- `WHATSAPP_AUTH_DIR=/app/data/whatsapp-auth-v2`
-- `WHATSAPP_DATA_DIR=/app/data`
-- `WHATSAPP_REPLY_ENABLED=false` até terminar a validação e autorizar respostas.
-- `WHATSAPP_ANNOUNCEMENTS_ENABLED=false` até confirmar os IDs dos grupos e autorizar notificações.
-- `WHATSAPP_GROUP_JID`: JID interno do grupo Geral (não é link de convite).
-- `WHATSAPP_ANNOUNCEMENTS_GROUP_JID`: JID interno de Avisos Oficiais.
-- `WHATSAPP_SESSION_ENCRYPTION_KEY`: segredo da criptografia local dos dados de jogadores, obrigatório para iniciar. **Não comitar segredos**. A chave original, se existente, seria necessária para abrir dados antigos criptografados.
-- `WHATSAPP_PAIR_PHONE`: opcional, apenas se o usuário solicitar pareamento por telefone.
+Perguntas podem ser feitas usando `@NOX`, sem necessidade de marcar uma conta real. Marcações reais de integrantes podem iniciar uma zoeira, mas **mensagens comuns não devem disparar respostas por inatividade**.
 
-Para habilitar comunicação, configure os IDs **somente depois de criar os grupos**, verifique a conta conectada e só então altere os switches. As mensagens continuam desativadas com os switches em `false`.
+### Recursos reservados
 
-## Testes
+O Conselho tem ferramentas próprias para criar, editar e cancelar eventos, ver listas de participantes e autorizar exceções ao prazo. Os fluxos de sugestões de conhecimento possuem uma etapa de aprovação por revisor autorizado. Essas operações são verificadas por grupo e permissão, não apenas pelo texto do comando.
 
-Dentro de `whatsapp-service/`: `npm test`. Esses testes são locais, sem conectar o WhatsApp; faça validação real apenas depois do consentimento de pareamento.
+## 🔐 Privacidade e persistência
+
+- O WhatsApp conectado é a conta do responsável: as respostas automáticas são assinadas como **NOX bot**.
+- Conversas privadas pessoais não relacionadas à automação não devem ser processadas.
+- Mensagens de cadastro são tratadas como fluxo privado iniciado explicitamente pelo jogador.
+- Dados e sessões exigem um **Railway Volume** em `/app/data` (ou caminho configurado).
+- A chave `WHATSAPP_SESSION_ENCRYPTION_KEY` protege os tokens de cadastro; **não a substitua durante atualizações**.
+- **Não apague/recrie o volume nem force novo pareamento** ao editar textos ou reimplantar.
+- Nunca comite arquivos de autenticação, tokens, números pessoais ou o conteúdo de variáveis secretas.
+
+O nome técnico antigo de alguns recursos (serviço, volume e repositório) é mantido para preservar compatibilidade operacional. Ele **não representa o nome público do bot**, que é NOX.
+
+## ⚙️ Configuração de ambiente
+
+| Variável | Responsabilidade |
+| --- | --- |
+| `WHATSAPP_CONNECT_ENABLED` | Autoriza conexão ao WhatsApp |
+| `WHATSAPP_REPLY_ENABLED` | Habilita envio de respostas |
+| `WHATSAPP_GROUP_JID` | **Somente o grupo Geral** para comandos públicos |
+| `WHATSAPP_ADMINS_GROUP_JID` | Grupo de gestão e comandos do Conselho |
+| `WHATSAPP_MEMBERS_GROUP_JID` | Grupo de integrantes para fluxos autorizados |
+| `WHATSAPP_ANNOUNCEMENTS_GROUP_JID` | Canal oficial de comunicados |
+| `WHATSAPP_ANNOUNCEMENTS_ENABLED` | Habilita notificações de novos avisos |
+| `WHATSAPP_ANNOUNCEMENT_MENTIONS_ENABLED` | Habilita a notificação coletiva quando validada |
+| `WHATSAPP_AUTH_DIR` | Diretório persistente de autenticação |
+| `WHATSAPP_DATA_DIR` | Diretório persistente de cadastros e dados |
+| `WHATSAPP_SESSION_ENCRYPTION_KEY` | Segredo de criptografia, obrigatório |
+| `WHATSAPP_SEASON_STATS_ENABLED` | Complemento opcional de estatísticas por temporada |
+
+Os valores reais ficam **apenas no ambiente Railway**, nunca nesta documentação. Na migração de grupos, valide previamente IDs, permissões e vínculo com a mesma comunidade. Os switches de resposta/aviso só devem ser ativados após a checagem.
+
+## 🧪 Testes e desenvolvimento
+
+Requer **Node.js 20.9+**:
+
+```bash
+cd whatsapp-service
+npm install
+npm test
+```
+
+Os testes não enviam mensagens reais. Depois de um deploy, valide no próprio WhatsApp as mensagens do Geral, a ausência de comandos públicos nos outros grupos e o recebimento de avisos oficiais.
+
+**Política de mudança:** priorizar alterações pequenas, executar testes e verificar a conexão após o deploy. Não alterar lógica de grupos, segredos ou cadastros ao trocar apenas nome/textos.

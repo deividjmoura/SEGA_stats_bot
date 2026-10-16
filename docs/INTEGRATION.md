@@ -4,7 +4,7 @@
 
 A autenticação do jogador e a obtenção das estatísticas são problemas diferentes.
 
-O SEGA Stats Bot já possui um fluxo de autenticação baseado em:
+O NOX Stats Bot já possui um fluxo de autenticação baseado em:
 
 ```text
 Role ID + Zone ID
