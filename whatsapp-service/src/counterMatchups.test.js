@@ -54,6 +54,44 @@ test('Natural Portuguese questions preserve counter direction', () => {
   }
 });
 
+test('WhatsApp knowledge answer renders the correct direction for real counter requests', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url.includes('/academy/heroes/Harley/counters')) return {
+      ok: true, json: async () => ({ code: 0, data: { records: [{ data: {
+        main_heroid: 1,
+        sub_hero: [
+          { heroid: 2, increase_win_rate: 0.16 },
+          { heroid: 3, increase_win_rate: -0.22 }
+        ]
+      } }] } })
+    };
+    if (url.includes('/academy/heroes/catalog')) return {
+      ok: true, json: async () => ({ code: 0, data: { records: [
+        { data: { hero_id: 1, hero: { data: { name: 'Harley' } } } },
+        { data: { hero_id: 2, hero: { data: { name: 'Saber' } } } },
+        { data: { hero_id: 3, hero: { data: { name: 'Khufra' } } } }
+      ] } })
+    };
+    throw new Error('Unexpected URL: ' + url);
+  };
+
+  try {
+    const incoming = await answerMlbbQuestion('quem countera Harley?');
+    assert.match(incoming, /HERÓIS QUE COUNTERAM HARLEY/i);
+    assert.match(incoming, /• Khufra/i);
+    assert.doesNotMatch(incoming, /• Saber/i);
+
+    const outgoing = await answerMlbbQuestion('Harley countera quem?');
+    assert.match(outgoing, /HERÓIS QUE HARLEY.*COUNTERA/i);
+    assert.match(outgoing, /• Saber/i);
+    assert.doesNotMatch(outgoing, /• Khufra/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('No network counter data does not invent an outgoing counter list', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('simulated outage'); };
