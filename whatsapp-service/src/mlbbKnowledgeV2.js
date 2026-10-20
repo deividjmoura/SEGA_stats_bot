@@ -1,4 +1,5 @@
 import knowledge from './mlbb-knowledge.json' with { type: 'json' };
+import { selectAcademyMatchups, selectMatrixMatchups } from './counterMatchups.js';
 import { bilingualLabel, bilingualAttributes } from './buildLocalization.js';
 
 const KNOWN_HEROES = [
@@ -254,29 +255,28 @@ function academyHeroIdMap(records) {
   return map;
 }
 
-async function getAcademyCounters(heroName) {
+async function getAcademyCounters(heroName, direction = 'against') {
   try {
     const body = await academyFetch(
       '/academy/heroes/' + encodeURIComponent(heroName) + '/counters',
       { rank: 'all', size: 20, lang: 'en' }
     );
     const record = body?.data?.records?.[0]?.data;
-    if (!record?.sub_hero?.length) return null;
+    if (!record?.sub_hero?.length && !record?.sub_hero_last?.length) return null;
 
     const catalog = await loadAcademyCatalog();
     const names = academyHeroIdMap(catalog);
 
-    return record.sub_hero
-      .slice()
-      .sort((a, b) => Number(b.increase_win_rate || 0) - Number(a.increase_win_rate || 0))
-      .map(row => names.get(String(row.heroid)))
-      .filter(Boolean)
-      .slice(0, 5);
+    // Não confundir "quem countera o herói" com "quem o herói countera".
+    // Impacto negativo reduz a WR do herói consultado: o adversário o countera.
+    // Impacto positivo é uma vantagem do herói consultado, no sentido inverso.
+    return selectAcademyMatchups(record, names, direction);
   } catch (error) {
     console.warn('⚠️ Counters da Academy indisponíveis:', error?.message || error);
     return null;
   }
 }
+
 
 async function getAcademyBuild(heroName) {
   try {
@@ -432,34 +432,20 @@ function liveHeroByName(name, heroes) {
   return heroes.find(hero => compact(hero.n) === target);
 }
 
-async function getLiveCounters(heroName) {
-  // Preferimos a fonte Academy/Rone, que expõe counters por rank e patch.
-  const academyCounters = await getAcademyCounters(heroName);
+async function getLiveCounters(heroName, direction = 'against') {
+  const academyCounters = await getAcademyCounters(heroName, direction);
   if (academyCounters?.length) return academyCounters;
 
-  // Fallback para a matriz live legada.
+  // Na matriz, counters[A][B] significa vantagem de A sobre B.
+  // Para counters de B, consultamos a COLUNA B; para alvos de B, a LINHA B.
   const live = await loadLiveMatchups();
   if (!live) return null;
 
   const target = liveHeroByName(heroName, live.heroes);
   if (!target) return null;
-
-  const counters = live.matrix.counters;
-  const rows = [];
-
-  for (const [attackerId, matchups] of Object.entries(counters)) {
-    const edge = Number(matchups?.[String(target.i)] ?? matchups?.[target.i]);
-    if (!Number.isFinite(edge) || edge <= 0) continue;
-
-    const attacker = live.heroes.find(hero => String(hero.i) === String(attackerId));
-    if (!attacker) continue;
-
-    rows.push({ name: attacker.n, edge });
-  }
-
-  rows.sort((x, y) => y.edge - x.edge);
-  return rows.slice(0, 5).map(row => row.name);
+  return selectMatrixMatchups(live, target.i, direction);
 }
+
 
 function canonicalHeroName(name) {
   const target = compact(name);
@@ -475,6 +461,26 @@ export function canonicalMlbbHero(text) {
   return hero?.pt || null;
 }
 
+function isOutgoingCounterQuestion(text) {
+  const hero = findHero(text);
+  if (!hero) return false;
+
+  const source = compact(text);
+  const heroName = compact(hero.pt);
+  const index = source.indexOf(heroName);
+  if (index < 0) return false;
+
+  const before = source.slice(0, index).trim();
+  const after = source.slice(index + heroName.length).trim();
+  const verb = /^(?:counter\w*|couter\w*|cauter\w*|caunter\w*|kounter\w*|mata|vence|ganha|derrota|sola)\b/;
+  const question = /\b(?:quem|quais herois|quais personagens|qual heroi|qual personagem)\b/;
+
+  // "Quem o Harley countera?" e "Harley countera quem?".
+  return (question.test(before) && verb.test(after))
+    || (verb.test(after) && question.test(after.replace(verb, '').trim()))
+    || /^e(?:h)? counter de quem\b/.test(after);
+}
+
 export function intentOf(text) {
   const source = compact(text);
   // Classify the requested detail first: "which item against X" must never
@@ -485,6 +491,7 @@ export function intentOf(text) {
   if (/\b(?:como jogar|como luto|como enfrentar|dica|dicas|estrategia|como lidar)\b/.test(source)
       && (against.test(source) || /\b(?:jogar|enfrentar|lidar)\b/.test(source))) return 'tips';
   if (/\b(?:build|buildar|montagem|montar build|melhores itens para)\b/.test(source)) return 'build';
+  if (isOutgoingCounterQuestion(text)) return 'counter_targets';
   const counterSpelling = /\b(?:counter\w*|couter\w*|cauter\w*|caunter\w*|coun\w*|kounter\w*)\b/;
   const naturalCounter = /\b(?:quem|qual heroi|qual personagem|qual pick|o que)\s+(?:mata|sola|solo|para|segura|vence|ganha|derrota|amassa|destroi|faz frente|da conta)\b/;
   const otherCounter = /\b(?:forte|bom|melhor|pick|ganha|vence|derrota|bater|jogar)\s+(?:de|do|da|pra|para|em|e|ser|muito)?\s*(?:contra|conta|cotra|conra)\b/;
@@ -636,21 +643,27 @@ export async function answerMlbbQuestion(text) {
 
   const title = hero.pt + ' (' + hero.en + ')';
 
-  if (intent === 'counter') {
-    // A fonte live cobre o roster completo. A base local continua como fallback
-    // para quando a fonte externa estiver indisponível.
-    const liveCounters = await getLiveCounters(hero.pt);
-    const counters = liveCounters?.length ? liveCounters : hero.counters;
+  if (intent === 'counter' || intent === 'counter_targets') {
+    const direction = intent === 'counter_targets' ? 'targets' : 'against';
+    const liveCounters = await getLiveCounters(hero.pt, direction);
+    // A lista local corresponde SOMENTE a heróis que counteram o consultado.
+    // Nunca usá-la para a pergunta inversa.
+    const counters = liveCounters?.length ? liveCounters : (direction === 'against' ? hero.counters : null);
 
     if (!counters?.length) {
       return '🎮 <b>' + title + '</b> foi identificado corretamente.\n\n' +
-        '⚠️ Não consegui carregar os dados de matchup agora. Tente novamente em alguns segundos.';
+        '⚠️ Não consegui carregar dados confiáveis para esse sentido do confronto agora. Tente novamente em alguns segundos.';
     }
 
-    return '⚔️ <b>COUNTERS DE ' + title.toUpperCase() + '</b>\n\n' +
+    const heading = direction === 'against'
+      ? '🛡️ <b>HERÓIS QUE COUNTERAM ' + title.toUpperCase() + '</b>'
+      : '⚔️ <b>HERÓIS QUE ' + title.toUpperCase() + ' COUNTERA</b>';
+
+    return heading + '\n\n' +
       counters.map(name => '• ' + canonicalHeroName(name)).join('\n') +
-      '\n\n📌 <b>Importante:</b> counter não é garantia de vitória. O resultado muda conforme rank, composição, execução e patch.\n📊 Dados de matchup atualizados para o NOX Stats.';
+      '\n\n📌 <b>Importante:</b> vantagem de matchup não garante vitória. Rank, composição, execução e patch podem mudar o resultado.\n📊 Dados de matchup para o NOX Stats.';
   }
+
 
   if (intent === 'items') {
     if (!Array.isArray(hero.items) || !hero.items.length) {
