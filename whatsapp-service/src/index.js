@@ -1,0 +1,1023 @@
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers, proto, generateWAMessageFromContent } from '@whiskeysockets/baileys';
+import pino from 'pino';
+import crypto from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import { dirname } from 'node:path';
+import { apiFetch, isApiSuccess, apiErrorMessage, profileName, battleBelongsToPlayer, normalizeVerifiedMatch, fetchPlayerOverview } from './roneApi.js';
+import { answerMlbbQuestion, listKnowledgeExamples } from './mlbbKnowledgeV2.js';
+
+const INACTIVITY_MS = 15 * 60 * 1000;
+const REGISTRATION_TTL_MS = 15 * 60 * 1000;
+const logger = pino({ level: 'silent' });
+const authDir = process.env.WHATSAPP_AUTH_DIR || '/app/data/whatsapp-auth-v2';
+const dataDir = process.env.WHATSAPP_DATA_DIR || '/app/data';
+const sessionsFile = dataDir + '/whatsapp-players.json';
+const registrationsFile = dataDir + '/whatsapp-registrations.json';
+const battlesFile = dataDir + '/whatsapp-battles.json';
+const targetGroup = process.env.WHATSAPP_GROUP_JID || null;
+const pairPhone = process.env.WHATSAPP_PAIR_PHONE?.replace(/\D/g, '');
+const enabled = process.env.WHATSAPP_REPLY_ENABLED === 'true';
+const secret = process.env.WHATSAPP_SESSION_ENCRYPTION_KEY;
+if (!secret) throw new Error('WHATSAPP_SESSION_ENCRYPTION_KEY não configurada');
+const SESSION_KEY = crypto.createHash('sha256').update(secret).digest();
+
+const players = new Map();
+const registrations = new Map();
+const lastMessageBySender = new Map();
+const botSentMessageIds = new Set();
+const groupNames = new Map();
+const identityAliases = new Map();
+function linkIdentities(jids) {
+  const all = [...new Set(jids.filter(Boolean).flatMap(jidAliases))];
+  for (const jid of all) {
+    const known = identityAliases.get(jid) || [];
+    identityAliases.set(jid, [...new Set([...known, ...all])]);
+  }
+  const name = all.map(jid => groupNames.get(jid)).find(Boolean);
+  if (name) for (const jid of all) groupNames.set(jid, name);
+}
+function linkedAliases(jid) {
+  const base = jidAliases(jid);
+  return [...new Set([...base, ...base.flatMap(x => identityAliases.get(x) || [])])];
+}
+const menuSessions = new Map();
+const MENU_TTL_MS = 5 * 60 * 1000;
+let ownJid = null;
+
+async function readJson(path, fallback) {
+  try { return JSON.parse(await fs.readFile(path, 'utf8')); }
+  catch (e) { if (e.code === 'ENOENT') return fallback; throw e; }
+}
+async function writeJson(path, value) {
+  await fs.mkdir(dirname(path), { recursive: true });
+  const tmp = path + '.' + process.pid + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
+  await fs.rename(tmp, path);
+}
+function encrypt(text) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', SESSION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
+}
+function decrypt(payload) {
+  const data = Buffer.from(payload, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', SESSION_KEY, data.subarray(0, 12));
+  decipher.setAuthTag(data.subarray(12, 28));
+  return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8');
+}
+async function savePlayers() {
+  const out = {};
+  for (const [jid, p] of players) out[jid] = { ...p, jwt: encrypt(p.jwt) };
+  await writeJson(sessionsFile, out);
+}
+async function restorePlayers() {
+  const stored = await readJson(sessionsFile, {});
+  for (const [jid, p] of Object.entries(stored)) {
+    try { players.set(jid, { ...p, jwt: decrypt(p.jwt) }); }
+    catch (e) { console.warn('Sessão WhatsApp ignorada:', jid, e?.message); }
+  }
+  console.log('Jogadores WhatsApp restaurados:', players.size);
+}
+async function saveRegistrations() {
+  await writeJson(registrationsFile, Object.fromEntries(registrations));
+}
+async function setRegistration(jid, state) {
+  registrations.set(jid, { ...state, updatedAt: new Date().toISOString() });
+  await saveRegistrations();
+}
+async function deleteRegistration(jid) {
+  registrations.delete(jid); await saveRegistrations();
+}
+async function restoreRegistrations() {
+  const stored = await readJson(registrationsFile, {});
+  const now = Date.now();
+  for (const [jid, state] of Object.entries(stored)) {
+    const updated = Date.parse(state?.updatedAt || '');
+    if (['role_id','zone_id','verification_code'].includes(state?.step) && Number.isFinite(updated) && now - updated < REGISTRATION_TTL_MS) registrations.set(jid, state);
+  }
+}
+function unwrapMessage(message) {
+  let current = message || {};
+  for (let i = 0; i < 6; i += 1) {
+    const next =
+      current?.ephemeralMessage?.message ||
+      current?.viewOnceMessage?.message ||
+      current?.viewOnceMessageV2?.message ||
+      current?.viewOnceMessageV2Extension?.message ||
+      current?.documentWithCaptionMessage?.message ||
+      current?.editedMessage?.message?.protocolMessage?.editedMessage ||
+      current?.protocolMessage?.editedMessage;
+    if (!next) break;
+    current = next;
+  }
+  return current;
+}
+function messageText(message) {
+  const m = unwrapMessage(message);
+  return String(
+    m?.conversation ||
+    m?.extendedTextMessage?.text ||
+    m?.imageMessage?.caption ||
+    m?.videoMessage?.caption ||
+    m?.documentMessage?.caption ||
+    m?.buttonsResponseMessage?.selectedButtonId ||
+    m?.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    (() => { try { return JSON.parse(m?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson || '{}').id || ''; } catch { return ''; } })() ||
+    ''
+  ).trim();
+}
+function aliasesFor(key) {
+  return [...new Set([key?.participant, key?.participantAlt, key?.remoteJid].filter(Boolean))];
+}
+function findPlayer(aliases) {
+  for (const jid of aliases) if (players.has(jid)) return players.get(jid);
+  if (aliases.some(jid => jid === ownJid) && players.has('self')) return players.get('self');
+  return null;
+}
+async function sendText(sock, jid, text) {
+  const sent = await sock.sendMessage(jid, { text });
+  if (sent?.key?.id) botSentMessageIds.add(sent.key.id);
+  return sent;
+}
+async function sendSegaMenu(sock, jid, sessionKey = jid) {
+  const menu = [
+    '🎮 *SEGA STATS*',
+    '━━━━━━━━━━━━━━━━',
+    '',
+    '1️⃣ ⚔️ *BATTLE ID*',
+    '   `!battle <ID>`',
+    '',
+    '2️⃣ 📊 *MEUS STATS*',
+    '   `!stats`',
+    '',
+    '3️⃣ 🏆 *RANKING*',
+    '   `!ranking`',
+    '',
+    '4️⃣ 🎮 *CADASTRO*',
+    '   `!cadastrar`  _(somente no privado)_',
+    '',
+    '5️⃣ ❓ *AJUDA*',
+    '   `!ajuda`',
+    '',
+    '━━━━━━━━━━━━━━━━',
+    '⌨️ *Digite 1 a 5 ou escreva o comando diretamente.*'
+  ].join('\n');
+  menuSessions.set(sessionKey, Date.now() + MENU_TTL_MS);
+  return sendText(sock, jid, menu);
+}
+
+async function loadBattles() { return readJson(battlesFile, {}); }
+async function saveVerifiedBattle(jid, player, verification) {
+  const all = await loadBattles();
+  const owner = verification.match || {};
+  const normalized = normalizeVerifiedMatch(owner, verification.matchId, {});
+  const playerKey = String(player.roleId) + ':' + String(player.zoneId);
+  const rows = Array.isArray(all[playerKey]) ? all[playerKey] : [];
+  if (rows.some(row => String(row.battleId) === String(normalized.battleId))) return { duplicate: true, match: normalized };
+  rows.push({ ...normalized, playerName: player.name, verifiedAt: new Date().toISOString(), via: 'whatsapp', jidAlias: jid });
+  all[playerKey] = rows.slice(-500);
+  await writeJson(battlesFile, all);
+  return { duplicate: false, match: normalized };
+}
+function savedStats(rows) {
+  const games = rows.length;
+  const wins = rows.filter(r => r.result === 'win').length;
+  const losses = rows.filter(r => r.result === 'loss').length;
+  const totals = rows.reduce((a,r) => ({
+    k: a.k + Number(r.kda?.kills || 0),
+    d: a.d + Number(r.kda?.deaths || 0),
+    a: a.a + Number(r.kda?.assists || 0),
+    mvp: a.mvp + Number(Boolean(r.mvp))
+  }), {k:0,d:0,a:0,mvp:0});
+  return {games,wins,losses,totals,rate:games ? (100*wins/games).toFixed(1) : '0.0'};
+}
+async function sendPlayerStats(sock,jid,player) {
+  if (!player?.jwt) return sendText(sock,jid,'🔐 Cadastre seu nick com !cadastrar para consultar seus dados.');
+  const key = String(player.roleId) + ':' + String(player.zoneId);
+  const overview = await fetchPlayerOverview(player.jwt);
+  let imported = 0;
+  if (overview.matches.length) {
+    const all = await loadBattles();
+    const rows = Array.isArray(all[key]) ? all[key] : [];
+    const ids = new Set(rows.map(row => String(row.battleId)));
+    for (const match of overview.matches) {
+      if (ids.has(match.battleId)) continue;
+      rows.push({ ...match, playerName: player.name, verifiedAt: new Date().toISOString(), via: 'rone_api_history', jidAlias: jid });
+      ids.add(match.battleId);
+      imported++;
+    }
+    if (imported) {
+      all[key] = rows.slice(-500);
+      await writeJson(battlesFile,all);
+    }
+  }
+  const all = await loadBattles();
+  const rows = Array.isArray(all[key]) ? all[key] : [];
+  const st = savedStats(rows);
+  const lines = ['📊 *MEUS STATS — ' + player.name + '*', ''];
+  if (overview.stats) {
+    const api = overview.stats;
+    lines.push('🌐 *ESTATÍSTICAS DO JOGO*');
+    if (api.tc != null) lines.push('⚔️ Partidas totais: ' + api.tc);
+    if (api.wc != null) lines.push('🏆 Vitórias totais: ' + api.wc);
+    if (Number(api.tc) > 0 && api.wc != null) lines.push('📈 Win rate geral: ' + (100 * Number(api.wc) / Number(api.tc)).toFixed(1) + '%');
+    if (api.mvpc != null) lines.push('👑 MVPs totais: ' + api.mvpc);
+    if (api.wsc != null) lines.push('🔥 Maior sequência: ' + api.wsc);
+    if (api.as != null) lines.push('⭐ Nota média: ' + (Number(api.as) / 100).toFixed(2));
+    lines.push('');
+  }
+  lines.push('📁 *HISTÓRICO SALVO NO SEGA*');
+  if (st.games) lines.push('⚔️ Partidas: '+st.games,'🏆 Vitórias: '+st.wins,'💀 Derrotas: '+st.losses,'📈 Win rate: '+st.rate+'%','👑 MVPs: '+st.totals.mvp,'🎯 K/D/A: '+st.totals.k+'/'+st.totals.d+'/'+st.totals.a);
+  else lines.push('Ainda não há partidas verificadas salvas.');
+  if(imported) lines.push('🆕 '+imported+' partidas novas sincronizadas.');
+  try {
+    const res = await apiFetch('/user/info?lang=pt',{headers:{Authorization:'Bearer '+player.jwt}});
+    const body = await res.json().catch(()=>({}));
+    if(res.ok && isApiSuccess(body) && body.data) {
+      lines.push('', '🎮 *PERFIL*');
+      if(body.data.level != null) lines.push('⭐ Nível: '+body.data.level);
+      if(body.data.rank_level != null) lines.push('🏅 Rank (código): '+body.data.rank_level);
+      if(body.data.history_rank_level != null) lines.push('🥇 Melhor rank (código): '+body.data.history_rank_level);
+    }
+  } catch { /* perfil é complementar */ }
+  if (overview.errors.length) lines.push('','⚠️ API parcialmente indisponível ('+overview.errors.join(', ')+').');
+  lines.push('','ℹ️ Total da API e histórico salvo podem cobrir períodos diferentes.');
+  return sendText(sock,jid,lines.join('\n'));
+}
+async function sendSavedRanking(sock,jid) {
+  const all = await loadBattles();
+  const entries = [];
+  for(const [key,rows] of Object.entries(all)) {
+    if(!Array.isArray(rows)||!rows.length) continue;
+    const st=savedStats(rows);
+    const name=rows.at(-1)?.playerName || 'Jogador';
+    entries.push({key,name,...st});
+  }
+  if(!entries.length) return sendText(sock,jid,'🏆 *RANKING SEGA*\n\nAinda não há partidas verificadas salvas.\nEnvie !battle <ID> no privado para tentar registrar uma.');
+  entries.sort((a,b)=>b.wins-a.wins || Number(b.rate)-Number(a.rate) || b.games-a.games);
+  const lines=['🏆 *RANKING SEGA*','📁 Baseado somente nas partidas salvas e verificadas.',''];
+  for(const [i,p] of entries.slice(0,10).entries()) lines.push((i+1)+'º *'+p.name+'* — '+p.wins+'V / '+p.losses+'D ('+p.rate+'%)');
+  return sendText(sock,jid,lines.join('\n'));
+}
+
+function matchSummary(match) {
+  const k = match?.kda || {};
+  const result = match?.result === 'win' ? '🏆 Vitória' : match?.result === 'loss' ? '💀 Derrota' : '⚔️ Resultado';
+  return result + '\n🎮 Herói: ' + (match?.hero || 'não informado') +
+    '\n📊 K/D/A: ' + Number(k.kills || 0) + '/' + Number(k.deaths || 0) + '/' + Number(k.assists || 0) +
+    (Number.isFinite(match?.score) ? '\n⭐ Nota: ' + match.score : '') +
+    (match?.mvp ? '\n👑 MVP' : '');
+}
+
+function segaKnowledgeQuery(text) {
+  const raw = String(text || '').trim();
+  const textual = /@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/i.test(raw);
+  const cleaned = raw.replace(/@sega(?:[ _]?stats)?(?:[ _]?bot)?\b/ig, '').trim();
+  return { textual, cleaned };
+}
+function isOwnMention(jid) {
+  if (!jid || !ownJid) return false;
+  const own = new Set(linkedAliases(ownJid));
+  return linkedAliases(jid).some(alias => own.has(alias));
+}
+function fullHelpLines() {
+  const examples = listKnowledgeExamples().slice(0, 12);
+  return [
+    '🎮 *SEGA STATS — AJUDA COMPLETA*','━━━━━━━━━━━━━━━━','',
+    '📋 *MENU PRINCIPAL*','Digite *!sega*. Com o menu aberto, responda *1 a 5* ou use o comando diretamente.','','1️⃣ ⚔️ *BATTLE ID* — !battle <ID>','2️⃣ 📊 *MEUS STATS* — !stats','3️⃣ 🏆 *RANKING* — !ranking','4️⃣ 🎮 *CADASTRO* — !cadastrar no privado','5️⃣ ❓ *AJUDA* — !ajuda','',
+    '🔐 *CADASTRO*','No privado: *!cadastrar* → Role ID → Zone ID → código recebido no correio interno do Mobile Legends. Depois da validação, o nick fica vinculado ao WhatsApp.','','⚔️ *PARTIDAS / BATTLE ID*','No privado: *!battle <ID da batalha>*. O bot tenta confirmar e salvar os dados disponíveis.','','📊 *STATS E RANKING*','*!stats* consulta seus dados disponíveis e o histórico salvo. *!ranking* monta a classificação usando partidas verificadas/salvas.','','🧠 *CONHECIMENTO DE MOBILE LEGENDS*','No grupo, escreva *@SEGA* + a pergunta. A menção real ao número do bot também é aceita.','Pode perguntar sobre *counters, builds, itens contra heróis, dicas de matchup, função/role e rota/lane*.','','💬 *EXEMPLOS DE PERGUNTAS*',
+    ...examples.map(x => '• *@SEGA ' + x + '*'),
+    '• *@SEGA quem countera Harley?*','• *@SEGA qual item faço contra Argus?*','• *@SEGA como jogar contra Fanny?*','• *@SEGA qual a função do Khufra?*','• *@SEGA qual build faço de Gusion?*','',
+    '😂 *MENÇÕES E ZOEIRAS*','Ao mencionar outra pessoa, o SEGA pode entrar na conversa com uma zoeira. Ele tenta usar nick cadastrado/nome conhecido e nunca deve expor LID ou número interno.','','🤖 *IMPORTANTE*','O bot funciona conectado ao número do Deivid; mensagens automáticas aparecem enviadas por esse número.','','━━━━━━━━━━━━━━━━','💡 *Resumo:* *!sega* abre o menu. Cadastro/Battle ID/stats: privado. Ranking e *@SEGA + pergunta*: grupo.'
+  ];
+}
+
+async function handleRegistration(sock, message) {
+  const key = message.key || {};
+  const jid = key.remoteJid;
+  if (!jid || jid.endsWith('@g.us') || botSentMessageIds.has(key.id)) return false;
+  const text = messageText(message.message);
+  if (!text) return false;
+  let command = text.toLowerCase();
+  const menuUntil = menuSessions.get(jid) || 0;
+  if (menuUntil > Date.now() && /^[1-5]$/.test(command) && !registrations.has(jid)) {
+    menuSessions.delete(jid);
+    command = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[command];
+  } else if (menuUntil && menuUntil <= Date.now()) menuSessions.delete(jid);
+
+  if (['!sega','/sega'].includes(command)) {
+    await sendSegaMenu(sock, jid);
+    return true;
+  }
+  if (command === '!ajuda') {
+    await sendText(sock, jid, fullHelpLines().join('\n'));
+    return true;
+  }
+  if (['!stats','/stats'].includes(command)) {
+    const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
+    await sendPlayerStats(sock,jid,p);
+    return true;
+  }
+  if (['!ranking','/ranking'].includes(command)) {
+    await sendSavedRanking(sock,jid);
+    return true;
+  }
+  if (command === '!battle') {
+    await sendText(sock, jid, '⚔️ Envie !battle seguido de um espaço e da Battle ID.\nExemplo: !battle 123456789012');
+    return true;
+  }
+
+  if (['!cancelar','/cancelar','cancelar'].includes(command)) {
+    await deleteRegistration(jid);
+    await sendText(sock, jid, '❌ Cadastro cancelado. Quando quiser recomeçar, envie !cadastrar.');
+    return true;
+  }
+  if (['!meunick','/meunick','meunick'].includes(command)) {
+    const p = findPlayer(aliasesFor(key));
+    await sendText(sock, jid, p ? '🎮 Seu nick verificado é: ' + p.name : 'Você ainda não está cadastrado. Envie !cadastrar.');
+    return true;
+  }
+  if (['!cadastrar','/cadastrar','cadastrar'].includes(command)) {
+    await setRegistration(jid, { step: 'role_id' });
+    await sendText(sock, jid, '📝 CADASTRO SEGA\n\nMe envie somente o Role ID do Mobile Legends.\nExemplo: 123456789');
+    return true;
+  }
+
+  const battleMatch = command.match(/^(?:!|\/)battle\s+(\d{10,18})$/i);
+  if (battleMatch) {
+    const p = key.fromMe ? (players.get('self') || findPlayer(aliasesFor(key))) : findPlayer(aliasesFor(key));
+    if (!p?.jwt) {
+      await sendText(sock, jid, '🔐 Primeiro faça seu cadastro enviando !cadastrar.');
+      return true;
+    }
+    const battleId = battleMatch[1];
+    await sendText(sock, jid, '🔎 Consultando esse Battle ID e conferindo se a partida pertence à sua conta...');
+    const verification = await battleBelongsToPlayer(p.jwt, p.roleId, p.zoneId, battleId);
+    if (!verification.verified) {
+      await sendText(sock, jid, '⚠️ A API não conseguiu confirmar essa batalha na sua conta.\n\nMotivo técnico: ' + verification.reason + '\n\nSe continuar assim, vamos usar o print da tela final como fonte do histórico.');
+      return true;
+    }
+    const saved = await saveVerifiedBattle(jid, p, verification);
+    await sendText(sock, jid, saved.duplicate
+      ? '♻️ Essa batalha já estava salva. Não contei duas vezes.\n\n' + matchSummary(saved.match)
+      : '✅ PARTIDA CONFIRMADA E SALVA!\n\n' + matchSummary(saved.match) + '\n\n🔢 Battle ID: ' + saved.match.battleId);
+    return true;
+  }
+
+  const state = registrations.get(jid);
+  if (!state) return false;
+
+  if (state.step === 'role_id') {
+    if (!/^\d{6,12}$/.test(text)) { await sendText(sock, jid, '⚠️ Role ID inválido. Envie somente os números.'); return true; }
+    await setRegistration(jid, { step: 'zone_id', roleId: text });
+    await sendText(sock, jid, '🌐 Agora envie somente o Zone ID.\nExemplo: 1234');
+    return true;
+  }
+
+  if (state.step === 'zone_id') {
+    if (!/^\d{1,8}$/.test(text)) { await sendText(sock, jid, '⚠️ Zone ID inválido. Envie somente os números.'); return true; }
+    const roleId = state.roleId;
+    await sendText(sock, jid, '🔎 Solicitando o código de verificação... Ele chegará no correio interno do Mobile Legends e vale por 5 minutos.');
+    try {
+      const response = await apiFetch('/user/auth/send-vc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(text) })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !isApiSuccess(body)) {
+        await setRegistration(jid, { step: 'zone_id', roleId });
+        const detail = apiErrorMessage(body);
+        await sendText(sock, jid, response.status === 429 ? '⏳ Muitas solicitações. Aguarde um pouco e envie o Zone ID novamente.' : '⚠️ Não consegui solicitar o código. Confira ID e zona e tente novamente.' + (detail ? '\nMotivo: ' + String(detail).slice(0,150) : ''));
+        return true;
+      }
+      await setRegistration(jid, { step: 'verification_code', roleId, zoneId: text });
+      await sendText(sock, jid, '🔐 Código solicitado. Confira o correio do jogo e envie aqui somente o código recebido.\n\nNunca envie senha ou código de outra plataforma.');
+    } catch (e) {
+      await setRegistration(jid, { step: 'zone_id', roleId });
+      await sendText(sock, jid, '⚠️ O serviço de autenticação não respondeu. Envie o Zone ID novamente em alguns instantes.');
+    }
+    return true;
+  }
+
+  if (state.step === 'verification_code') {
+    if (!/^\d{4,8}$/.test(text)) { await sendText(sock, jid, '⚠️ Código inválido. Envie somente os números recebidos no correio do jogo.'); return true; }
+    const { roleId, zoneId } = state;
+    await sendText(sock, jid, '🔐 Validando o código...');
+    try {
+      const response = await apiFetch('/user/auth/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role_id: Number(roleId), zone_id: Number(zoneId), vc: Number(text) })
+      });
+      const body = await response.json().catch(() => ({}));
+      const jwt = body?.data?.jwt || body?.data?.token || null;
+      if (!response.ok || !isApiSuccess(body) || !jwt) {
+        await sendText(sock, jid, '❌ Código não validado. Confira se está correto e dentro dos 5 minutos, ou envie !cancelar.');
+        return true;
+      }
+      const info = await apiFetch('/user/info?lang=pt', { headers: { Authorization: 'Bearer ' + jwt } });
+      const infoBody = await info.json().catch(() => ({}));
+      const name = info.ok && isApiSuccess(infoBody) ? profileName(infoBody?.data) : null;
+      if (!name) { await sendText(sock, jid, '⚠️ Login aceito, mas não consegui confirmar seu perfil agora. Tente o código novamente em instantes.'); return true; }
+      const player = { jwt, roleId, zoneId, name, nameVerified: true, savedAt: new Date().toISOString() };
+      for (const alias of aliasesFor(key)) players.set(alias, player);
+      players.set(jid, player);
+      if (key.fromMe) players.set('self', player);
+      await savePlayers();
+      await deleteRegistration(jid);
+      await sendText(sock, jid, '✅ CONTA VERIFICADA!\n\n🎮 Nick confirmado: ' + name + '\n🆔 ID: ' + roleId + '\n🌐 Zone: ' + zoneId + '\n\nSeu WhatsApp agora está vinculado ao SEGA Stats.');
+    } catch (e) {
+      console.error('Falha ao autenticar jogador WhatsApp:', e?.message);
+      await sendText(sock, jid, '⚠️ Erro de conexão ao validar o código. Tente novamente em alguns segundos.');
+    }
+    return true;
+  }
+  return false;
+}
+
+const geekTemplates = [
+  '{nick} saiu do modo AFK e resolveu digitar:',
+  '⚠️ Evento raro: {nick} teve uma ideia e decidiu compartilhar:',
+  '{nick} reiniciou o cérebro em modo seguro e mandou:',
+  '🤖 {nick} passou no CAPTCHA. Provavelmente não é bot. Disse:',
+  '{nick} encontrou o teclado depois de 15 minutos e escreveu:',
+  '📡 Sinal detectado de {nick}. A transmissão diz:',
+  '{nick} compilou o pensamento sem erros. Resultado:',
+  '🎮 {nick} apertou o botão de falar em vez do recall:',
+  '{nick} desbloqueou a habilidade passiva “mandar mensagem”:',
+  '🧠 CPU de {nick} chegou a 12% de uso. Saiu isso:',
+  '{nick} voltou do respawn social e declarou:',
+  '👾 {nick} escapou da matrix por alguns segundos para dizer:',
+  '{nick} atualizou o firmware e agora aparentemente fala:',
+  '🕹️ NPC {nick} recebeu uma nova linha de diálogo:',
+  '🚨 Alerta no servidor: {nick} resolveu se manifestar:',
+  '{nick} gastou 3 de mana para escrever:',
+  '💾 {nick} carregou um pensamento do HD. Lá vem:',
+  '{nick} ativou o modo multiplayer e digitou:',
+  '🔧 Depois de uma manutenção não programada, {nick} disse:',
+  '{nick} venceu o boss “preguiça de digitar” e mandou:',
+  '🤖 Diagnóstico: {nick} é 51% humano. Mensagem encontrada:',
+  '{nick} descongelou depois de 15 minutos. Primeiras palavras:',
+  '📟 O servidor recebeu um pacote suspeito de {nick}:',
+  '{nick} saiu do modo economia de energia para escrever:',
+  '🎲 {nick} rolou um D20 para comunicação. Resultado:',
+  '{nick} abriu uma side quest chamada “conversar no grupo”:',
+  '🧙 {nick} conjurou Mensagem Nv. 1:',
+  '{nick} aparentemente tem internet. Evidência:',
+  '👽 Interceptamos uma transmissão de {nick}:',
+  '{nick} terminou de renderizar a frase. Finalmente:',
+  '⚙️ Processando {nick}... 100%. Saída:',
+  '{nick} não é bot, segundo fontes extremamente duvidosas. Disse:',
+  '🏆 Achievement desbloqueado por {nick}: falar no grupo. Mensagem:',
+  '{nick} acordou o servidor com:',
+  '📢 Patch notes: {nick} agora suporta comunicação por texto:',
+  '{nick} usou Comunicação. Foi super efetivo:',
+  '🐛 Encontramos um bug: {nick} está falando:',
+  '{nick} saiu da moita e digitou:',
+  '🔋 Bateria social de {nick}: 1%. Mesmo assim mandou:',
+  '{nick} terminou o tutorial de WhatsApp e escreveu:',
+  '🛰️ Telemetria confirma atividade de {nick}:',
+  '{nick} spawnou no chat e soltou:',
+  '💻 localhost/{nick}/pensamento retornou 200 OK:',
+  '{nick} passou pela tela de loading e disse:',
+  '🧪 Experimento concluído: {nick} consegue escrever. Prova:',
+  '{nick} desativou o modo avião mental por alguns segundos:',
+  '🎯 {nick} errou tudo no jogo, mas acertou o botão de enviar:',
+  '{nick} pediu buff de comunicação e recebeu:',
+  '🤖 beep boop... {nick} insiste que é humano. Mensagem:',
+  '{nick} fez login no próprio cérebro e escreveu:',
+  '🧬 Cientistas confirmam: {nick} possui pelo menos um neurônio online. Ele disse:',
+  '{nick} interrompeu a farm para um pronunciamento histórico:',
+  '📦 Novo pacote recebido de {nick}:',
+  '{nick} ativou o chat global. Que Deus nos ajude:',
+  '🎮 {nick} parou de culpar o ping por 3 segundos para dizer:',
+  '{nick} saiu do lobby da existência e entrou no chat:',
+  '🛠️ Sistema de fala de {nick} restaurado com sucesso:',
+  '{nick} encontrou Wi-Fi na caverna e mandou:',
+  '👨‍💻 git commit -m “{nick} resolveu falar”:',
+  '{nick} executou sudo falar-no-grupo:',
+  '🧠 RAM liberada em {nick}. Uma frase conseguiu sair:',
+  '{nick} atualizou de NPC para NPC Premium e ganhou uma fala:',
+  '🚀 Houston, temos uma mensagem de {nick}:',
+  '{nick} zerou a missão “ficar quieto” e iniciou outra:',
+  '🤓 Segundo meus cálculos, {nick} está tentando se comunicar:',
+  '{nick} venceu o cooldown social. Próxima habilidade:',
+  '📱 Até o WhatsApp ficou surpreso: {nick} escreveu:',
+  '{nick} voltou do multiverso com esta informação:',
+  '🦾 Protocolo {nick}.exe iniciado. Output:',
+  '{nick} desbloqueou diálogo secreto:',
+  '⚡ Pico de atividade detectado em {nick}:',
+  '{nick} apertou Enter sem querer e aconteceu isso:',
+  '🎰 Giramos a roleta do chat e caiu em {nick}:',
+  '{nick} finalmente saiu do tutorial. Fala desbloqueada:',
+  '🧟 {nick} voltou dos mortos digitais para dizer:',
+  '{nick} mandou um pacote UDP: pode chegar sem sentido:',
+  '🔮 A bola de cristal previu que {nick} falaria. Acertou:',
+  '{nick} trocou XP por uma frase:',
+  '🛸 O radar do SEGA detectou {nick} se aproximando do chat:',
+  '{nick} saiu do modo espectador e participou:',
+  '🏴‍☠️ {nick} pirateou alguns neurônios e produziu:',
+  '{nick} tem algo a dizer. O servidor pediu desculpas antecipadamente:',
+  '🎮 Quest atualizada: ouvir o que {nick} inventou agora:',
+  '{nick} ativou o microfone textual:',
+  '🤖 CAPTCHA aprovado. {nick} pode continuar fingindo que é humano:',
+  '{nick} abriu uma exceção no silêncio:',
+  '🧩 Encontramos a peça que faltava: era {nick} falando:',
+  '{nick} enviou isso antes que o cérebro pudesse cancelar:',
+  '💿 Inserindo disco “Opiniões de {nick}”... leitura iniciada:',
+  '{nick} deu alt-tab na vida real e veio para o grupo:',
+  '🧠 Neurônio 1 chamou neurônio 2. {nick} conseguiu escrever:',
+  '{nick} aparentemente sobreviveu ao último match. Relatório:',
+  '🎤 Senhoras e senhores, infelizmente {nick} está com a palavra:',
+  '{nick} ativou a ultimate: Opinião Não Solicitada:',
+  '📶 {nick} pegou duas barrinhas de sinal e aproveitou:',
+  '{nick} saiu do cooldown. Lá vem:',
+  '🗿 Após eras em silêncio, {nick} pronunciou:',
+  '{nick} clicou em “aceito os termos” sem ler e agora pode falar:',
+  '👾 Boss secreto {nick} iniciou diálogo:',
+  '{nick} descobriu que o grupo não é modo somente leitura:',
+  '🔌 Conectamos {nick} na tomada. Funcionou:',
+  '{nick} instalou o DLC “Comunicação” e mandou:',
+  '🎮 O matchmaking colocou {nick} contra o português. Resultado:',
+  '{nick} foi promovido de bot para beta tester humano. Disse:'
+];
+
+const recentGeekIndexes = [];
+function geekLine(nick) {
+  // Escolha realmente aleatória. Mantém uma janela das últimas frases usadas
+  // para não repetir a mesma abertura em sequência, nem entre jogadores.
+  const blocked = new Set(recentGeekIndexes);
+  const available = geekTemplates
+    .map((_, index) => index)
+    .filter(index => !blocked.has(index));
+  const pool = available.length ? available : geekTemplates.map((_, index) => index);
+  const index = pool[crypto.randomBytes(4).readUInt32BE(0) % pool.length];
+  recentGeekIndexes.push(index);
+  if (recentGeekIndexes.length > Math.min(25, Math.max(1, geekTemplates.length - 1))) recentGeekIndexes.shift();
+  const prefixes = ['', '🎮 ', '⚡ ', '👾 ', '🤖 ', '🕹️ ', '💾 '];
+  const prefix = prefixes[crypto.randomBytes(4).readUInt32BE(0) % prefixes.length];
+  return prefix + geekTemplates[index].replaceAll('{nick}', nick);
+}
+
+const mentionRoasts = [
+  '{target}, cê tá de ladaia pro lado do {author}? 😂',
+  '{target}, o {author} te marcou. Eu no seu lugar fingia queda de internet. 👀',
+  '🚨 {target}, atenção: {author} invocou você. Geralmente boss aparece depois disso.',
+  '{target}, {author} te chamou. Não sei o motivo, mas já separa um advogado. 😂',
+  '📡 {target}, detectei uma tentativa de contato de {author}. Deseja bloquear ou sofrer?',
+  '{target}, olha quem lembrou de você: {author}. Meus pêsames. 🤖',
+  '⚠️ {target}, {author} te marcou. A treta recebeu atualização de firmware.',
+  '{target}, corre que {author} tá te procurando. Eu não vi nada. 🏃',
+  '🎮 {target}, missão secundária desbloqueada: responder {author} sem perder a amizade.',
+  '{target}, {author} solicitou sua presença. O RH do clã já foi avisado. 😂',
+  '👾 {target}, você foi summonado por {author}. Cooldown para fugir: zero.',
+  '{target}, {author} te marcou e o clima ficou igual lobby depois de derrota. 👀',
+  '🤖 {target}, protocolo de emergência: {author} quer falar com você.',
+  '{target}, se eu fosse você não respondia {author} sem salvar o jogo antes. 😂',
+  '🧠 {target}, {author} gastou o último neurônio disponível pra te marcar. Valorize.',
+  '{target}, parabéns: {author} selecionou você como próximo problema do dia. 🏆',
+  '📢 {target}, compareça ao chat. {author} abriu um chamado e não informou a gravidade.',
+  '{target}, {author} está te chamando. Minha análise técnica recomenda cautela e capacete.',
+  '🕹️ {target}, NPC {author} iniciou diálogo com você. Pular cutscene?',
+  '{target}, o radar detectou {author} na sua cola. Boa sorte, soldado. 🫡',
+  '💀 {target}, {author} te marcou. Foi bom conhecer você.',
+  '{target}, {author} quer sua atenção. Isso nunca termina em coisa produtiva. 😂',
+  '🚨 {target}, ameaça detectada: uma notificação de {author}. Nível de perigo: fofoca.',
+  '{target}, {author} te convocou. O tribunal do SEGA está oficialmente em sessão. ⚖️',
+  '👀 {target}, eu vi {author} te marcando. Não vou me meter... ainda.',
+  '{target}, {author} usou “Marcar Jogador”. Foi super efetivo. 🎮',
+  '🧙 {target}, {author} lançou Invocação Nv. 5. Você apareceu contra a sua vontade.',
+  '{target}, cuidado: {author} digitou seu nome com intenção. Isso é preocupante. 😂',
+  '📞 {target}, ligação a cobrar de {author}. Para aceitar, responda e arque com as consequências.',
+  '{target}, {author} te chamou. Backup feito? Testamento atualizado? Então pode responder. 💀',
+  '🤡 {target}, {author} pediu sua presença no circo. Seu camarim já está pronto.',
+  '{target}, aparentemente {author} precisa de você. Ou de terapia. Ainda estou calculando. 🤖',
+  '⚔️ {target}, duelo solicitado por {author}. Recusar custa 10 pontos de honra imaginários.',
+  '{target}, {author} te marcou. O algoritmo classificou como “potencialmente suspeito”.',
+  '🛸 {target}, transmissão alienígena interceptada: {author} está tentando contato.',
+  '{target}, {author} acabou de puxar sua ficha no chat. Recomendo silêncio estratégico. 😂',
+  '📦 {target}, chegou uma encomenda de {author}: contém cobrança e possível resenha.',
+  '{target}, {author} ativou sua passiva “encher o saco dos outros”. Você foi o escolhido. 😂',
+  '🔮 {target}, consultei a bola de cristal: responder {author} pode gerar 37 mensagens adicionais.',
+  '{target}, {author} abriu uma side quest envolvendo você. Recompensa: absolutamente nada.',
+  '🧯 {target}, {author} te marcou. Extintor localizado à esquerda caso a conversa esquente.',
+  '{target}, aviso do sistema: {author} está solicitando atenção humana. Isso é raro.',
+  '🎲 {target}, {author} rolou um D20 e caiu em “perturbar {target}”.',
+  '{target}, {author} chamou. Você tem 5 segundos antes que ele mande “??”. 😂',
+  '🧟 {target}, levanta daí: {author} invocou você dos mortos digitais.',
+  '{target}, {author} quer falar contigo. O SEGA Stats não se responsabiliza por danos emocionais.',
+  '🔋 {target}, economize bateria: talvez responder {author} não valha os elétrons.',
+  '{target}, {author} te encontrou no mapa. Bush não funciona mais. 🌿',
+  '🏴‍☠️ {target}, {author} embarcou no navio da resenha e te colocou na tripulação.',
+  '{target}, {author} iniciou uma reunião que poderia ter sido absolutamente nada. 😂',
+  '{target}, {author} te marcou. Até o bot sentiu cheiro de merda vindo dessa conversa. 💩',
+  '{target}, responde o {author} logo antes que ele comece a pensar sozinho e piore tudo. 😂',
+  '🚑 {target}, {author} chamou você. A ambulância foi avisada por precaução.',
+  '{target}, {author} quer falar contigo. Se vier ideia boa, confirma se a conta dele foi hackeada.',
+  '💀 {target}, {author} te marcou. Mais uma decisão ruim pra coleção de vocês.',
+  '{target}, cuidado: {author} está tentando formar uma frase completa. Você pode ser testemunha desse milagre.',
+  '🤡 {target}, o palhaço {author} pediu reforço. O circo agora tem elenco completo.',
+  '{target}, {author} te chamou pra reunião dos dois neurônios restantes do clã. Compareça.',
+  '⚠️ {target}, não faça movimentos bruscos. {author} aparentemente está tentando raciocinar.',
+  '{target}, {author} quer sua opinião. Considerando o histórico de vocês, estamos oficialmente fodidos. 😂',
+  '🪦 {target}, {author} te marcou. Já reservei duas vagas no cemitério da dignidade.',
+  '{target}, {author} chamou. Talvez seja importante. KKKKK desculpa, nem eu consegui escrever isso sério.',
+  '🧠 {target}, empresta um neurônio pro {author}. O dele está claramente em manutenção.',
+  '{target}, {author} quer conversar. Minha recomendação profissional: não alimente o animal.',
+  '🚨 {target}, {author} está solto no grupo novamente. Contenção falhou.',
+  '{target}, o {author} te chamou. Se a conversa ficar inteligente eu reinicio o bot porque claramente deu bug.',
+  '🎪 {target}, {author} abriu o circo e você acaba de ser anunciado como atração principal.',
+  '{target}, {author} marcou você. O nível intelectual médio da conversa caiu antes mesmo da resposta.',
+  '☠️ {target}, {author} quer papo. Não aceite bebida nem conselho financeiro dele.',
+  '{target}, atende o {author}. Ele está carente e o CAPS do Land of Dawn fechou cedo. 😂',
+  '🧯 {target}, {author} está cozinhando alguma merda. Trouxe o extintor?',
+  '{target}, {author} te convocou. O prêmio por responder é ganhar outra mensagem dele.',
+  '🤖 {target}, análise concluída: ignorar {author} aumenta sua expectativa de vida em 14%.',
+  '{target}, {author} te marcou porque aparentemente tomar decisão ruim sozinho perdeu a graça.',
+  '🗑️ {target}, chegou uma notificação de {author}. O WhatsApp ainda não implementou coleta seletiva.',
+  '{target}, {author} precisa de ajuda. De novo. Finja surpresa.',
+  '🎮 {target}, missão lendária: descobrir que porra {author} quer sem perder sanidade.',
+  '{target}, {author} chamou. Coloque o cérebro no modo avião pra vocês conversarem de igual pra igual. 😂',
+  '👻 {target}, finge que não viu. Talvez {author} ache que você morreu e desista.',
+  '{target}, {author} te marcou. Eu poderia explicar o motivo, mas nem inteligência artificial faz milagre.',
+  '🧪 {target}, você foi selecionado para um experimento: medir quanto tempo alguém aguenta conversar com {author}.',
+  '{target}, {author} pediu sua atenção. Meus servidores calcularam 98% de chance de ser bobagem.',
+  '💣 {target}, {author} lançou a granada e marcou você. Agora segura essa merda. 😂',
+  '{target}, o {author} está te procurando. Eu entregaria ele pros creeps e seguiria a partida.',
+  '🦧 {target}, {author} chamou. Tradutor de primata ativado, pode responder.',
+  '{target}, {author} digitou seu nome sem errar. Já é a maior conquista dele hoje. 🏆',
+  '🚽 {target}, {author} trouxe uma ideia. Pela qualidade prevista, provavelmente veio sentado no vaso.',
+  '{target}, {author} quer discutir. Dois idosos brigando por WhatsApp: o futuro chegou. 😂',
+  '📉 {target}, desde que {author} te marcou o QI do servidor caiu 12 pontos.',
+  '{target}, {author} te convocou. Não esquece de falar devagar e usar desenhos.',
+  '🧟 {target}, responde o {author}; ele está vagando pelo chat atrás de atividade cerebral.',
+  '{target}, {author} te marcou. É assim que começam documentários sobre decisões catastróficas.',
+  '🤦 {target}, o {author} teve uma ideia e, em vez de guardar pra si, resolveu te envolver.',
+  '{target}, {author} está pedindo atenção. Alguém esqueceu o portão do hospício do Land of Dawn aberto.',
+  '⚰️ {target}, {author} chamou. Se for duo rankeada, meus sentimentos antecipados.',
+  '{target}, {author} quer você no chat. A dignidade é opcional; aparentemente vocês já decidiram isso.',
+  '🔥 {target}, {author} te marcou. O incêndio ainda não começou, mas trouxe gasolina por garantia.',
+  '{target}, {author} solicitou suporte técnico. Erro identificado entre a cadeira e o celular.',
+  '🧠 {target}, cuidado ao responder {author}: burrice em grupo pode ser contagiosa.',
+  '{target}, {author} chamou. Não sei quem está mais ferrado: quem perguntou ou quem vai responder.',
+  '{target}, o {author} te marcou porque passar vergonha sozinho já não tava sendo suficiente. 😂',
+  '🧠 {target}, o {author} pediu ajuda. Parece que o neurônio da firma entrou de férias.',
+  '{target}, responde o {author}. Ele já tentou pensar sozinho e olha no que deu. 💀',
+  '🚨 {target}, o {author} te convocou. A comissão de decisões ruins atingiu o quórum.',
+  '{target}, {author} te marcou. Dois adultos, zero supervisão e nenhuma perspectiva de dar certo. 😂',
+  '🤡 {target}, seu parceiro {author} abriu o circo. Falta só você entrar no picadeiro.',
+  '{target}, {author} pediu reforço. Pelo histórico, reforço de inteligência seria mais útil. 🧠',
+  '⚰️ {target}, {author} te chamou. A dignidade de vocês pediu pra não ser envolvida.',
+  '{target}, o {author} tá te procurando. Até agora ninguém conseguiu explicar por quê e nem vale a pena investigar.',
+  '📉 {target}, {author} te marcou e o QI médio do grupo pediu transferência. 😂',
+  '{target}, vem buscar o {author}. Ele escapou da supervisão de novo.',
+  '💀 {target}, o {author} te chamou. Se sair alguma ideia boa daí, eu mesmo peço desculpa.',
+  '{target}, {author} quer conversar. O bom senso viu a notificação e saiu do grupo.',
+  '🧯 {target}, corre aqui: {author} teve uma ideia. Já chamei os bombeiros.',
+  '{target}, {author} te marcou. É tipo dupla de ranked: separados já dá medo, juntos dá denúncia. 😂',
+  '🚑 {target}, atende o {author}. Não é emergência, ele é assim mesmo.',
+  '{target}, o {author} pediu sua opinião. Finalmente alguém encontrou um jeito de piorar a situação.',
+  '🎪 {target}, {author} te chamou pra reunião executiva da firma Dois Neurônios Ltda.',
+  '{target}, {author} marcou você. A ciência ainda não sabe por quê, mas já desistiu de descobrir.',
+  '☠️ {target}, responde o {author} antes que ele tente resolver sozinho e vire ocorrência.',
+  '{target}, o {author} te marcou. Se burrice desse dano crítico, vocês dois já tinham levado Savage. 💀',
+  '🧠 {target}, atende o {author}. O último neurônio dele pediu demissão e deixou você como contato de emergência.',
+  '{target}, {author} quer sua ajuda. É tipo dois cegos procurando Wi-Fi no escuro. 😂',
+  '🚨 {target}, o {author} te chamou. Já avisei a defesa civil porque ideia dele costuma virar calamidade.',
+  '{target}, responde o {author}. Ele tá há cinco minutos tentando pensar e o celular já começou a esquentar.',
+  '🤡 {target}, {author} te marcou. Parabéns, a dupla sertaneja Falta de Noção & Ausência de Vergonha voltou.',
+  '{target}, o {author} pediu reforço. Manda um cérebro pelo Sedex porque conversa não vai resolver. 🧠',
+  '⚰️ {target}, se o {author} chamou pra ranked, atualiza o testamento antes de responder.',
+  '{target}, {author} te marcou. O algoritmo classificou isso como tentativa de homicídio da inteligência coletiva.',
+  '🗑️ {target}, chegou mensagem do {author}. O filtro de spam pediu demissão por excesso de trabalho.',
+  '{target}, responde aí. O {author} tá sozinho com uma ideia e isso representa risco pra sociedade. 😂',
+  '💀 {target}, {author} te convocou. Juntos vocês têm aproximadamente meio plano e três decisões ruins.',
+  '🧯 {target}, vem rápido: {author} começou a raciocinar sem equipamento de proteção.',
+  '{target}, o {author} te chamou. Se sair algo inteligente dessa conversa, vou abrir chamado de incidente.',
+  '🐒 {target}, {author} mandou sinal. Ainda estamos traduzindo do primata para português.',
+  '{target}, atende o {author}. O hospício do Land of Dawn confirmou que hoje é dia de visita. 😂',
+  '📉 {target}, desde que {author} te marcou, o grupo perdeu pontos de QI que nem tinha.',
+  '{target}, {author} precisa de você. Aparentemente fazer merda sozinho já não oferece desafio suficiente.',
+  '🚑 {target}, responde o {author}. Não é urgência médica, mas o bom senso dele segue desaparecido.',
+  '{target}, o {author} chamou. Dois especialistas em decisão ruim entrando numa conversa: o que poderia dar errado? Tudo. 😂',
+  '🎪 {target}, {author} abriu mais uma sessão extraordinária do Conselho Federal dos Sem Noção.',
+  '{target}, {author} te marcou. A dignidade viu os dois online e ativou o modo avião.',
+  '☠️ {target}, responde logo o {author}; cada minuto sem supervisão aumenta a chance dele inventar outra merda.',
+  '{target}, {author} pediu sua opinião. É bonito ver gente sem solução trabalhando em equipe. 😂',
+  '🧠 {target}, traz giz de cera. O {author} vai tentar explicar uma ideia e palavras talvez sejam avançadas demais.',
+  '{target}, {author} te chamou. A conversa ainda nem começou e já tem cheiro de boletim de ocorrência.',
+  '🤡 {target}, o {author} pediu ajuda. O circo está completo; só faltava o especialista.',
+  '{target}, responde o {author}. Ele tá tentando conectar dois pensamentos e o servidor entrou em timeout. 💀',
+  '🔥 {target}, {author} teve uma ideia. Eu esconderia os fósforos antes de perguntar qual.',
+  '{target}, {author} te marcou. Isso não é uma conversa, é um teste de resistência psicológica. 😂',
+];
+
+function mentionIds(message) {
+  if (!message) return [];
+  const ids = [];
+  const seen = new Set();
+
+  // Baileys/WhatsApp can place contextInfo in different message wrappers.
+  const visit = (value) => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    const mentioned = value?.contextInfo?.mentionedJid;
+    if (Array.isArray(mentioned)) ids.push(...mentioned);
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(message);
+
+  return [...new Set(ids.filter(Boolean))];
+}
+function jidAliases(jid) {
+  const raw = String(jid || '');
+  if (!raw) return [];
+  const user = raw.split('@')[0];
+  const bare = user.split(':')[0];
+  const domains = ['@s.whatsapp.net', '@lid'];
+  return [...new Set([raw, ...domains.map(domain => bare + domain)])];
+}
+function rememberGroupName(jid, name) {
+  if (!name || /^\d{8,}$/.test(String(name).replace(/\D/g, ''))) return;
+  for (const alias of linkedAliases(jid)) groupNames.set(alias, name);
+}
+function playerForJid(jid) {
+  for (const alias of linkedAliases(jid)) {
+    const player = players.get(alias);
+    if (player?.name) return player;
+  }
+  return null;
+}
+function whatsappName(jid, fallback = 'jogador') {
+  for (const alias of linkedAliases(jid)) {
+    const name = groupNames.get(alias);
+    if (name) return name;
+  }
+  return fallback;
+}
+function displayPlayer(jid, fallback = 'jogador') {
+  return playerForJid(jid)?.name || (jidAliases(jid).includes(ownJid) ? players.get('self')?.name : null) || whatsappName(jid, fallback);
+}
+function participantJids(participant) {
+  return [...new Set([
+    participant?.id,
+    participant?.jid,
+    participant?.lid,
+    participant?.phoneNumber,
+    participant?.phoneNumberJid
+  ].filter(Boolean).flatMap(jidAliases))];
+}
+async function warmGroupParticipantNames(sock, groupJid) {
+  try {
+    const metadata = await sock.groupMetadata(groupJid);
+    for (const participant of metadata?.participants || []) {
+      const aliases = participantJids(participant);
+      linkIdentities(aliases);
+      if (aliases.length) {
+        console.log('[mention-participant-debug]', JSON.stringify({
+          aliasDomains: aliases.map(jid => String(jid).split('@')[1] || 'unknown'),
+          fields: Object.keys(participant || {}).sort(),
+          hasNotify: Boolean(participant?.notify),
+          hasName: Boolean(participant?.name),
+          hasVerifiedName: Boolean(participant?.verifiedName),
+          usernameType: typeof participant?.username,
+          usernameValue: participant?.username == null ? null : String(participant.username).slice(0, 80)
+        }));
+      }
+      const knownPlayer = aliases.map(playerForJid).find(Boolean);
+      if (knownPlayer?.name) {
+        for (const alias of aliases) rememberGroupName(alias, knownPlayer.name);
+        continue;
+      }
+      const name = participant?.notify || participant?.name || participant?.verifiedName || participant?.username;
+      if (name) for (const alias of aliases) rememberGroupName(alias, name);
+    }
+  } catch (error) {
+    console.warn('Não consegui aquecer nomes do grupo:', error?.message);
+  }
+}
+function registrationLink() {
+  const phone = pairPhone || String(ownJid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  return phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent('!cadastrar') : null;
+}
+let lastRoastIndex = -1;
+function roastFor(author, target, key) {
+  const entropy = crypto.randomBytes(4).readUInt32BE(0);
+  let index = entropy % mentionRoasts.length;
+  if (mentionRoasts.length > 1 && index === lastRoastIndex) index = (index + 1 + (entropy % (mentionRoasts.length - 1))) % mentionRoasts.length;
+  lastRoastIndex = index;
+  return mentionRoasts[index].replaceAll('{author}', author).replaceAll('{target}', target);
+}
+
+async function handleGroup(sock, message) {
+  const key = message.key || {};
+  const groupJid = key.remoteJid;
+  if (!groupJid?.endsWith('@g.us') || groupJid !== targetGroup || !message.message) return;
+  let text = messageText(message.message);
+  const menuKey = groupJid + ':' + (key.participant || key.participantAlt || key.remoteJid);
+  const until = menuSessions.get(menuKey) || 0;
+  if (until > Date.now() && /^[1-5]$/.test(text)) {
+    menuSessions.delete(menuKey);
+    text = { '1':'!battle', '2':'!stats', '3':'!ranking', '4':'!cadastrar', '5':'!ajuda' }[text];
+  } else if (until && until <= Date.now()) menuSessions.delete(menuKey);
+  const aliases = aliasesFor(key);
+  linkIdentities([key.participant, key.participantAlt].filter(Boolean));
+  if (key.pushName) for (const alias of aliases) rememberGroupName(alias, key.pushName);
+  const mentionedNow = mentionIds(message.message);
+  const earlyKnowledge = segaKnowledgeQuery(text);
+  if (earlyKnowledge.textual) {
+    const question = earlyKnowledge.cleaned.replace(/@\d{5,}/g, '').trim();
+    console.log('[sega-knowledge-hit]', JSON.stringify({ fromMe: Boolean(key.fromMe), question: question.slice(0, 120) }));
+    if (!question) {
+      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @SEGA quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
+      return;
+    }
+    try {
+      const answer = await answerMlbbQuestion(question);
+      const plain = answer
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
+        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
+      await sendText(sock, groupJid, plain);
+    } catch (error) {
+      console.error('Falha no conhecimento WhatsApp:', error?.message);
+      await sendText(sock, groupJid, '⚠️ Não consegui consultar o conhecimento agora. Tente novamente em alguns segundos.');
+    }
+    return;
+  }
+  for (const lid of mentionedNow.filter(jid => String(jid).endsWith('@lid'))) {
+    try {
+      const pn = await sock.signalRepository?.lidMapping?.getPNForLID(lid);
+      if (pn) linkIdentities([lid, pn]);
+    } catch (error) { console.warn('LID mapping unavailable:', error?.message); }
+  }
+  if (mentionedNow.length) {
+    const maskJid = (jid) => {
+      const raw = String(jid || '');
+      const [user = '', domain = ''] = raw.split('@');
+      return (user.length > 4 ? '***' + user.slice(-4) : '***') + (domain ? '@' + domain : '');
+    };
+    console.log('[mention-debug]', JSON.stringify({
+      authorHasPushName: Boolean(key.pushName),
+      authorDomains: aliases.map(jid => String(jid).split('@')[1] || 'unknown'),
+      mentions: mentionedNow.map(jid => ({
+        masked: maskJid(jid),
+        domain: String(jid).split('@')[1] || 'unknown',
+        aliases: jidAliases(jid).map(maskJid),
+        playerFound: Boolean(playerForJid(jid)?.name),
+        cachedNameFound: Boolean(whatsappName(jid, ''))
+      }))
+    }));
+  }
+  if (mentionedNow.some(jid => displayPlayer(jid, '') === '')) {
+    await warmGroupParticipantNames(sock, groupJid);
+  }
+  for (const jid of mentionedNow) {
+    if (displayPlayer(jid, '')) continue;
+    try {
+      const contact = await sock.onWhatsApp(jid).catch(() => null);
+      const name = contact?.[0]?.notify || contact?.[0]?.name;
+      if (name) rememberGroupName(jid, name);
+    } catch {}
+  }
+  const authorPlayer = key.fromMe ? (players.get('self') || findPlayer(aliases)) : findPlayer(aliases);
+  if (/^[!\/]sega$/i.test(text)) {
+    await sendSegaMenu(sock, groupJid, menuKey);
+    return;
+  }
+  if (/^!battle$/i.test(text)) {
+    await sendText(sock,groupJid,'⚔️ Para consultar uma batalha, abra meu privado e envie !battle <ID>.');
+    return;
+  }
+  if (/^!stats$/i.test(text)) {
+    await sendText(sock,groupJid,'📊 Para consultar seus stats, abra meu privado e envie !stats.');
+    return;
+  }
+  if (/^!ajuda$/i.test(text)) {
+    await sendText(sock, groupJid, fullHelpLines().join('\n'));
+    return;
+  }
+  if (/^[!/]ranking$/i.test(text)) {
+    await sendSavedRanking(sock,groupJid);
+    return;
+  }
+  const mentioned = mentionedNow;
+  const knowledge = segaKnowledgeQuery(text);
+  const botWasMentioned = mentioned.some(isOwnMention);
+  const segaMention = knowledge.textual || botWasMentioned;
+  console.log('[sega-knowledge-debug]', JSON.stringify({ textual: knowledge.textual, botWasMentioned, fromMe: Boolean(key.fromMe), text: text.slice(0, 120), mentionCount: mentioned.length }));
+  if (enabled && !botSentMessageIds.has(key.id) && mentioned.length && !segaMention) {
+    const targetJid = mentioned.find(jid => jid !== ownJid) || mentioned[0];
+    const author = authorPlayer?.name || key.pushName || whatsappName(aliases[0], 'alguém');
+    let target = displayPlayer(targetJid, '');
+    // Some group participants expose no WhatsApp profile name at all. In that case,
+    // prefer the visible @mention label from the message text before using a generic fallback.
+    if (!target) {
+      const visibleMention = text.match(/@([^\s]{2,40})/u)?.[1]?.trim();
+      target = visibleMention && !/^\d+$/.test(visibleMention) ? visibleMention : 'jogador';
+    }
+    const activitySender = aliases[0] || key.participant || key.remoteJid;
+    if (activitySender) {
+      const activityNow = Date.now();
+      for (const jid of linkedAliases(activitySender)) lastMessageBySender.set(groupJid + ':' + jid, activityNow);
+    }
+    await sendText(sock, groupJid, roastFor(author, target, key.id));
+    return;
+  }
+  if (segaMention) {
+    const question = knowledge.cleaned.replace(/@\d{5,}/g, '').trim();
+    if (!question) {
+      await sendText(sock, groupJid, '🎮 Tô na escuta. Ex.: @SEGA quem countera Harley?\nDigite !ajuda para ver mais exemplos.');
+      return;
+    }
+    try {
+      const answer = await answerMlbbQuestion(question);
+      const plain = answer
+        ? answer.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\\n/g, '\n')
+        : '🧠 Ainda não entendi essa pergunta. Exemplos:\n' + listKnowledgeExamples().slice(0, 8).map(x => '• @SEGA ' + x).join('\n');
+      await sendText(sock, groupJid, plain);
+    } catch (error) {
+      console.error('Falha no conhecimento WhatsApp:', error?.message);
+      await sendText(sock, groupJid, '⚠️ Não consegui consultar o conhecimento agora. Tente novamente em alguns segundos.');
+    }
+    return;
+  }
+  if (/^[!/]?cadastrar$/i.test(text)) {
+    if (!key.fromMe) {
+      const link = registrationLink();
+      await sendText(sock, groupJid, link
+        ? '🔐 O cadastro é privado. Toque no link e envie a mensagem que já vai pronta:\n' + link
+        : '🔐 O cadastro é privado. Abra meu PV e envie !cadastrar para vincular sua conta com segurança.');
+    }
+    return;
+  }
+  if (!enabled || botSentMessageIds.has(key.id)) return;
+  const senderKey = aliases[0] || key.participant || key.remoteJid;
+  const senderName = authorPlayer?.name || key.pushName || whatsappName(senderKey, 'jogador');
+  const now = Date.now();
+  // Use a canonical identity for cooldowns. WhatsApp may alternate the same person
+  // between LID and phone-number JIDs, which previously made one user look like
+  // multiple inactive users and triggered false AFK replies.
+  const linked = linkedAliases(senderKey);
+  const timerIdentity = linked.find(jid => String(jid).endsWith('@s.whatsapp.net'))
+    || linked.find(jid => String(jid).endsWith('@lid'))
+    || senderKey;
+  const timerKey = groupJid + ':' + timerIdentity;
+  const previousTimes = linked
+    .map(jid => lastMessageBySender.get(groupJid + ':' + jid))
+    .filter(value => Number.isFinite(value));
+  const previous = previousTimes.length ? Math.max(...previousTimes) : lastMessageBySender.get(timerKey);
+  for (const jid of [...new Set([timerIdentity, ...linked])]) lastMessageBySender.set(groupJid + ':' + jid, now);
+  // First observation after startup establishes presence; it must not be treated as
+  // a 15-minute absence. Only a known sender returning after the full cooldown gets an AFK line.
+  if (previous === undefined || now - previous < INACTIVITY_MS) return;
+  await sendText(sock, groupJid, geekLine(senderName, timerIdentity, now));
+}
+
+async function connect() {
+  await restorePlayers();
+  await restoreRegistrations();
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const sock = makeWASocket({ auth: state, logger, browser: Browsers.ubuntu('Chrome'), connectTimeoutMs: 60000, keepAliveIntervalMs: 30000, syncFullHistory: false });
+  sock.ev.on('contacts.upsert', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
+  sock.ev.on('contacts.update', contacts => { for (const contact of contacts || []) { linkIdentities([contact.id, contact.lid, contact.phoneNumber].filter(Boolean)); rememberGroupName(contact.id || contact.lid, contact.notify || contact.name || contact.verifiedName); } });
+  sock.ev.on('creds.update', saveCreds);
+  if (!state.creds.registered && pairPhone) setTimeout(async () => {
+    try { await sock.requestPairingCode(pairPhone); console.log('Código de pareamento solicitado com sucesso.'); }
+    catch (e) { console.error('Falha ao solicitar pareamento:', e?.message); }
+  }, 10000);
+
+  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+    if (connection === 'open') {
+      ownJid = sock.user?.id || null;
+      console.log('WhatsApp conectado. Respostas habilitadas:', enabled);
+    }
+    if (connection === 'close') {
+      const status = lastDisconnect?.error?.output?.statusCode;
+      console.error('WhatsApp socket fechado. Status:', status, 'Motivo:', lastDisconnect?.error?.message);
+      if (status !== DisconnectReason.loggedOut) setTimeout(() => void connect().catch(e => console.error(e?.message)), 5000);
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    // Messages sent by the linked WhatsApp account can arrive as "append"
+    // instead of "notify". They are still real commands and must be processed.
+    if (!['notify', 'append'].includes(type)) return;
+    for (const message of messages || []) {
+      try {
+        const key = message?.key || {};
+        const raw = message?.message || {};
+        console.log('[incoming-debug]', JSON.stringify({
+          type,
+          fromMe: Boolean(key.fromMe),
+          group: String(key.remoteJid || '').endsWith('@g.us'),
+          messageTypes: Object.keys(raw),
+          parsedText: messageText(raw).slice(0, 160)
+        }));
+        if (await handleRegistration(sock, message)) continue;
+        await handleGroup(sock, message);
+      } catch (e) { console.error('Falha ao processar mensagem WhatsApp:', e?.message); }
+    }
+  });
+}
+
+connect().catch(e => { console.error('WhatsApp não iniciou:', e?.message); process.exitCode = 1; });
