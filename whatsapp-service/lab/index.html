@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#121719">
+<meta name="description" content="NOX Lab — teste no celular sem WhatsApp, com simulação offline e IA Puter gratuita limitada.">
+<title>NOX Lab · Mobile Legends</title>
+<style>
+:root {color-scheme:dark;--bg:#111719;--panel:#1a2224;--surface:#242e31;--line:#344044;--text:#eaf2f0;--muted:#9eb0ac;--mint:#98d5b9;--mint-deep:#274b3e;--amber:#f0bc73;--red:#f29b96}
+*{box-sizing:border-box} html,body{margin:0;min-height:100%;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{background:var(--bg);color:var(--text);display:flex;justify-content:center}
+.shell{width:100%;max-width:760px;min-height:100dvh;display:flex;flex-direction:column;padding:0 max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+.top{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:16px 0 14px;gap:12px}
+.brand{display:flex;align-items:center;gap:12px}.mark{display:grid;place-items:center;width:43px;height:43px;border-radius:13px;background:var(--mint-deep);font-size:24px}
+.brand strong{display:block;font-size:19px;letter-spacing:.07em}.brand small,.sub,.help{color:var(--muted);font-size:12px}
+.pill{font-size:11px;border:1px solid #426356;color:var(--mint);border-radius:999px;padding:6px 10px;white-space:nowrap}
+.intro{padding:18px 0 10px}.intro h1{font-size:25px;line-height:1.18;letter-spacing:-.035em;margin:0 0 8px;font-weight:720}
+.intro p{font-size:13px;line-height:1.55;color:var(--muted);margin:0}
+.card{border:1px solid var(--line);border-radius:15px;background:var(--panel);padding:13px;margin:12px 0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+legend,.tiny-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.mode{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.mode button,.chip,.action{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:12px;font:inherit;cursor:pointer}
+.mode button{min-height:54px;text-align:left;padding:9px 11px;font-size:13px;font-weight:650}
+.mode button small{display:block;color:var(--muted);font-size:10px;font-weight:400;margin-top:4px}
+.mode button[aria-pressed="true"]{background:var(--mint-deep);border-color:#70b69a}
+.notice{font-size:12px;line-height:1.5;padding:12px;border:1px solid #68563b;background:#29251e;color:#ead5b6;border-radius:12px;margin-top:10px}
+.notice.good{border-color:#456859;background:#1c322b;color:#bbdfcc}.notice.error{border-color:#865553;background:#322121;color:#f6c6c2}
+.controls{display:flex;align-items:center;gap:8px;margin-top:12px}.controls label{color:var(--muted);font-size:12px}
+select{background:var(--surface);color:var(--text);border:1px solid var(--line);padding:9px;border-radius:10px;font-size:13px}
+.chips{display:flex;overflow-x:auto;gap:8px;margin:12px 0 6px;padding-bottom:4px}
+.chip{padding:9px 13px;font-size:12px;white-space:nowrap}.chip:focus-visible,.action:focus-visible,.mode button:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+.conversation{flex:1;min-height:270px;max-height:460px;overflow-y:auto;padding:12px 0;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
+.msg{max-width:93%;padding:11px 13px;border-radius:14px;line-height:1.5;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.bot{background:var(--panel);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:5px}
+.msg.user{background:#294538;align-self:flex-end;border-bottom-right-radius:5px}
+.msg .who{display:block;color:var(--mint);font-size:11px;font-weight:700;letter-spacing:.03em;margin-bottom:5px}
+.msg.user .who{color:#b7ebcf}
+.footer{background:var(--bg);border-top:1px solid var(--line);padding-top:10px}
+.entry{display:flex;align-items:flex-end;gap:9px}.entry textarea{min-height:51px;max-height:145px;flex:1;resize:vertical;border:1px solid #445256;background:var(--panel);border-radius:12px;padding:12px;color:var(--text);font-size:16px;font-family:inherit;line-height:1.35}
+.entry textarea:focus{outline:2px solid #639d86}.action{font-weight:700;padding:0 16px;height:50px;background:var(--mint);color:#15231e;border-color:var(--mint)}
+.action:disabled{opacity:.45;cursor:not-allowed}.tiny-footer{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-top:9px;gap:12px}
+a{color:var(--mint)} button.secondary{border:0;color:var(--muted);background:transparent;cursor:pointer;text-decoration:underline;font:inherit}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(min-width:680px){.shell{padding-inline:32px}.intro h1{font-size:31px}.conversation{max-height:560px}}
+</style>
+<script src="https://js.puter.com/v2/" defer></script>
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <div class="brand"><div class="mark" aria-hidden="true">🐺</div><div><strong>NOX LAB</strong><small>Clã Tenebrozos · ambiente de testes</small></div></div>
+    <span class="pill">WhatsApp desligado</span>
+  </header>
+  <section class="intro">
+    <h1>Seu assistente de Mobile Legends, em fase de testes.</h1>
+    <p>Converse sobre heróis, counters e builds. Aqui não há acesso ao teu número, grupos, cadastro ou Railway. O laboratório não modifica o bot em produção.</p>
+  </section>
+  <section class="card" aria-label="Configuração de testes">
+    <span class="tiny-label">Escolha como testar</span>
+    <div class="mode">
+      <button type="button" id="demo" aria-pressed="true">🧪 Demonstração<small>Offline · custo zero</small></button>
+      <button type="button" id="real" aria-pressed="false">✨ IA de verdade<small>Puter · franquia gratuita</small></button>
+    </div>
+    <div id="status" class="notice good" role="status">🧪 Demonstração ativa. As respostas são exemplos programados, não uma IA real.</div>
+    <div class="controls">
+      <label for="player">Jogador de teste:</label>
+      <select id="player"><option value="A">Jogador A</option><option value="B">Jogador B</option></select>
+      <button class="secondary" id="clear" type="button">Limpar conversa</button>
+    </div>
+  </section>
+  <div class="chips" aria-label="Perguntas rápidas">
+    <button class="chip" data-question="Quais informações você tem sobre Miya?">🏹 Miya</button>
+    <button class="chip" data-question="Como enfrentar Harley?">🎩 Harley</button>
+    <button class="chip" data-question="O que o Tigreal faz?">🛡️ Tigreal</button>
+    <button class="chip" data-question="E qual build você recomenda?">💬 Continuar</button>
+  </div>
+  <section id="conversation" class="conversation" aria-live="polite" aria-label="Conversa">
+    <div class="msg bot"><span class="who">🤖 NOX bot</span>E aí, jogador! Este é o laboratório do NOX. Escolha uma pergunta acima ou pergunte sobre Mobile Legends.<br><br>No modo demonstração, as respostas são simuladas. No modo IA de verdade, você entra numa conta Puter para usar sua franquia gratuita.</div>
+  </section>
+  <form id="chatForm" class="footer">
+    <label class="sr-only" for="question">Pergunta para o NOX</label>
+    <div class="entry"><textarea id="question" maxlength="460" rows="2" placeholder="Pergunte sobre um herói..." required></textarea><button class="action" id="send" type="submit">Enviar</button></div>
+    <div class="tiny-footer"><span id="counter">0 / 460 caracteres</span><span>Sem WhatsApp · sem armazenamento</span></div>
+  </form>
+</main>
+<script>
+(() => {
+  'use strict';
+  const systemPrompt = [
+    'Você é o NOX, bot de conhecimento do Clã Tenebrozos, especializado exclusivamente em Mobile Legends: Bang Bang.',
+    'Responda em português brasileiro claro, curto para celular, amigável e com humor leve de jogador.',
+    'Não invente atualizações recentes, estatísticas, mudanças de patch, builds atuais nem fontes consultadas.',
+    'Se perguntarem dados de patch, diga que este laboratório não consulta a internet em tempo real.',
+    'Nenhum conselho dado aqui é aprovação oficial do clã. Dicas dos jogadores exigem revisão manual no bot original.',
+    'Mantenha o contexto do mesmo jogador, mas jamais misture os contextos dos jogadores A e B.',
+    'Se a pergunta não for de Mobile Legends, recuse gentilmente e indique !sugestao.'
+  ].join(' ');
+  const examples = {
+    miya: 'Miya é uma atiradora de ataques básicos e grande potencial no final da partida. Posicionamento e proteção dos aliados são essenciais.',
+    harley: 'Harley é um mago/assassino com dano explosivo. Visão de mapa e atenção ao momento em que ele gasta habilidades ajudam a enfrentá-lo.',
+    tigreal: 'Tigreal é um tanque que inicia lutas e usa controle de grupo. O segredo é combinar a entrada dele com o dano do time.',
+    saber: 'Saber é um assassino voltado a eliminar alvos frágeis. Ele depende da oportunidade certa para usar seu combo.'
+  };
+  const $ = id => document.getElementById(id);
+  const histories = {A:[],B:[]};
+  const heroes = {A:null,B:null};
+  let mode='demo',busy=false;
+  const conversation=$('conversation'),text=$('question'),send=$('send');
+  function render(role, value, player=null) {
+    const bubble=document.createElement('div');
+    bubble.className='msg '+(role==='bot'?'bot':'user');
+    const who=document.createElement('span');
+    who.className='who';
+    who.textContent=role==='bot'?'🤖 NOX bot':'👤 Jogador '+player;
+    bubble.appendChild(who);
+    bubble.appendChild(document.createTextNode(value));
+    conversation.appendChild(bubble);
+    conversation.scrollTop=conversation.scrollHeight;
+  }
+  function status(message,kind='good') {
+    const el=$('status');el.className='notice '+kind;el.textContent=message;
+  }
+  function reset(modeChanged=false) {
+    histories.A=[];histories.B=[];heroes.A=null;heroes.B=null;
+    conversation.replaceChildren();
+    render('bot',modeChanged
+      ? 'Modo alterado. Começamos uma conversa nova, sem levar informações do modo anterior.'
+      : 'Conversa apagada deste navegador. Pronto para começar de novo.');
+  }
+  function detectHero(question,player) {
+    const hit=question.toLowerCase().match(/\b(miya|harley|tigreal|saber)\b/i);
+    if(hit){heroes[player]=hit[1].toLowerCase();return heroes[player];}
+    return heroes[player];
+  }
+  function offTopic(question,hero) {
+    const q=question.toLowerCase();
+    if(/previs[aã]o do tempo|clima|chuva|temperatura|d[oó]lar|bitcoin|pol[ií]tica|receita culin[aá]ria/.test(q))return true;
+    if(hero)return false;
+    return !/mobile legends|mlbb|build|counter|her[oó]i|atirador|mago|tanque|assassino|turtle|lord|emblema|jungle|ranqueada|miya|saber|tigreal|harley/.test(q);
+  }
+  function demoAnswer(question,player) {
+    const hero=detectHero(question,player);
+    if(offTopic(question,hero))return '💀 Esse assunto é fora de Mobile Legends! Por aqui eu treino apenas conhecimento do jogo.';
+    if(!hero)return '🧪 [SIMULAÇÃO] Escolha um herói para eu dar um exemplo de resposta. Este modo não usa IA.';
+    if(/build|equipamento|item/.test(question.toLowerCase()))
+      return '🧪 [SIMULAÇÃO] Para '+hero.toUpperCase()+', uma build depende dos inimigos e do patch. Um NOX com IA real analisaria o contexto, mas esta não é uma recomendação atualizada.';
+    return '🧪 [SIMULAÇÃO — NÃO É IA REAL]\n'+examples[hero]+
+      '\n\nPode continuar perguntando; este é apenas um roteiro de demonstração.';
+  }
+  async function ensurePuterSignIn() {
+    if(typeof puter==='undefined')throw Error('O serviço de IA não carregou. Confere a conexão à internet e tente novamente.');
+    if(typeof puter.auth?.isSignedIn==='function' && puter.auth.isSignedIn())return;
+    // Called synchronously from the user's send or mode button interaction.
+    await puter.auth.signIn();
+  }
+  async function realAnswer(question,player) {
+    const hero=detectHero(question,player);
+    if(offTopic(question,hero))return 'Por enquanto meu assunto é Mobile Legends. Pode me perguntar sobre heróis, builds ou estratégias!';
+    const context=histories[player].slice(-6);
+    // Only deliberate lab messages, never WhatsApp data or player identities.
+    const messages=[
+      {role:'system',content:systemPrompt},
+      ...context,
+      {role:'user',content:question+(hero?'\nHerói da conversa: '+hero:'')}
+    ];
+    const result=await puter.ai.chat(messages,{model:'gpt-5.4-nano',max_tokens:420,normalize:true});
+    const answer=result?.message?.content;
+    const plain=typeof answer==='string'?answer:String(result?.text||'');
+    if(!plain.trim())throw Error('O provedor retornou uma resposta vazia.');
+    histories[player]=[...context,{role:'user',content:question},{role:'assistant',content:plain.trim().slice(0,1800)}].slice(-6);
+    return plain.trim().slice(0,1800);
+  }
+  async function setMode(next) {
+    if(busy || mode===next)return;
+    if(next==='real') {
+      status('🔑 Abrindo o login Puter. A franquia gratuita é limitada; se aparecer cobrança, não confirme nada.', 'good');
+      try {
+        await ensurePuterSignIn();
+      } catch(error){
+        status('⚠️ Não foi possível entrar no Puter: '+String(error?.message||'login indisponível').slice(0,160),'error');
+        return;
+      }
+    }
+    mode=next;$('demo').setAttribute('aria-pressed',String(mode==='demo'));
+    $('real').setAttribute('aria-pressed',String(mode==='real'));
+    status(mode==='demo'
+      ? '🧪 Demonstração offline ativa. Nenhum modelo real ou custo.'
+      : '✨ IA real ativada pela conta Puter. Usa sua franquia gratuita; se acabar, pare e não aceite cobranças.','good');
+    reset(true);
+  }
+  $('demo').addEventListener('click',()=>setMode('demo'));
+  $('real').addEventListener('click',()=>setMode('real'));
+  $('clear').addEventListener('click',()=>reset());
+  $('player').addEventListener('change',()=>{render('bot','Jogador '+$('player').value+' selecionado. O contexto é separado para cada jogador.');});
+  document.querySelectorAll('[data-question]').forEach(button=>{
+    button.addEventListener('click',()=>{text.value=button.dataset.question;updateCount();text.focus();});
+  });
+  function updateCount(){$('counter').textContent=text.value.length+' / 460 caracteres';}
+  text.addEventListener('input',updateCount);
+  $('chatForm').addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(busy)return;
+    const question=text.value.trim();if(!question)return;
+    const player=$('player').value;busy=true;send.disabled=true;send.textContent='...';
+    render('user',question,player);text.value='';updateCount();
+    try {
+      const answer=mode==='demo'?demoAnswer(question,player):await realAnswer(question,player);
+      render('bot',answer);
+    } catch(error){
+      render('bot','⚠️ Não consegui responder pela IA. Pode ter acabado a franquia gratuita ou ocorrido um problema de login/rede. Não é necessário pagar. Detalhe: '+String(error?.message||'indisponível').slice(0,180));
+    } finally {busy=false;send.disabled=false;send.textContent='Enviar';}
+  });
+  text.addEventListener('keydown',event=>{
+    if(event.key==='Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      if(typeof $('chatForm').requestSubmit==='function')$('chatForm').requestSubmit();
+    }
+  });
+})();
+</script>
+</body>
+</html>
